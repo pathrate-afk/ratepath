@@ -1,5 +1,5 @@
 /* RatePath (ريت باث) Offline-First Service Worker (Bypassed on localhost) */
-const CACHE_VERSION = "ratepath-pwa-v7";
+const CACHE_VERSION = "ratepath-pwa-v8";
 const FEED_CACHE_NAME = "ratepath-live-feed-v3";
 
 const IS_LOCALHOST =
@@ -14,6 +14,7 @@ const APP_SHELL_ASSETS = [
   "./favicon.ico",
   "./manifest.json",
   "./monetization.config.js",
+  "./styles/tailwind.min.css",
   "./styles/terminal.css",
   "./js/decimal-math.js",
   "./js/syria-flag.js",

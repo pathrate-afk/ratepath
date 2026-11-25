@@ -121,7 +121,11 @@ export function renderQuoteCardCanvas(canvas, state) {
 
   ctx.fillStyle = "#94A3B8";
   ctx.font = "500 17px system-ui, -apple-system, sans-serif";
-  ctx.fillText("BANKING-GRADE DECIMAL CROSS-ASSET SNAPSHOT", brandTextX, 112);
+  ctx.fillText(
+    lang === "ar" ? "لقطة أسعار موثقة: عملات • ذهب • كريبتو" : "VERIFIED CROSS-ASSET SNAPSHOT",
+    brandTextX,
+    112
+  );
 
   // Verified Pill on Top Right
   drawRoundedRect(ctx, width - 346, 52, 290, 44, 22);
@@ -231,7 +235,7 @@ export function renderQuoteCardCanvas(canvas, state) {
 
     ctx.fillStyle = "#64748B";
     ctx.font = "500 13px monospace";
-    ctx.fillText(`Spot: ${assetMeta?.spotDisplay || "-"}`, x + 18, y + 102);
+    ctx.fillText(`${lang === "ar" ? "السعر" : "Spot"}: ${assetMeta?.spotDisplay || "-"}`, x + 18, y + 102);
   });
 
   // 8. Watermarked Institutional Footer
@@ -239,7 +243,9 @@ export function renderQuoteCardCanvas(canvas, state) {
   ctx.fillStyle = "#94A3B8";
   ctx.font = "600 15px system-ui, sans-serif";
   ctx.fillText(
-    "Verified Sources: Binance Vision • Bybit v5 • Swissquote XAU • Open FX  |  Zero-Float Decimal Engine",
+    lang === "ar"
+      ? "مصادر موثقة: Binance • Bybit • Swissquote • SP-Today • CoinMarketCap"
+      : "Verified sources: Binance • Bybit • Swissquote • SP-Today • CoinMarketCap",
     56,
     584
   );

@@ -183,27 +183,22 @@ async def execute_live_cycle(
         if enforce_previous_tick_guard
         else (None, None, None)
     )
-    existing_news = _load_existing_news_items(target_path) if skip_ai_news else []
+    existing_news = _load_existing_news_items(target_path)
 
     async with create_http_client() as client:
-        if skip_ai_news and existing_news:
-            fiat_res, gold_res, spot_res, funding_pair, syp_quote = await asyncio.gather(
-                fetch_fiat_rates(client),
-                fetch_gold_spot(client),
-                fetch_crypto_spot(client),
-                fetch_cross_exchange_funding(client),
-                fetch_syp_sptoday_3tier(client, settings=resolved_settings),
-            )
+        fiat_res, gold_res, spot_res, funding_pair, syp_quote = await asyncio.gather(
+            fetch_fiat_rates(client),
+            fetch_gold_spot(client),
+            fetch_crypto_spot(client),
+            fetch_cross_exchange_funding(client),
+            fetch_syp_sptoday_3tier(client, settings=resolved_settings),
+        )
+        # Fresh RSS headlines every cycle so the website's Market Pulse never freezes
+        # (Lane-1 analyses them with the deterministic engine only: zero LLM calls, zero broadcasts)
+        try:
+            raw_news = await fetch_macro_news(client, max_items=5)
+        except Exception:
             raw_news = []
-        else:
-            fiat_res, gold_res, spot_res, funding_pair, syp_quote, raw_news = await asyncio.gather(
-                fetch_fiat_rates(client),
-                fetch_gold_spot(client),
-                fetch_crypto_spot(client),
-                fetch_cross_exchange_funding(client),
-                fetch_syp_sptoday_3tier(client, settings=resolved_settings),
-                fetch_macro_news(client, max_items=5),
-            )
 
         # Lane 1 Agent 7 (Price Guardian): Pure Decimal cross-check against PAXG/USDT (<1s, zero LLM)
         guardian_verdict = await verify_gold_with_price_guardian(
@@ -256,7 +251,8 @@ async def execute_live_cycle(
             market_context["USD_SYP"] = fiat_rates_table["SYP"]["units_per_usd"]
 
         analyzed_news = []
-        if skip_ai_news and existing_news:
+        if not raw_news and existing_news:
+            # RSS temporarily unreachable -> keep last good headlines instead of an empty panel
             news_payload_list = existing_news
             ai_mode = "deterministic_fallback"
         else:
@@ -326,7 +322,7 @@ async def execute_live_cycle(
     # Record T+0 predictions only when fresh analyzed_news was generated
     memory_store = MarketMemoryStore(settings=resolved_settings)
     snapshot = extract_price_snapshot(feed_payload)
-    if analyzed_news:
+    if analyzed_news and not skip_ai_news:
         await memory_store.record_live_predictions(analyzed_news, snapshot)
     if run_evaluator:
         await memory_store.evaluate_due_predictions(snapshot)

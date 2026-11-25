@@ -57,28 +57,30 @@ export const MONETIZATION_CONFIG = {
 
   // 3. VIP Subscription Crypto Checkout (NOWPayments)
   vipPayments: {
-    nowPaymentsVipUrl: "https://nowpayments.io/payment/?iid=placeholder_ratepath_vip",
+    // Leave as "" until your real NOWPayments invoice/checkout link exists -> the button auto-hides.
+    nowPaymentsVipUrl: "",
     vipMonthlyPriceUsd: "19",
   },
 
   // 4. Official 4-Channel Language-Separated Telegram Ecosystem Links
   // English UI automatically binds `_EN` channels; Arabic UI automatically binds `_AR` channels.
   telegram: {
-    // Pure English Channels (bound when UI is EN / LTR)
-    publicChannelEn: "https://t.me/RatePathEN",
-    vipChannelEn: "https://t.me/RatePathVIP_EN",
+    // Pure English Channels (bound when UI is EN / LTR) — verified live usernames
+    publicChannelEn: "https://t.me/RatePathLive",
+    // VIP channels are private (no public username) -> route visitors through the official bot
+    vipChannelEn: "https://t.me/RatePathTerminalBot?start=vip_en",
 
-    // Pure Arabic Channels (bound when UI is AR / RTL)
-    publicChannelAr: "https://t.me/RatePathAR",
-    vipChannelAr: "https://t.me/RatePathVIP_AR",
+    // Pure Arabic Channels (bound when UI is AR / RTL) — verified live usernames
+    publicChannelAr: "https://t.me/RatePath_AR",
+    vipChannelAr: "https://t.me/RatePathTerminalBot?start=vip_ar",
 
-    // Shared Official Bot & Mini App Base URL
-    botUrl: "https://t.me/RatePathBot",
+    // Shared Official Bot & Mini App Base URL (verified via Telegram getMe)
+    botUrl: "https://t.me/RatePathTerminalBot",
     miniAppUrl: `${PUBLIC_SITE_URL}/`,
 
     // Backward-compatible fallbacks
-    publicChannelUrl: "https://t.me/RatePathEN",
-    vipChannelUrl: "https://t.me/RatePathVIP_EN",
+    publicChannelUrl: "https://t.me/RatePathLive",
+    vipChannelUrl: "https://t.me/RatePathTerminalBot?start=vip_en",
   },
 };
 

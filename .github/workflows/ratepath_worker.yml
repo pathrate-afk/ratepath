@@ -1,5 +1,9 @@
 name: RatePath Cloud Worker
 
+# GitHub throttles `*/5` schedules to roughly once per hour on free runners.
+# Each run therefore loops internally (one pricing cycle every 5 minutes for ~50 minutes)
+# so live_feed.json / catalog_feed.json stay fresh continuously. `concurrency` guarantees
+# only one loop runs at a time; the next queued trigger takes over when it finishes.
 on:
   schedule:
     - cron: "*/5 * * * *"
@@ -14,9 +18,32 @@ concurrency:
 
 jobs:
   run-market-cycle:
-    name: Fetch Markets, Analyze Macro News & Publish Live Feed
+    name: 5-Minute Pricing Loop, Catalog & Change-Only Rates Bulletin
     runs-on: ubuntu-latest
-    timeout-minutes: 4
+    timeout-minutes: 58
+    env:
+      PYTHONUTF8: "1"
+      GEMINI_API_KEY_1: ${{ secrets.GEMINI_API_KEY_1 }}
+      GEMINI_API_KEY_2: ${{ secrets.GEMINI_API_KEY_2 }}
+      GEMINI_API_KEY_3: ${{ secrets.GEMINI_API_KEY_3 }}
+      GROQ_API_KEY_1: ${{ secrets.GROQ_API_KEY_1 }}
+      GROQ_API_KEY_2: ${{ secrets.GROQ_API_KEY_2 }}
+      GROQ_API_KEY_3: ${{ secrets.GROQ_API_KEY_3 }}
+      OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+      UPSTASH_REDIS_REST_URL: ${{ secrets.UPSTASH_REDIS_REST_URL }}
+      UPSTASH_REDIS_REST_TOKEN: ${{ secrets.UPSTASH_REDIS_REST_TOKEN }}
+      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+      ADMIN_CHAT_ID: ${{ secrets.ADMIN_CHAT_ID }}
+      TELEGRAM_PUBLIC_CHANNEL_EN: ${{ secrets.TELEGRAM_PUBLIC_CHANNEL_EN }}
+      TELEGRAM_VIP_CHANNEL_EN: ${{ secrets.TELEGRAM_VIP_CHANNEL_EN }}
+      TELEGRAM_PUBLIC_CHANNEL_AR: ${{ secrets.TELEGRAM_PUBLIC_CHANNEL_AR }}
+      TELEGRAM_VIP_CHANNEL_AR: ${{ secrets.TELEGRAM_VIP_CHANNEL_AR }}
+      MINI_APP_URL: ${{ secrets.MINI_APP_URL }}
+      PUBLIC_SITE_URL: ${{ secrets.PUBLIC_SITE_URL }}
+      CMC_PRO_API_KEY: ${{ secrets.CMC_PRO_API_KEY }}
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
     steps:
       - name: Checkout repository
@@ -36,51 +63,42 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Execute Lane-1 pricing, catalog & change-only Rates Bulletin cycle (zero news alerts)
-        env:
-          PYTHONUTF8: "1"
-          GEMINI_API_KEY_1: ${{ secrets.GEMINI_API_KEY_1 }}
-          GEMINI_API_KEY_2: ${{ secrets.GEMINI_API_KEY_2 }}
-          GEMINI_API_KEY_3: ${{ secrets.GEMINI_API_KEY_3 }}
-          GROQ_API_KEY_1: ${{ secrets.GROQ_API_KEY_1 }}
-          GROQ_API_KEY_2: ${{ secrets.GROQ_API_KEY_2 }}
-          GROQ_API_KEY_3: ${{ secrets.GROQ_API_KEY_3 }}
-          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
-          UPSTASH_REDIS_REST_URL: ${{ secrets.UPSTASH_REDIS_REST_URL }}
-          UPSTASH_REDIS_REST_TOKEN: ${{ secrets.UPSTASH_REDIS_REST_TOKEN }}
-          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          ADMIN_CHAT_ID: ${{ secrets.ADMIN_CHAT_ID }}
-          TELEGRAM_PUBLIC_CHANNEL_EN: ${{ secrets.TELEGRAM_PUBLIC_CHANNEL_EN }}
-          TELEGRAM_VIP_CHANNEL_EN: ${{ secrets.TELEGRAM_VIP_CHANNEL_EN }}
-          TELEGRAM_PUBLIC_CHANNEL_AR: ${{ secrets.TELEGRAM_PUBLIC_CHANNEL_AR }}
-          TELEGRAM_VIP_CHANNEL_AR: ${{ secrets.TELEGRAM_VIP_CHANNEL_AR }}
-          MINI_APP_URL: ${{ secrets.MINI_APP_URL }}
-          CMC_PRO_API_KEY: ${{ secrets.CMC_PRO_API_KEY }}
-        run: python -m backend.run_cycle
-
-      - name: Force-push live_feed.json & catalog_feed.json as clean orphan commit to live-data branch
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Execute Lane-1 pricing, catalog & change-only Rates Bulletin loop (zero news alerts)
         run: |
-          set -euo pipefail
-          test -s frontend/public/live_feed.json
+          set -uo pipefail
+          LOOP_END=$(( $(date +%s) + 50 * 60 ))
+          CYCLE=0
+          while [ "$(date +%s)" -lt "$LOOP_END" ]; do
+            CYCLE=$((CYCLE + 1))
+            CYCLE_START=$(date +%s)
+            echo "=== RatePath cycle #${CYCLE} @ $(date -u +%H:%M:%SZ) ==="
 
-          STAGE_DIR="$(mktemp -d)"
-          cp frontend/public/live_feed.json "$STAGE_DIR/live_feed.json"
-          if [ -s frontend/public/catalog_feed.json ]; then
-            cp frontend/public/catalog_feed.json "$STAGE_DIR/catalog_feed.json"
-          fi
+            if python -m backend.run_cycle && test -s frontend/public/live_feed.json; then
+              # Force-push ONLY live_feed.json & catalog_feed.json as a clean orphan commit to live-data
+              STAGE_DIR="$(mktemp -d)"
+              cp frontend/public/live_feed.json "$STAGE_DIR/live_feed.json"
+              if [ -s frontend/public/catalog_feed.json ]; then
+                cp frontend/public/catalog_feed.json "$STAGE_DIR/catalog_feed.json"
+              fi
+              (
+                cd "$STAGE_DIR"
+                git init -b live-data -q
+                git config user.name "RatePath Serverless Bot"
+                git config user.email "bot@ratepath.io"
+                git add live_feed.json
+                if [ -s catalog_feed.json ]; then git add catalog_feed.json; fi
+                git commit -q -m "chore(live-data): update live_feed.json & catalog_feed.json ($(date -u +%Y-%m-%dT%H:%M:%SZ))"
+                git remote add origin "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+                git push --force origin live-data
+              ) || echo "live-data push failed on cycle ${CYCLE} (will retry next cycle)"
+              rm -rf "$STAGE_DIR"
+            else
+              echo "cycle ${CYCLE} failed; keeping previous live-data snapshot"
+            fi
 
-          cd "$STAGE_DIR"
-          git init -b live-data
-          git config user.name "RatePath Serverless Bot"
-          git config user.email "bot@ratepath.io"
-          git add live_feed.json
-          if [ -s catalog_feed.json ]; then
-            git add catalog_feed.json
-          fi
-          git commit -m "chore(live-data): update live_feed.json & catalog_feed.json ($(date -u +%Y-%m-%dT%H:%M:%SZ))"
-          git remote add origin "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
-          git push --force origin live-data
+            ELAPSED=$(( $(date +%s) - CYCLE_START ))
+            REMAINING=$(( LOOP_END - $(date +%s) ))
+            SLEEP_FOR=$(( 300 - ELAPSED ))
+            if [ "$REMAINING" -le 300 ]; then break; fi
+            if [ "$SLEEP_FOR" -gt 0 ]; then sleep "$SLEEP_FOR"; fi
+          done

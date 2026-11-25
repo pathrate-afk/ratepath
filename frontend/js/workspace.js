@@ -106,6 +106,20 @@ export function loadWorkspaceLocal() {
   }
 }
 
+function getTelegramCloudStorage() {
+  try {
+    const tg = window.Telegram?.WebApp;
+    // CloudStorage exists only inside real Telegram clients supporting Bot API >= 6.9
+    if (!tg || !tg.initData || typeof tg.isVersionAtLeast !== "function" || !tg.isVersionAtLeast("6.9")) {
+      return null;
+    }
+    const cloud = tg.CloudStorage;
+    return cloud && typeof cloud.getItem === "function" ? cloud : null;
+  } catch {
+    return null;
+  }
+}
+
 export function saveWorkspaceLocal(workspace) {
   const clean = normalizeWorkspace(workspace);
   const serialized = JSON.stringify(clean);
@@ -117,7 +131,7 @@ export function saveWorkspaceLocal(workspace) {
 
   // Mirror automatically to Telegram Mini App CloudStorage when available
   try {
-    const cloud = window.Telegram?.WebApp?.CloudStorage;
+    const cloud = getTelegramCloudStorage();
     if (cloud && typeof cloud.setItem === "function" && serialized.length <= 4000) {
       cloud.setItem(WORKSPACE_STORAGE_KEY, serialized);
     }
@@ -130,8 +144,8 @@ export function saveWorkspaceLocal(workspace) {
 export function loadWorkspaceFromTelegramCloud() {
   return new Promise((resolve) => {
     try {
-      const cloud = window.Telegram?.WebApp?.CloudStorage;
-      if (!cloud || typeof cloud.getItem !== "function") {
+      const cloud = getTelegramCloudStorage();
+      if (!cloud) {
         resolve(null);
         return;
       }

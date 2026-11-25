@@ -463,8 +463,21 @@ function renderStatusAndTopTicker() {
   const statusBadge = document.getElementById("status-badge");
   const updatedEl = document.getElementById("last-updated-time");
 
-  const healthy = !state.isOffline && state.feed.meta?.status === "healthy";
-  if (statusText) statusText.textContent = healthy ? t.liveHealthy : t.offlineMode;
+  const generatedMs = Date.parse(state.feed.meta?.generated_at || "");
+  const ageMinutes = Number.isFinite(generatedMs)
+    ? Math.max(0, Math.floor((Date.now() - generatedMs) / 60000))
+    : null;
+  const isStale = ageMinutes !== null && ageMinutes > 30;
+  const healthy = !state.isOffline && state.feed.meta?.status === "healthy" && !isStale;
+  if (statusText) {
+    if (state.isOffline) {
+      statusText.textContent = t.offlineMode;
+    } else if (isStale) {
+      statusText.textContent = t.delayedFeed.replace("{m}", String(ageMinutes));
+    } else {
+      statusText.textContent = t.liveHealthy;
+    }
+  }
   if (statusDot) {
     statusDot.className = healthy
       ? "w-2 h-2 rounded-full bg-emerald-400 animate-pulse"
@@ -472,8 +485,8 @@ function renderStatusAndTopTicker() {
   }
   if (statusBadge) {
     statusBadge.className = healthy
-      ? "inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold bg-emerald-500/10 text-emerald-300 border border-emerald-500/30"
-      : "inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold bg-amber-500/10 text-amber-300 border border-amber-500/30";
+      ? "inline-flex items-center gap-1.5 px-2 sm:px-2.5 py-1 rounded-full text-[11px] font-semibold whitespace-nowrap shrink-0 bg-emerald-500/10 text-emerald-300 border border-emerald-500/30"
+      : "inline-flex items-center gap-1.5 px-2 sm:px-2.5 py-1 rounded-full text-[11px] font-semibold whitespace-nowrap shrink-0 bg-amber-500/10 text-amber-300 border border-amber-500/30";
   }
   if (updatedEl) {
     updatedEl.textContent = (state.feed.meta?.generated_at || "").replace("T", " ").replace("Z", " UTC");
@@ -487,7 +500,16 @@ function renderStatusAndTopTicker() {
     .map((id) => {
       const item = state.catalog.byId[id];
       if (!item) return "";
-      const delta = state.tickDeltas[id] || { pctStr: "0.00%", direction: "neutral" };
+      const tick = state.tickDeltas[id] || { pctStr: "0.00%", direction: "neutral" };
+      // Prefer real 24h change (CoinMarketCap) when available; hide meaningless 0.00% pills
+      const chg24 = item.change24hPct && item.change24hPct !== "0.00" ? item.change24hPct : null;
+      const delta = chg24
+        ? {
+            pctStr: `${chg24}%`,
+            direction: chg24.startsWith("-") ? "bearish" : "bullish",
+          }
+        : tick;
+      const showPct = delta.pctStr !== "0.00%";
       const badgeColor =
         delta.direction === "bullish"
           ? "text-emerald-400 bg-emerald-500/10 border-emerald-500/25"
@@ -500,14 +522,17 @@ function renderStatusAndTopTicker() {
         id === "SYP"
           ? getSyriaRevolutionFlagSvg("w-[18px] h-[12px] rounded-[2px] shrink-0 ring-1 ring-white/20")
           : "";
+      const pctHtml = showPct
+        ? `<span class="text-[10px] font-semibold px-1.5 py-0.5 rounded border font-mono ${badgeColor}" dir="ltr">${arrow} ${escapeHtml(delta.pctStr.replace(/^\+/, ""))}</span>`
+        : "";
 
       return `
         <button type="button" data-select-asset="${escapeHtml(id)}"
-          class="shrink-0 inline-flex items-center gap-2 px-3 py-1 rounded-lg bg-slate-900/80 hover:bg-slate-800/90 border border-slate-800 hover:border-amber-500/40 transition-colors cursor-pointer">
+          class="shrink-0 inline-flex items-center gap-2 px-3 py-1 rounded-lg bg-slate-900/80 hover:bg-slate-800/90 border border-slate-800 hover:border-amber-500/40 transition-colors cursor-pointer whitespace-nowrap">
           ${flagHtml}
           <span class="text-xs font-bold text-amber-300 font-mono" dir="ltr">${escapeHtml(item.pairLabel)}</span>
           <span class="text-xs font-bold text-white font-mono tabular-nums" dir="ltr">${escapeHtml(item.spotDisplay)}</span>
-          <span class="text-[10px] font-semibold px-1.5 py-0.5 rounded border font-mono ${badgeColor}" dir="ltr">${arrow} ${escapeHtml(delta.pctStr)}</span>
+          ${pctHtml}
         </button>
       `;
     })
@@ -651,18 +676,33 @@ function applyMonetizationConfigDom() {
     if (el && url) el.setAttribute("href", safeHref(url));
   };
 
-  setHref("nowpayments-vip-link", vipCfg.nowPaymentsVipUrl);
   setHref("aads-partner-link", adCfg.aAdsPartnerUrl);
+
+  // Hide NOWPayments CTA until a real (non-placeholder) checkout URL is configured
+  const npLink = document.getElementById("nowpayments-vip-link");
+  const npUrl = String(vipCfg.nowPaymentsVipUrl || "").trim();
+  if (npLink) {
+    if (/^https:\/\//i.test(npUrl) && !/placeholder/i.test(npUrl)) {
+      npLink.setAttribute("href", npUrl);
+      npLink.classList.remove("hidden");
+    } else {
+      npLink.classList.add("hidden");
+    }
+  }
 
   const unitId = String(adCfg.aAdsUnitId || "").trim();
   const liveAdBox = document.getElementById("aads-live-unit");
   const placeholderBar = document.getElementById("aads-placeholder-bar");
+  const adSlot = document.getElementById("aads-banner-slot");
   if (liveAdBox && /^\d+$/.test(unitId)) {
     const sizeStr = String(adCfg.aAdsSize || "728x90");
     liveAdBox.innerHTML = `<iframe data-aa="${escapeHtml(unitId)}" src="https://ad.a-ads.com/${escapeHtml(unitId)}?size=${escapeHtml(sizeStr)}" style="width:728px;height:90px;border:0;padding:0;overflow:hidden;background-color:transparent;" title="A-Ads Sponsor"></iframe>`;
     liveAdBox.classList.remove("hidden");
     liveAdBox.classList.add("flex");
     placeholderBar?.classList.add("hidden");
+  } else {
+    // No live ad unit yet -> hide the empty "sponsored" placeholder for a clean public launch
+    adSlot?.classList.add("hidden");
   }
 }
 
@@ -779,7 +819,9 @@ function renderWorkspaceToolbarState() {
   const covBadge = document.getElementById("catalog-coverage-badge");
   if (covBadge && state.catalogFeed?.meta) {
     const fm = state.catalogFeed.meta;
-    covBadge.textContent = `${fm.fiat_count || 155}+ FX • SYP • Gold/Silver • CMC ${fm.crypto_count || 300}`;
+    covBadge.textContent = t.coverageBadge
+      .replace("{fx}", String(fm.fiat_count || 155))
+      .replace("{cmc}", String(fm.crypto_count || 300));
   }
 }
 
@@ -812,10 +854,11 @@ function renderConversionMatrix() {
   const spreadPct = state.feed?.gold?.screen_vs_real_spread_pct;
   if (spreadBadge) {
     if (spreadPct !== undefined && spreadPct !== null && String(spreadPct).trim() !== "") {
-      spreadBadge.textContent =
+      spreadBadge.innerHTML =
         state.lang === "ar"
-          ? `فارق السوق الحقيقي: ${spreadPct}%`
-          : `Screen vs Real: ${spreadPct}%`;
+          ? `فارق السوق الحقيقي: <bdi dir="ltr">${escapeHtml(spreadPct)}%</bdi>`
+          : `Screen vs Real: <bdi dir="ltr">${escapeHtml(spreadPct)}%</bdi>`;
+      spreadBadge.setAttribute("dir", state.lang === "ar" ? "rtl" : "ltr");
       spreadBadge.classList.remove("hidden");
     } else {
       spreadBadge.classList.add("hidden");
@@ -856,9 +899,9 @@ function renderConversionMatrix() {
 
       const badgeClass =
         signalDir === "bullish"
-          ? "bg-emerald-500/12 text-emerald-300 border-emerald-500/30"
+          ? "bg-emerald-500/15 text-emerald-300 border-emerald-500/30"
           : signalDir === "bearish"
-          ? "bg-rose-500/12 text-rose-300 border-rose-500/30"
+          ? "bg-rose-500/15 text-rose-300 border-rose-500/30"
           : "bg-slate-800 text-slate-300 border-slate-700";
 
       const signalLabel = chg24
@@ -894,25 +937,24 @@ function renderConversionMatrix() {
         `
         : "";
 
-      const subTag =
-        item.id === "SYP" && item.sourceTag === "sp-today"
-          ? `<span class="text-[9px] font-mono text-emerald-400/90">SP-Today</span>`
-          : item.cmcRank
-          ? `<span class="text-[9px] font-mono text-slate-500">#${Number(item.cmcRank)}</span>`
-          : isBase
-          ? `<span class="text-amber-300 font-bold">BASE</span>`
-          : "";
+      const subTag = isBase
+        ? `<span class="text-amber-300 font-bold">${escapeHtml(t.baseBadge)}</span>`
+        : item.id === "SYP" && item.sourceTag === "sp-today"
+        ? `<span class="text-[9px] font-mono text-emerald-400/90 whitespace-nowrap">${escapeHtml(t.spTodayBadge)}</span>`
+        : item.cmcRank
+        ? `<span class="text-[9px] font-mono text-slate-500">#${Number(item.cmcRank)}</span>`
+        : "";
 
       return `
         <div data-ws-card="${escapeHtml(item.id)}" ${isEdit ? 'draggable="true"' : `data-select-asset="${escapeHtml(item.id)}" role="button" tabindex="0"`}
           class="group relative p-3 rounded-xl border transition-all select-none ${isEdit ? "rp-edit-card" : "cursor-pointer"} ${activeRing}">
           ${editControlsHtml}
-          <div class="flex items-center justify-between gap-1.5 mb-1.5">
-            <div class="flex items-center gap-1.5 min-w-0">
+          <div class="flex flex-wrap items-start justify-between gap-1.5 mb-1.5">
+            <div class="flex items-center gap-1.5 min-w-0 flex-1 basis-[6.5rem]">
               ${renderAssetIconBadge(item)}
-              <div class="truncate">
+              <div class="min-w-0">
                 <span class="text-xs font-extrabold text-white font-mono" dir="ltr">${escapeHtml(item.code)}</span>
-                <span class="block text-[11px] text-slate-400 truncate">${escapeHtml(getLocalizedAssetName(item))}</span>
+                <span class="block text-[11px] leading-tight text-slate-400 line-clamp-2 break-normal" title="${escapeHtml(getLocalizedAssetName(item))}">${escapeHtml(getLocalizedAssetName(item))}</span>
               </div>
             </div>
             <span class="text-[10px] font-semibold px-1.5 py-0.5 rounded border shrink-0 font-mono ${badgeClass}" dir="ltr">
@@ -930,6 +972,19 @@ function renderConversionMatrix() {
       `;
     })
     .join("");
+}
+
+function translateFundingSignal(signal) {
+  const raw = String(signal || "neutral_carry");
+  const isAr = state.lang === "ar";
+  if (raw === "neutral_carry") return isAr ? "توازن محايد" : "Neutral carry";
+  const parts = raw.split("_");
+  if (parts.length === 4 && parts[0] === "short" && parts[2] === "long") {
+    const shortEx = parts[1].toUpperCase();
+    const longEx = parts[3].toUpperCase();
+    return isAr ? `بيع ${shortEx} · شراء ${longEx}` : `Short ${shortEx} · Long ${longEx}`;
+  }
+  return raw.replace(/_/g, " ");
 }
 
 function renderFundingSpreads() {
@@ -968,8 +1023,8 @@ function renderFundingSpreads() {
             ${escapeHtml(f.annualized_spread_pct)}%
           </td>
           <td class="py-2.5 px-3 text-end">
-            <span class="inline-block text-[10px] font-mono font-semibold px-2 py-0.5 rounded border ${pillClass}" dir="ltr">
-              ${escapeHtml(f.arbitrage_signal.replace(/_/g, " "))}
+            <span class="inline-block text-[10px] font-mono font-semibold px-2 py-0.5 rounded border leading-tight max-w-[8rem] text-center ${pillClass}" dir="${state.lang === "ar" ? "rtl" : "ltr"}">
+              ${escapeHtml(translateFundingSignal(f.arbitrage_signal))}
             </span>
           </td>
         </tr>
@@ -1636,7 +1691,16 @@ function bindEvents() {
   if (amountInput) {
     amountInput.value = state.amount;
     amountInput.addEventListener("input", (e) => {
-      state.amount = e.target.value;
+      // Accept only Western/Arabic-Indic digits and one decimal separator
+      const raw = String(e.target.value || "");
+      let cleaned = raw.replace(/[^0-9\u0660-\u0669.,\u066B\u066C]/g, "");
+      const firstDot = cleaned.search(/[.\u066B]/);
+      if (firstDot !== -1) {
+        cleaned =
+          cleaned.slice(0, firstDot + 1) + cleaned.slice(firstDot + 1).replace(/[.\u066B]/g, "");
+      }
+      if (cleaned !== raw) e.target.value = cleaned;
+      state.amount = cleaned;
       renderConversionMatrix();
     });
   }
