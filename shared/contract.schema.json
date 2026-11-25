@@ -418,6 +418,10 @@
           "type": "string",
           "minLength": 2
         },
+        "screen_vs_real_spread_pct": {
+          "$ref": "#/$defs/decimal_non_negative",
+          "description": "Absolute percentage spread between screen XAU/USD and tokenized PAXG/secondary real liquidity (Agent 7 Price Guardian)."
+        },
         "prices": {
           "type": "object",
           "additionalProperties": false,

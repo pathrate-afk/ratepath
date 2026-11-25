@@ -539,6 +539,21 @@ function renderConversionMatrix() {
     usdReadout.textContent = `$${state.conversionResult.usdEquivalentFormatted} USD`;
   }
 
+  // Render Agent 7 Price Guardian screen_vs_real_spread_pct badge when present
+  const spreadBadge = document.getElementById("gold-spread-badge");
+  const spreadPct = state.feed?.gold?.screen_vs_real_spread_pct;
+  if (spreadBadge) {
+    if (spreadPct !== undefined && spreadPct !== null && String(spreadPct).trim() !== "") {
+      spreadBadge.textContent =
+        state.lang === "ar"
+          ? `فارق السوق الحقيقي: ${spreadPct}%`
+          : `Screen vs Real: ${spreadPct}%`;
+      spreadBadge.classList.remove("hidden");
+    } else {
+      spreadBadge.classList.add("hidden");
+    }
+  }
+
   const renderGroup = (category) =>
     state.catalog.ordered
       .filter((item) => item.category === category)

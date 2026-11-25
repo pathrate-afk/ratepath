@@ -134,7 +134,10 @@ def test_telegram_payload_formatting_and_upstash_deduplication(tmp_path: Path) -
         lang="en",
     )
     assert not _ARABIC_RE.search(vip_en["text"])
-    assert "Historical Macro Twin Projection" in vip_en["text"]
+    assert "📌 <b>Event [VIP]:</b>" in vip_en["text"]
+    assert "💰 <b>Money Flow:</b>" in vip_en["text"]
+    assert "🕰 <b>Historical Twin:</b>" in vip_en["text"]
+    assert "⚠️ <b>Verdict:</b>" in vip_en["text"]
     assert "2.19% APR" in vip_en["text"]
     assert "short_binance_long_bybit" in vip_en["text"]
     assert vip_en["reply_markup"]["inline_keyboard"][0][0]["web_app"]["url"] == "https://ratepath.io/?lang=en"
@@ -149,8 +152,11 @@ def test_telegram_payload_formatting_and_upstash_deduplication(tmp_path: Path) -
     )
     assert pub_ar["chat_id"] == "@RatePathAR"
     assert _ARABIC_RE.search(pub_ar["text"])
-    assert "Live Macro Flash" not in pub_ar["text"]
-    assert "ريت باث — عاجل الأسواق العالمية" in pub_ar["text"]
+    assert "📌 <b>الحدث:</b>" in pub_ar["text"]
+    assert "💰 <b>حركة السيولة:</b>" in pub_ar["text"]
+    assert "🕰 <b>التوأم التاريخي:</b>" in pub_ar["text"]
+    assert "⚠️ <b>الخلاصة:</b>" in pub_ar["text"]
+    assert "Money Flow" not in pub_ar["text"]
     ar_btn = pub_ar["reply_markup"]["inline_keyboard"][0][0]
     assert ar_btn["web_app"]["url"] == "https://ratepath.io/?lang=ar"
     assert _ARABIC_RE.search(ar_btn["text"])
@@ -163,8 +169,8 @@ def test_telegram_payload_formatting_and_upstash_deduplication(tmp_path: Path) -
         lang="ar",
     )
     assert _ARABIC_RE.search(vip_ar["text"])
-    assert "إسقاط توأم الحدث التاريخي" in vip_ar["text"]
-    assert "Historical Macro Twin Projection" not in vip_ar["text"]
+    assert "🕰 <b>التوأم التاريخي:</b>" in vip_ar["text"]
+    assert "Historical Twin" not in vip_ar["text"]
     assert "2.19%" in vip_ar["text"]
     assert vip_ar["reply_markup"]["inline_keyboard"][0][0]["web_app"]["url"] == "https://ratepath.io/?lang=ar"
 

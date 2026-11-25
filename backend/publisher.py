@@ -17,6 +17,7 @@ from typing import Any
 
 import jsonschema
 
+from backend.agents.price_guardian import verify_gold_with_price_guardian
 from backend.ai_strategist import analyze_macro_news_batch
 from backend.config import (
     CONTRACT_SCHEMA_PATH,
@@ -158,8 +159,9 @@ async def execute_live_cycle(
     enforce_previous_tick_guard: bool = False,
     run_evaluator: bool = True,
     broadcast_telegram: bool = True,
+    use_llm: bool = True,
 ) -> dict[str, Any]:
-    """Fetch live markets + macro RSS, compute Decimal rates, run Dual-Pass AI, and publish."""
+    """Fetch live markets + macro RSS, verify via Agent 7 Price Guardian, run AI, and publish."""
     enforce_utf8_runtime()
     resolved_settings = settings or Settings.load()
     prev_fiat, prev_gold, prev_crypto = (
@@ -177,8 +179,15 @@ async def execute_live_cycle(
             fetch_macro_news(client, max_items=5),
         )
 
+        # Lane 1 Agent 7 (Price Guardian): Pure Decimal cross-check against PAXG/USDT (<1s, zero LLM)
+        guardian_verdict = await verify_gold_with_price_guardian(
+            client,
+            gold_res.xau_oz_usd,
+            screen_source=gold_res.source,
+        )
+
         fiat_rates_table = build_fiat_rates(fiat_res.units_per_usd, prev_fiat)
-        gold_prices_table = compute_gold_prices(gold_res.xau_oz_usd, prev_gold)
+        gold_prices_table = compute_gold_prices(guardian_verdict.accepted_price, prev_gold)
 
         primary_venue, secondary_venue = funding_pair
         crypto_assets_table: dict[str, dict[str, Any]] = {}
@@ -213,10 +222,27 @@ async def execute_live_cycle(
             "USD_EGP": fiat_rates_table["EGP"]["units_per_usd"],
         }
 
+        ai_settings = (
+            resolved_settings
+            if use_llm
+            else Settings(
+                gemini_api_key="placeholder",
+                groq_api_key="placeholder",
+                openrouter_api_key="placeholder",
+                supabase_url=resolved_settings.supabase_url,
+                supabase_key=resolved_settings.supabase_key,
+                upstash_redis_rest_url=resolved_settings.upstash_redis_rest_url,
+                upstash_redis_rest_token=resolved_settings.upstash_redis_rest_token,
+                telegram_bot_token=resolved_settings.telegram_bot_token,
+                telegram_public_channel=resolved_settings.telegram_public_channel,
+                telegram_vip_channel=resolved_settings.telegram_vip_channel,
+                admin_chat_id=resolved_settings.admin_chat_id,
+            )
+        )
         analyzed_news, ai_mode = await analyze_macro_news_batch(
             raw_news,
             market_context,
-            settings=resolved_settings,
+            settings=ai_settings,
             client=client,
         )
 
@@ -228,7 +254,7 @@ async def execute_live_cycle(
             "schema_version": "1.0.0",
             "generated_at": generated_at,
             "ai_mode": ai_mode,
-            "status": "healthy",
+            "status": "degraded" if guardian_verdict.corrupt_spike_rejected else "healthy",
         },
         "fiat": {
             "base": "USD",
@@ -240,7 +266,8 @@ async def execute_live_cycle(
             "currency": "USD",
             "troy_ounce_grams": "31.1034768",
             "updated_at": gold_res.updated_at,
-            "source": gold_res.source,
+            "source": guardian_verdict.source_used,
+            "screen_vs_real_spread_pct": guardian_verdict.screen_vs_real_spread_pct,
             "prices": gold_prices_table,
         },
         "crypto": {

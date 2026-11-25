@@ -38,10 +38,10 @@ def _make_placeholder_settings() -> Settings:
 
 
 def test_backend_ast_enforces_zero_floats_and_explicit_utf8() -> None:
-    """Static AST audit of `backend/*.py`: ZERO floats, `ensure_ascii=False`, `encoding='utf-8'`."""
+    """Static AST audit of `backend/**/*.py`: ZERO floats, `ensure_ascii=False`, `encoding='utf-8'`."""
     backend_dir = WORKSPACE_ROOT / "backend"
-    py_files = sorted(backend_dir.glob("*.py"))
-    assert len(py_files) >= 6
+    py_files = sorted(backend_dir.rglob("*.py"))
+    assert len(py_files) >= 14
 
     for py_file in py_files:
         source = py_file.read_text(encoding="utf-8")

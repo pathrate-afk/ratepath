@@ -1,0 +1,26 @@
+name: RatePath Monthly Cron Keepalive
+
+on:
+  schedule:
+    - cron: "0 0 1 * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  keepalive-guard:
+    name: Prevent 60-Day GitHub Actions Schedule Auto-Disable
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout main branch
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Record empty keepalive commit on main
+        run: |
+          git config user.name "RatePath Keepalive Bot"
+          git config user.email "bot@ratepath.io"
+          git commit --allow-empty -m "chore(keepalive): monthly 60-day schedule guard ($(date -u +%Y-%m-%d))"
+          git push origin HEAD:main

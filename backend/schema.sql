@@ -13,7 +13,7 @@ CREATE TABLE IF NOT EXISTS public.market_memory (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     event_key TEXT UNIQUE NOT NULL,
     record_type TEXT NOT NULL CHECK (
-        record_type IN ('historical_macro_twin', 'live_prediction', 'evaluated_lesson')
+        record_type IN ('historical_macro_twin', 'live_prediction', 'evaluated_lesson', 'calibration_lesson')
     ),
     event_timestamp TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     macro_regime TEXT NOT NULL DEFAULT 'global_macro',
@@ -135,6 +135,16 @@ AS $$
     ORDER BY mm.embedding <=> query_embedding ASC
     LIMIT match_count;
 $$;
+
+-- 5b. Idempotent Migration Guard for Existing Deployments (adds `calibration_lesson`)
+DO $$
+BEGIN
+    ALTER TABLE public.market_memory DROP CONSTRAINT IF EXISTS market_memory_record_type_check;
+    ALTER TABLE public.market_memory ADD CONSTRAINT market_memory_record_type_check
+        CHECK (record_type IN ('historical_macro_twin', 'live_prediction', 'evaluated_lesson', 'calibration_lesson'));
+EXCEPTION WHEN undefined_table THEN
+    NULL;
+END $$;
 
 -- 6. 24-Hour Due Predictions View for Evaluator Loop
 CREATE OR REPLACE VIEW public.v_pending_24h_evaluations AS

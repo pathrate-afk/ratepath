@@ -171,8 +171,9 @@ async def run_single_cycle(
     telegram_broadcaster: Any = None,
     http_client: httpx.AsyncClient | None = None,
     now_utc: datetime | None = None,
+    lane1_fast_pricing: bool = True,
 ) -> dict[str, Any]:
-    """Run 1 complete market/news/AI/Telegram cycle plus hourly-gated 24h evaluation."""
+    """Run 1 complete Lane-1 fast cycle (<5s, zero LLM, Agent 7 Price Guardian) + hourly eval gate."""
     enforce_utf8_runtime()
     cfg = settings or Settings.load()
     gate = eval_gate or HourlyEvaluationGate(settings=cfg)
@@ -181,7 +182,7 @@ async def run_single_cycle(
     now_ts = utc_epoch_seconds(now_dt)
 
     try:
-        # 1. Execute market + RSS + 6-key AI + atomic contract-validated `live_feed.json` write
+        # 1. Execute market + RSS + Agent 7 Price Guardian + atomic `live_feed.json` write
         if cycle_executor is not None:
             feed_payload = await cycle_executor()
         else:
@@ -191,6 +192,7 @@ async def run_single_cycle(
                 settings=cfg,
                 run_evaluator=False,
                 broadcast_telegram=False,
+                use_llm=not lane1_fast_pricing,
             )
 
         # 2. Deduplicated 4-channel EN/AR Telegram broadcast

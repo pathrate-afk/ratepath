@@ -184,14 +184,14 @@
           <div class="flex flex-wrap items-start justify-between gap-2">
             <div>
               <h1 class="text-base sm:text-lg font-extrabold text-white tracking-tight" data-i18n="converterTitle">
-                Single-Input Cross-Asset Converter
+                Instant Converter
               </h1>
               <p class="text-xs text-slate-400 mt-0.5" data-i18n="converterSubtitle">
-                Type once — instant BigInt Decimal conversion across 14 Fiat, Gold &amp; Crypto benchmarks
+                Enter one amount — live conversion across currencies, gold &amp; crypto
               </p>
             </div>
             <span class="text-[11px] font-medium text-amber-300/90 bg-amber-500/10 border border-amber-500/25 px-2.5 py-1 rounded-lg" data-i18n="tapToSetBase">
-              Click any card to set as active base
+              Tap any card to set base
             </span>
           </div>
 
@@ -250,7 +250,7 @@
           <div class="p-4 rounded-2xl bg-slate-900/45 border border-slate-800/80 space-y-3">
             <div class="flex items-center justify-between">
               <h2 class="text-xs sm:text-sm font-extrabold uppercase tracking-wider text-slate-200" data-i18n="sectionFiat">
-                Fiat Currencies (USD Cross-Rates)
+                World Currencies
               </h2>
               <span class="text-[11px] font-mono text-slate-500" dir="ltr">USD • EUR • GBP • SAR • AED • EGP • TRY</span>
             </div>
@@ -259,10 +259,13 @@
 
           <!-- Spot & Karat Gold -->
           <div class="p-4 rounded-2xl bg-slate-900/45 border border-amber-500/20 space-y-3">
-            <div class="flex items-center justify-between">
-              <h2 class="text-xs sm:text-sm font-extrabold uppercase tracking-wider text-amber-300" data-i18n="sectionGold">
-                Spot &amp; Karat Gold (31.1034768g / oz)
-              </h2>
+            <div class="flex items-center justify-between gap-2">
+              <div class="flex items-center gap-2">
+                <h2 class="text-xs sm:text-sm font-extrabold uppercase tracking-wider text-amber-300" data-i18n="sectionGold">
+                  Gold &amp; Karats
+                </h2>
+                <span id="gold-spread-badge" class="hidden text-[10px] font-mono font-bold px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-300 border border-emerald-500/30" dir="ltr"></span>
+              </div>
               <span class="text-[11px] font-mono text-amber-400/75" dir="ltr">XAU/OZ • 24K • 21K • 18K</span>
             </div>
             <div id="grid-gold" class="grid grid-cols-2 sm:grid-cols-4 gap-2.5"></div>
@@ -272,7 +275,7 @@
           <div class="p-4 rounded-2xl bg-slate-900/45 border border-slate-800/80 space-y-3">
             <div class="flex items-center justify-between">
               <h2 class="text-xs sm:text-sm font-extrabold uppercase tracking-wider text-slate-200" data-i18n="sectionCrypto">
-                Digital Assets (Spot Liquidity)
+                Crypto
               </h2>
               <span class="text-[11px] font-mono text-slate-500" dir="ltr">BTC • ETH • SOL</span>
             </div>
@@ -308,10 +311,10 @@
         <section id="funding-panel" class="p-4 sm:p-5 rounded-2xl bg-slate-900/55 border border-slate-800/90 space-y-3">
           <div>
             <h2 class="text-sm sm:text-base font-extrabold text-white" data-i18n="fundingTitle">
-              Perpetual Funding Spreads (8h Carry)
+              Funding Spreads
             </h2>
             <p class="text-xs text-slate-400 mt-0.5" data-i18n="fundingSubtitle">
-              Live cross-exchange arbitrage across Binance &amp; Bybit linear contracts
+              8h cross-exchange carry
             </p>
           </div>
 
@@ -338,10 +341,10 @@
         <section id="news-panel" class="p-4 sm:p-5 rounded-2xl bg-slate-900/55 border border-slate-800/90 space-y-3.5">
           <div>
             <h2 class="text-sm sm:text-base font-extrabold text-white" data-i18n="newsTitle">
-              Auditor-Verified Macro Intelligence
+              Market Pulse
             </h2>
             <p class="text-xs text-slate-400 mt-0.5" data-i18n="newsSubtitle">
-              Dual-Pass AI thesis, priced-in exhaustion warnings &amp; 24h asset biases
+              Verified catalysts, money flow &amp; 24h bias
             </p>
           </div>
 

@@ -257,6 +257,40 @@ def _translate_arbitrage_signal_ar(signal: str) -> str:
 # ---------------------------------------------------------------------------
 
 
+def _compact_money_flow(biases: dict[str, Any], lang: Literal["en", "ar"]) -> str:
+    """Produce a 1-line jargon-free money flow summary from 24h asset biases."""
+    inflows = [k for k, v in biases.items() if str(v).lower() == "bullish"]
+    outflows = [k for k, v in biases.items() if str(v).lower() == "bearish"]
+    if lang == "en":
+        if inflows and outflows:
+            return f"Into {'/'.join(inflows[:3])}; out of {'/'.join(outflows[:3])}"
+        if inflows:
+            return f"Rotating into {'/'.join(inflows[:4])}"
+        if outflows:
+            return f"De-risking out of {'/'.join(outflows[:4])}"
+        return "Balanced cash positioning across USD, Gold & Crypto"
+
+    if inflows and outflows:
+        return f"السيولة تتجه إلى {'/'.join(inflows[:3])} وتخرج من {'/'.join(outflows[:3])}"
+    if inflows:
+        return f"تدفقات شرائية نحو {'/'.join(inflows[:4])}"
+    if outflows:
+        return f"تخفيف مراكز وخروج من {'/'.join(outflows[:4])}"
+    return "توازن وترقّب للسيولة بين الدولار والذهب والكريبتو"
+
+
+def _compact_verdict(pw: dict[str, Any], lang: Literal["en", "ar"]) -> str:
+    """Return a crisp 1-line actionable verdict."""
+    active = bool(pw.get("active", False))
+    if lang == "en":
+        if active:
+            return "Mostly priced in — avoid chasing spikes; wait for pullback."
+        return "Fresh catalyst — monitor follow-through before scaling."
+    if active:
+        return "الخبر مسعّر مسبقاً غالباً — لا تلاحق القمم وانتظر التهدئة."
+    return "محفز جديد — راقب استمرارية السيولة قبل اتخاذ القرار."
+
+
 def build_public_channel_payload(
     news_item: dict[str, Any],
     feed_payload: dict[str, Any],
@@ -265,56 +299,61 @@ def build_public_channel_payload(
     mini_app_url: str = "https://ratepath.io/",
     lang: ChannelLang = "en",
 ) -> dict[str, Any]:
-    """Build pure-EN (`?lang=en`), pure-AR (`?lang=ar`), or legacy bilingual public flash post."""
+    """Build 5-second scannable 4-line pure-EN (`?lang=en`) or pure-AR (`?lang=ar`) flash post."""
     gold_oz = feed_payload.get("gold", {}).get("prices", {}).get("XAU_OZ", "N/A")
     btc_spot = feed_payload.get("crypto", {}).get("assets", {}).get("BTC", {}).get("spot_price", "N/A")
 
     en_block = news_item.get("en", {})
     ar_block = news_item.get("ar", {})
+    pw = news_item.get("priced_in_warning", {})
+    biases = news_item.get("assets_bias_24h", {})
+    twin = match_closest_historical_twin(news_item)
     src_name = str(news_item.get("source_name", "Global Wire"))
     src_name_ar = _SOURCE_AR_LABELS.get(src_name, src_name)
     src_url = str(news_item.get("source_url", "https://ratepath.io/"))
 
     if lang == "en":
         launch_url = build_lang_mini_app_url(mini_app_url, "en")
+        flow_en = _compact_money_flow(biases, "en")
+        verdict_en = _compact_verdict(pw, "en")
+        twin_en = str(twin.get("headline_en", "Historical macro precedent"))[:110]
         text = (
-            f"⚡ <b>RatePath — Live Macro Flash</b>\n\n"
-            f"<b>{_esc(en_block.get('title'))}</b>\n"
-            f"{_esc(en_block.get('summary'))}\n\n"
-            f"📊 <code>XAU/USD: ${_esc(gold_oz)}</code>  •  <code>BTC/USD: ${_esc(btc_spot)}</code>\n"
-            f"🔗 Source: <a href=\"{_esc(src_url)}\">{_esc(src_name)}</a>"
+            f"📌 <b>Event:</b> {_esc(en_block.get('title'))}\n"
+            f"💰 <b>Money Flow:</b> {_esc(flow_en)} · <code>XAU ${_esc(gold_oz)}</code> · <code>BTC ${_esc(btc_spot)}</code>\n"
+            f"🕰 <b>Historical Twin:</b> {_esc(twin_en)}\n"
+            f"⚠️ <b>Verdict:</b> {_esc(verdict_en)} (<a href=\"{_esc(src_url)}\">{_esc(src_name)}</a>)"
         )
         keyboard = [
-            [{"text": "📊 Open RatePath Terminal", "web_app": {"url": launch_url}}],
-            [{"text": f"🔗 {src_name} — Verified Source", "url": src_url}],
+            [{"text": "📊 Open RatePath", "web_app": {"url": launch_url}}],
+            [{"text": f"🔗 {src_name}", "url": src_url}],
         ]
     elif lang == "ar":
         launch_url = build_lang_mini_app_url(mini_app_url, "ar")
+        flow_ar = _compact_money_flow(biases, "ar")
+        verdict_ar = _compact_verdict(pw, "ar")
+        twin_ar = str(twin.get("headline_ar", "سوابق تاريخية للأسواق"))[:110]
         text = (
-            f"⚡ <b>ريت باث — عاجل الأسواق العالمية</b>\n\n"
-            f"<b>{_esc(ar_block.get('title'))}</b>\n"
-            f"{_esc(ar_block.get('summary'))}\n\n"
-            f"📊 أونصة الذهب: <code>${_esc(gold_oz)}</code>  •  البيتكوين: <code>${_esc(btc_spot)}</code>\n"
-            f"🔗 المصدر الموثّق: <a href=\"{_esc(src_url)}\">{_esc(src_name_ar)}</a>"
+            f"📌 <b>الحدث:</b> {_esc(ar_block.get('title'))}\n"
+            f"💰 <b>حركة السيولة:</b> {_esc(flow_ar)} · <code>الذهب ${_esc(gold_oz)}</code> · <code>بيتكوين ${_esc(btc_spot)}</code>\n"
+            f"🕰 <b>التوأم التاريخي:</b> {_esc(twin_ar)}\n"
+            f"⚠️ <b>الخلاصة:</b> {_esc(verdict_ar)} (<a href=\"{_esc(src_url)}\">{_esc(src_name_ar)}</a>)"
         )
         keyboard = [
-            [{"text": "📊 افتح منصة ريت باث التفاعلية", "web_app": {"url": launch_url}}],
-            [{"text": f"🔗 {src_name_ar} — المصدر الأصلي", "url": src_url}],
+            [{"text": "📊 افتح ريت باث", "web_app": {"url": launch_url}}],
+            [{"text": f"🔗 {src_name_ar}", "url": src_url}],
         ]
     else:
-        # Backward-compatible legacy bilingual format when single channel var is used
+        flow_en = _compact_money_flow(biases, "en")
+        verdict_en = _compact_verdict(pw, "en")
         text = (
-            f"⚡ <b>RatePath | ريت باث — Live Macro Flash</b>\n\n"
-            f"🇬🇧 <b>{_esc(en_block.get('title'))}</b>\n"
-            f"{_esc(en_block.get('summary'))}\n\n"
-            f"🇸🇦 <b>{_esc(ar_block.get('title'))}</b>\n"
-            f"{_esc(ar_block.get('summary'))}\n\n"
-            f"📊 <code>XAU/USD: ${_esc(gold_oz)}</code>  •  <code>BTC/USD: ${_esc(btc_spot)}</code>\n"
-            f"🔗 Source / المصدر: <a href=\"{_esc(src_url)}\">{_esc(src_name)}</a>"
+            f"📌 <b>Event:</b> {_esc(en_block.get('title'))} | {_esc(ar_block.get('title'))}\n"
+            f"💰 <b>Money Flow:</b> {_esc(flow_en)} · <code>XAU ${_esc(gold_oz)}</code> · <code>BTC ${_esc(btc_spot)}</code>\n"
+            f"🕰 <b>Historical Twin:</b> {_esc(twin.get('headline_en'))}\n"
+            f"⚠️ <b>Verdict:</b> {_esc(verdict_en)} (<a href=\"{_esc(src_url)}\">{_esc(src_name)}</a>)"
         )
         keyboard = [
-            [{"text": "📊 Open RatePath Terminal | فتح منصة ريت باث", "web_app": {"url": mini_app_url}}],
-            [{"text": f"🔗 {src_name} — Verified Source", "url": src_url}],
+            [{"text": "📊 Open RatePath | ريت باث", "web_app": {"url": mini_app_url}}],
+            [{"text": f"🔗 {src_name}", "url": src_url}],
         ]
 
     return {
@@ -334,7 +373,7 @@ def build_vip_channel_payload(
     mini_app_url: str = "https://ratepath.io/",
     lang: ChannelLang = "en",
 ) -> dict[str, Any]:
-    """Build pure-EN (`?lang=en`), pure-AR (`?lang=ar`), or legacy VIP institutional brief."""
+    """Build 5-second scannable 4-line VIP institutional brief with twin reaction & funding carry."""
     twin = match_closest_historical_twin(news_item)
     spreads = extract_high_yield_funding_opportunities(feed_payload)
 
@@ -345,119 +384,56 @@ def build_vip_channel_payload(
     src_name = str(news_item.get("source_name", "Global Wire"))
     src_name_ar = _SOURCE_AR_LABELS.get(src_name, src_name)
     src_url = str(news_item.get("source_url", "https://ratepath.io/"))
-    twin_moves = " • ".join(f"{k}: {v}%" for k, v in twin.get("realized_changes_pct", {}).items())
+    twin_moves = " · ".join(f"{k} {v}%" for k, v in list(twin.get("realized_changes_pct", {}).items())[:3])
 
     if lang == "en":
         launch_url = build_lang_mini_app_url(mini_app_url, "en")
-        bias_line = " | ".join(f"{k}: {str(v).upper()}" for k, v in biases.items())
-        pw_badge = (
-            f"⚠️ HIGH PRICED-IN RISK ({str(pw.get('severity', 'low')).upper()})"
-            if pw.get("active")
-            else f"✅ FRESH CATALYST ({str(pw.get('severity', 'low')).upper()})"
+        flow_en = _compact_money_flow(biases, "en")
+        carry_en = (
+            f"{spreads[0]['symbol']} {spreads[0]['annualized_spread_pct']}% APR ({spreads[0]['arbitrage_signal']})"
+            if spreads
+            else "Neutral carry"
         )
-        if spreads:
-            funding_lines = "\n".join(
-                f"• <code>{_esc(s['symbol'])}</code>: <b>{_esc(s['spread_bps'])} bps</b> "
-                f"(<b>{_esc(s['annualized_spread_pct'])}% APR</b>) → <code>{_esc(s['arbitrage_signal'])}</code>"
-                for s in spreads
-            )
-        else:
-            funding_lines = "• All BTC/ETH/SOL perpetual spreads currently inside neutral band (&lt;2.00% APR)."
-
+        verdict_en = str(pw.get("en") or _compact_verdict(pw, "en"))[:140]
         text = (
-            f"🏛️ <b>RatePath VIP — Institutional Desk Brief</b>\n"
-            f"━━━━━━━━━━━━━━━━━━━━━━\n"
-            f"📰 <b>{_esc(en_block.get('title'))}</b>\n"
-            f"{_esc(en_block.get('macro_thesis'))}\n\n"
-            f"🧭 <b>24h Institutional Biases:</b>\n<code>{_esc(bias_line)}</code>\n\n"
-            f"🛡️ <b>{_esc(pw_badge)}</b>\n"
-            f"{_esc(pw.get('en'))}\n\n"
-            f"🧬 <b>Historical Macro Twin Projection:</b>\n"
-            f"• Match: <i>{_esc(twin.get('headline_en'))}</i>\n"
-            f"• Realized 24h Reaction: <code>{_esc(twin_moves)}</code>\n"
-            f"• Calibration Lesson: {_esc(twin.get('lesson_en'))}\n\n"
-            f"💎 <b>Perpetual Funding Arbitrage (8h Carry):</b>\n"
-            f"{funding_lines}\n\n"
-            f"🔗 Provenance: <a href=\"{_esc(src_url)}\">{_esc(src_name)}</a>"
+            f"📌 <b>Event [VIP]:</b> {_esc(en_block.get('title'))}\n"
+            f"💰 <b>Money Flow:</b> {_esc(flow_en)} · Carry: <code>{_esc(carry_en)}</code>\n"
+            f"🕰 <b>Historical Twin:</b> {_esc(twin.get('headline_en'))} (<code>{_esc(twin_moves)}</code>)\n"
+            f"⚠️ <b>Verdict:</b> {_esc(verdict_en)} (<a href=\"{_esc(src_url)}\">{_esc(src_name)}</a>)"
         )
-        keyboard = [[{"text": "🚀 Launch RatePath VIP Terminal", "web_app": {"url": launch_url}}]]
+        keyboard = [[{"text": "🚀 Open RatePath VIP", "web_app": {"url": launch_url}}]]
 
     elif lang == "ar":
         launch_url = build_lang_mini_app_url(mini_app_url, "ar")
-        bias_line_ar = " | ".join(
-            f"{k}: {_BIAS_AR_LABELS.get(str(v), str(v))}" for k, v in biases.items()
+        flow_ar = _compact_money_flow(biases, "ar")
+        carry_ar = (
+            f"{spreads[0]['symbol']} بعائد {spreads[0]['annualized_spread_pct']}% ({_translate_arbitrage_signal_ar(spreads[0]['arbitrage_signal'])})"
+            if spreads
+            else "فروق تمويل محايدة"
         )
-        sev_ar = _SEVERITY_AR_LABELS.get(str(pw.get("severity", "low")), "منخفض")
-        pw_badge_ar = (
-            f"⚠️ تحذير تسعير مسبق ({sev_ar})"
-            if pw.get("active")
-            else f"✅ محفز سعري جديد ({sev_ar})"
-        )
-        if spreads:
-            funding_lines_ar = "\n".join(
-                f"• <code>{_esc(s['symbol'])}</code>: فرق <b>{_esc(s['spread_bps'])} نقطة أساس</b> "
-                f"(عائد سنوي <b>{_esc(s['annualized_spread_pct'])}%</b>) ← {_esc(_translate_arbitrage_signal_ar(s['arbitrage_signal']))}"
-                for s in spreads
-            )
-        else:
-            funding_lines_ar = "• جميع فروق التمويل الدائمة للعملات القيادية ضمن النطاق المحايد حالياً (أقل من 2.00% سنوياً)."
-
+        verdict_ar = str(pw.get("ar") or _compact_verdict(pw, "ar"))[:140]
         text = (
-            f"🏛️ <b>ريت باث لكبار المشتركين — التقرير المؤسسي الفوري</b>\n"
-            f"━━━━━━━━━━━━━━━━━━━━━━\n"
-            f"📰 <b>{_esc(ar_block.get('title'))}</b>\n"
-            f"{_esc(ar_block.get('macro_thesis'))}\n\n"
-            f"🧭 <b>توقعات اتجاه الأصول خلال 24 ساعة:</b>\n<code>{_esc(bias_line_ar)}</code>\n\n"
-            f"🛡️ <b>{_esc(pw_badge_ar)}</b>\n"
-            f"{_esc(pw.get('ar'))}\n\n"
-            f"🧬 <b>إسقاط توأم الحدث التاريخي:</b>\n"
-            f"• الحدث المطابق: <i>{_esc(twin.get('headline_ar'))}</i>\n"
-            f"• الحركة التاريخية المتحققة خلال 24 ساعة: <code>{_esc(twin_moves)}</code>\n"
-            f"• درس المعايرة المؤسسي: {_esc(twin.get('lesson_ar'))}\n\n"
-            f"💎 <b>فرص مراجحة فروق التمويل الدائمة (كل 8 ساعات):</b>\n"
-            f"{funding_lines_ar}\n\n"
-            f"🔗 المصدر الموثّق: <a href=\"{_esc(src_url)}\">{_esc(src_name_ar)}</a>"
+            f"📌 <b>الحدث [VIP]:</b> {_esc(ar_block.get('title'))}\n"
+            f"💰 <b>حركة السيولة:</b> {_esc(flow_ar)} · التمويل: {_esc(carry_ar)}\n"
+            f"🕰 <b>التوأم التاريخي:</b> {_esc(twin.get('headline_ar'))} (<code>{_esc(twin_moves)}</code>)\n"
+            f"⚠️ <b>الخلاصة:</b> {_esc(verdict_ar)} (<a href=\"{_esc(src_url)}\">{_esc(src_name_ar)}</a>)"
         )
-        keyboard = [[{"text": "🚀 فتح تيرمينال ريت باث الفوري", "web_app": {"url": launch_url}}]]
+        keyboard = [[{"text": "🚀 افتح ريت باث VIP", "web_app": {"url": launch_url}}]]
 
     else:
-        # Backward-compatible legacy bilingual VIP format
-        bias_line = " | ".join(f"{k}: {str(v).upper()}" for k, v in biases.items())
-        pw_badge = (
-            f"⚠️ HIGH PRICED-IN RISK ({str(pw.get('severity', 'low')).upper()})"
-            if pw.get("active")
-            else f"✅ FRESH CATALYST ({str(pw.get('severity', 'low')).upper()})"
+        flow_en = _compact_money_flow(biases, "en")
+        carry_en = (
+            f"{spreads[0]['symbol']} {spreads[0]['annualized_spread_pct']}% APR ({spreads[0]['arbitrage_signal']})"
+            if spreads
+            else "Neutral carry"
         )
-        if spreads:
-            funding_lines = "\n".join(
-                f"• <code>{_esc(s['symbol'])}</code>: <b>{_esc(s['spread_bps'])} bps</b> "
-                f"(<b>{_esc(s['annualized_spread_pct'])}% APR</b>) → <code>{_esc(s['arbitrage_signal'])}</code>"
-                for s in spreads
-            )
-        else:
-            funding_lines = "• All BTC/ETH/SOL perpetual spreads currently inside neutral band (&lt;2.00% APR)."
-
         text = (
-            f"🏛️ <b>RatePath VIP | ريت باث لكبار المشتركين</b>\n"
-            f"━━━━━━━━━━━━━━━━━━━━━━\n"
-            f"📰 <b>{_esc(en_block.get('title'))}</b>\n"
-            f"🇸🇦 <b>{_esc(ar_block.get('title'))}</b>\n\n"
-            f"🧭 <b>24h Institutional Biases:</b>\n<code>{_esc(bias_line)}</code>\n\n"
-            f"🛡️ <b>{_esc(pw_badge)}</b>\n"
-            f"• EN: {_esc(pw.get('en'))}\n"
-            f"• AR: {_esc(pw.get('ar'))}\n\n"
-            f"🧬 <b>Historical Macro Twin Projection (توأم الحدث التاريخي):</b>\n"
-            f"• Match: <i>{_esc(twin.get('headline_en'))}</i>\n"
-            f"• المطابقة: <i>{_esc(twin.get('headline_ar'))}</i>\n"
-            f"• Realized 24h Reaction: <code>{_esc(twin_moves)}</code>\n"
-            f"• Lesson: {_esc(twin.get('lesson_ar'))}\n\n"
-            f"💎 <b>Perpetual Funding Arbitrage (فروق عقود التمويل):</b>\n"
-            f"{funding_lines}\n\n"
-            f"🔗 Provenance: <a href=\"{_esc(src_url)}\">{_esc(src_name)}</a>"
+            f"📌 <b>Event [VIP]:</b> {_esc(en_block.get('title'))} | {_esc(ar_block.get('title'))}\n"
+            f"💰 <b>Money Flow:</b> {_esc(flow_en)} · Carry: <code>{_esc(carry_en)}</code>\n"
+            f"🕰 <b>Historical Twin:</b> {_esc(twin.get('headline_en'))} (<code>{_esc(twin_moves)}</code>)\n"
+            f"⚠️ <b>Verdict:</b> {_esc(pw.get('en'))} (<a href=\"{_esc(src_url)}\">{_esc(src_name)}</a>)"
         )
-        keyboard = [
-            [{"text": "🚀 Launch VIP Terminal | فتح تيرمينال ريت باث", "web_app": {"url": mini_app_url}}]
-        ]
+        keyboard = [[{"text": "🚀 Open RatePath VIP | ريت باث", "web_app": {"url": mini_app_url}}]]
 
     return {
         "chat_id": chat_id,
