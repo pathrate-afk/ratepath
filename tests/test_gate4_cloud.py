@@ -127,9 +127,8 @@ def test_telegram_payload_formatting_and_upstash_deduplication(tmp_path: Path) -
     assert "📖 <b>What Happened:</b>" in pub_en["text"]
     assert "💡 <b>Bottom Line:</b>" in pub_en["text"]
     assert "2655.40" not in pub_en["text"]  # ZERO inline price tickers in news alerts
-    en_btn = pub_en["reply_markup"]["inline_keyboard"][0][0]
-    assert en_btn["web_app"]["url"] == "https://ratepath.io/?lang=en"
-    assert not _ARABIC_RE.search(en_btn["text"])
+    assert "reply_markup" not in pub_en      # Link-free standard post (website lives in single pinned header)
+    assert "http" not in pub_en["text"].lower()
 
     vip_en = build_vip_channel_payload(
         news_item,
@@ -143,9 +142,10 @@ def test_telegram_payload_formatting_and_upstash_deduplication(tmp_path: Path) -
     assert "🔥 <b>[VIP]" in vip_en["text"]
     assert "📖 <b>What Happened:</b>" in vip_en["text"]
     assert "💡 <b>Bottom Line:</b>" in vip_en["text"]
-    assert vip_en["reply_markup"]["inline_keyboard"][0][0]["web_app"]["url"] == "https://ratepath.io/?lang=en"
+    assert "reply_markup" not in vip_en
+    assert "http" not in vip_en["text"].lower()
 
-    # 2. Pure-Arabic Public & VIP Payloads (Authentic Arabic + ZERO EN chrome + `?lang=ar`)
+    # 2. Pure-Arabic Public & VIP Payloads (Authentic Arabic + ZERO EN chrome + Link-Free Standard)
     pub_ar = build_public_channel_payload(
         news_item,
         feed,
@@ -161,9 +161,8 @@ def test_telegram_payload_formatting_and_upstash_deduplication(tmp_path: Path) -
     assert "💡 <b>الخلاصة ومسار السيولة:</b>" in pub_ar["text"]
     assert "What Happened" not in pub_ar["text"]
     assert "2655.40" not in pub_ar["text"]  # ZERO inline price tickers in news alerts
-    ar_btn = pub_ar["reply_markup"]["inline_keyboard"][0][0]
-    assert ar_btn["web_app"]["url"] == "https://ratepath.io/?lang=ar"
-    assert _ARABIC_RE.search(ar_btn["text"])
+    assert "reply_markup" not in pub_ar
+    assert "http" not in pub_ar["text"].lower()
 
     vip_ar = build_vip_channel_payload(
         news_item,
@@ -177,7 +176,8 @@ def test_telegram_payload_formatting_and_upstash_deduplication(tmp_path: Path) -
     assert "📖 <b>ما القصة؟</b>" in vip_ar["text"]
     assert "💡 <b>الخلاصة ومسار السيولة:</b>" in vip_ar["text"]
     assert "Bottom Line" not in vip_ar["text"]
-    assert vip_ar["reply_markup"]["inline_keyboard"][0][0]["web_app"]["url"] == "https://ratepath.io/?lang=ar"
+    assert "reply_markup" not in vip_ar
+    assert "http" not in vip_ar["text"].lower()
 
     # 3. Silent Admin Watchdog formatting & placeholder graceful skip
     watchdog_payload = build_admin_watchdog_payload(

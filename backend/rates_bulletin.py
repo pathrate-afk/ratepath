@@ -231,7 +231,8 @@ def build_rates_bulletin_payload(
     mini_app_url: str = "https://ratepath.io/",
     lang: Literal["en", "ar"] = "ar",
 ) -> dict[str, Any]:
-    """Build anti-scramble 1-asset-per-line Rates Bulletin separated by `\\n\\n`."""
+    """Build link-free anti-scramble 1-asset-per-line Rates Bulletin separated by `\\n\\n`."""
+    del mini_app_url  # Standard Rates Bulletins are strictly link-free (website lives in single pinned header)
     if not movers:
         raise ValueError("Cannot build change-only Rates Bulletin with zero moved assets.")
 
@@ -244,13 +245,9 @@ def build_rates_bulletin_payload(
     sections: list[str] = []
     if lang == "ar":
         sections.append("📊 <b>تحديث حركة الأسعار — ريت باث</b>")
-        launch_url = build_lang_mini_app_url(mini_app_url, "ar")
-        btn_label = "📊 افتح محول الأسعار المباشر"
         footer = "⏱ <i>نشرة التغيّرات الفعلية فقط — ريت باث</i>"
     else:
         sections.append("📊 <b>Market Movers — RatePath</b>")
-        launch_url = build_lang_mini_app_url(mini_app_url, "en")
-        btn_label = "📊 Open Live Converter"
         footer = "⏱ <i>Significant movers only — RatePath</i>"
 
     for grp in ("gold", "fiat", "crypto"):
@@ -275,9 +272,6 @@ def build_rates_bulletin_payload(
         "text": text,
         "parse_mode": "HTML",
         "disable_web_page_preview": True,
-        "reply_markup": {
-            "inline_keyboard": [[{"text": btn_label, "web_app": {"url": launch_url}}]]
-        },
     }
 
 

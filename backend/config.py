@@ -134,6 +134,8 @@ class Settings:
     gemini_api_keys: tuple[str, ...] = ()
     groq_api_keys: tuple[str, ...] = ()
     cmc_pro_api_key: str = "placeholder"
+    public_site_url: str = "https://ratepath.io"
+    telegram_webhook_secret: str = "placeholder"
 
     def __post_init__(self) -> None:
         # Synchronize numbered key pools with single-key fields cleanly (backward-compatible)
@@ -164,6 +166,17 @@ class Settings:
         gemini_pool = _collect_numbered_keys(_get, "GEMINI_API_KEY", slots=3)
         groq_pool = _collect_numbered_keys(_get, "GROQ_API_KEY", slots=3)
 
+        raw_mini_app = (
+            _get("MINI_APP_URL")
+            if not is_placeholder_secret(_get("MINI_APP_URL"))
+            else "https://ratepath.io/"
+        )
+        raw_site = (
+            _get("PUBLIC_SITE_URL")
+            if not is_placeholder_secret(_get("PUBLIC_SITE_URL"))
+            else raw_mini_app.rstrip("/")
+        )
+
         return cls(
             gemini_api_key=gemini_pool[0] if gemini_pool else "placeholder",
             groq_api_key=groq_pool[0] if groq_pool else "placeholder",
@@ -180,14 +193,12 @@ class Settings:
             telegram_public_channel_ar=_get("TELEGRAM_PUBLIC_CHANNEL_AR"),
             telegram_vip_channel_ar=_get("TELEGRAM_VIP_CHANNEL_AR"),
             admin_chat_id=_get("ADMIN_CHAT_ID"),
-            mini_app_url=(
-                _get("MINI_APP_URL")
-                if not is_placeholder_secret(_get("MINI_APP_URL"))
-                else "https://ratepath.io/"
-            ),
+            mini_app_url=raw_mini_app,
             gemini_api_keys=gemini_pool,
             groq_api_keys=groq_pool,
             cmc_pro_api_key=_get("CMC_PRO_API_KEY"),
+            public_site_url=raw_site.rstrip("/") or "https://ratepath.io",
+            telegram_webhook_secret=_get("TELEGRAM_WEBHOOK_SECRET"),
         )
 
     @property

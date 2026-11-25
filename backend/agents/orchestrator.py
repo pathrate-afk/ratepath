@@ -504,6 +504,37 @@ async def evaluate_swarm_reports(
     )
 
 
+def classify_special_topic(
+    decision: OrchestratorDecision,
+    reports: list[AgentReport],
+) -> tuple[bool, str | None]:
+    """Flag `is_special_topic=True` ONLY for solvency warnings or major historical crisis reports."""
+    all_flags = {flag for r in reports for flag in r.flags}
+    is_solvency = bool(
+        decision.retail_trap_flagged
+        or ("TVL_DRAIN" in all_flags)
+        or ("STABLECOIN_DEPEG" in all_flags)
+    )
+    if is_solvency:
+        return True, "BTC"
+
+    is_major_crisis = bool(
+        decision.conviction_score >= 88
+        and (
+            "ENERGY_SHIPPING_PRESSURE" in all_flags
+            or decision.brief.stage in ("stage_1_cash_dash", "stage_2_hard_asset_rotation")
+        )
+    )
+    if is_major_crisis:
+        biases = decision.brief.assets_bias_24h
+        for sym in ("XAU", "BTC", "USD", "EUR"):
+            if str(biases.get(sym, "")).lower() in ("bullish", "bearish"):
+                return True, sym
+        return True, "XAU"
+
+    return False, None
+
+
 async def run_lane2_swarm(
     *,
     settings: Settings | None = None,
@@ -563,11 +594,14 @@ async def run_lane2_swarm(
                 except Exception:
                     feed_snapshot = {}
 
+            is_special, topic_asset = classify_special_topic(decision, reports)
             swarm_news_item = {
                 "id": f"swarm-{decision.content_hash[:12]}",
                 "published_at": decision.timestamp,
                 "source_name": "RatePath Swarm",
                 "source_url": f"https://ratepath.io/#swarm-{decision.content_hash[:12]}",
+                "is_special_topic": is_special,
+                "topic_asset": topic_asset,
                 "en": {
                     "title": decision.brief.event_en,
                     "summary": decision.brief.money_flow_en,

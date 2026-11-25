@@ -49,6 +49,7 @@ HIGH_YIELD_CARRY_THRESHOLD_PCT: Decimal = Decimal("2.00")
 
 _HSPACE_ONLY_RE = re.compile(r"[ \t]+")
 _MULTI_BLANK_LINES_RE = re.compile(r"\n{3,}")
+_RAW_URL_RE = re.compile(r"https?://\S+", re.IGNORECASE)
 
 ChannelLang = Literal["en", "ar", "bilingual"]
 
@@ -106,6 +107,36 @@ def build_lang_mini_app_url(base_url: str, lang: Literal["en", "ar"]) -> str:
     new_query = urlencode(query_pairs)
     path = parts.path or "/"
     return urlunsplit((parts.scheme or "https", parts.netloc or "ratepath.io", path, new_query, ""))
+
+
+def build_special_topic_deep_link(
+    base_url: str,
+    asset_symbol: str,
+    lang: Literal["en", "ar"],
+) -> str:
+    """Build exact contextual deep-link `{PUBLIC_SITE_URL}/?asset={SYMBOL}&lang={lang}`."""
+    cleaned_base = (base_url or "https://ratepath.io").strip().rstrip("/")
+    if not cleaned_base.startswith(("https://", "http://")):
+        cleaned_base = "https://ratepath.io"
+    clean_sym = re.sub(r"[^A-Za-z0-9_]", "", (asset_symbol or "XAU").strip().upper()) or "XAU"
+    return f"{cleaned_base}/?asset={clean_sym}&lang={lang}"
+
+
+def _resolve_topic_asset_symbol(news_item: dict[str, Any], explicit_asset: str | None) -> str:
+    if explicit_asset and explicit_asset.strip():
+        return re.sub(r"[^A-Za-z0-9_]", "", explicit_asset.strip().upper()) or "XAU"
+    item_asset = news_item.get("topic_asset")
+    if isinstance(item_asset, str) and item_asset.strip():
+        return re.sub(r"[^A-Za-z0-9_]", "", item_asset.strip().upper()) or "XAU"
+    biases = news_item.get("assets_bias_24h", {})
+    for sym in ("XAU", "BTC", "USD", "ETH", "SOL", "EUR", "GBP"):
+        if str(biases.get(sym, "")).lower() in ("bullish", "bearish"):
+            return sym
+    return "XAU"
+
+
+def _strip_urls(text: str) -> str:
+    return _HSPACE_ONLY_RE.sub(" ", _RAW_URL_RE.sub("", text)).strip()
 
 
 def normalize_news_url(source_url: str) -> str:
@@ -324,92 +355,105 @@ def build_public_channel_payload(
     chat_id: str,
     mini_app_url: str = "https://ratepath.io/",
     lang: ChannelLang = "en",
+    is_special_topic: bool | None = None,
+    topic_asset: str | None = None,
 ) -> dict[str, Any]:
-    """Build clean 3-block news-only post (ZERO prices/tickers, strict `\\n\\n` paragraph spacing)."""
+    """Build clean 3-block news-only post (ZERO prices/tickers, ZERO links on regular posts).
+
+    Attaches `{PUBLIC_SITE_URL}/?asset={SYMBOL}&lang={lang}` ONLY when `is_special_topic=True`.
+    """
     del feed_payload  # News alerts strictly contain ZERO exchange rates or price tickers
 
+    special_flag = (
+        bool(news_item.get("is_special_topic", False))
+        if is_special_topic is None
+        else bool(is_special_topic)
+    )
     en_block = news_item.get("en", {})
     ar_block = news_item.get("ar", {})
     pw = news_item.get("priced_in_warning", {})
     biases = news_item.get("assets_bias_24h", {})
-    src_name = str(news_item.get("source_name", "Global Wire"))
-    src_name_ar = _SOURCE_AR_LABELS.get(src_name, src_name)
-    src_url = str(news_item.get("source_url", "https://ratepath.io/"))
+
+    deep_link_url: str | None = None
+    deep_link_btn_text: str | None = None
+    if special_flag:
+        resolved_sym = _resolve_topic_asset_symbol(news_item, topic_asset)
+        link_lang: Literal["en", "ar"] = "ar" if lang == "ar" else "en"
+        deep_link_url = build_special_topic_deep_link(mini_app_url, resolved_sym, link_lang)
+        deep_link_btn_text = (
+            f"🔎 تفاصيل وتحليل {resolved_sym} الكامل"
+            if link_lang == "ar"
+            else f"🔎 Full {resolved_sym} Deep Dive"
+        )
 
     if lang == "en":
-        launch_url = build_lang_mini_app_url(mini_app_url, "en")
-        headline_en = _clean_single_block(en_block.get("title") or "Market Update")
-        story_en = _clean_single_block(
-            en_block.get("summary") or _compact_money_flow(biases, "en")
+        headline_en = _strip_urls(_clean_single_block(en_block.get("title") or "Market Update"))
+        story_en = _strip_urls(
+            _clean_single_block(en_block.get("summary") or _compact_money_flow(biases, "en"))
         )[:320]
-        bottom_en = _clean_single_block(
-            en_block.get("macro_thesis") or _compact_verdict(pw, "en")
+        bottom_en = _strip_urls(
+            _clean_single_block(en_block.get("macro_thesis") or _compact_verdict(pw, "en"))
         )[:300]
-        text = sanitize_syria_flag_emoji(
-            normalize_preserve_newlines(
-                f"🔥 <b>{_esc(headline_en)}</b>\n\n"
-                f"📖 <b>What Happened:</b>\n"
-                f"{_esc(story_en)}\n\n"
-                f"💡 <b>Bottom Line:</b>\n"
-                f"{_esc(bottom_en)}"
-            ),
-            lang="en",
+        body = (
+            f"🔥 <b>{_esc(headline_en)}</b>\n\n"
+            f"📖 <b>What Happened:</b>\n"
+            f"{_esc(story_en)}\n\n"
+            f"💡 <b>Bottom Line:</b>\n"
+            f"{_esc(bottom_en)}"
         )
-        keyboard = [
-            [{"text": "📊 Open RatePath", "web_app": {"url": launch_url}}],
-            [{"text": f"🔗 {src_name}", "url": src_url}],
-        ]
+        if deep_link_url:
+            body += f"\n\n🔎 <b>Full Deep Dive:</b> {deep_link_url}"
+        text = sanitize_syria_flag_emoji(normalize_preserve_newlines(body), lang="en")
     elif lang == "ar":
-        launch_url = build_lang_mini_app_url(mini_app_url, "ar")
-        headline_ar = _clean_single_block(ar_block.get("title") or "تحديث الأسواق")
-        story_ar = _clean_single_block(
-            ar_block.get("summary") or _compact_money_flow(biases, "ar")
+        headline_ar = _strip_urls(_clean_single_block(ar_block.get("title") or "تحديث الأسواق"))
+        story_ar = _strip_urls(
+            _clean_single_block(ar_block.get("summary") or _compact_money_flow(biases, "ar"))
         )[:320]
-        bottom_ar = _clean_single_block(
-            ar_block.get("macro_thesis") or _compact_verdict(pw, "ar")
+        bottom_ar = _strip_urls(
+            _clean_single_block(ar_block.get("macro_thesis") or _compact_verdict(pw, "ar"))
         )[:300]
-        text = sanitize_syria_flag_emoji(
-            normalize_preserve_newlines(
-                f"🔥 <b>{_esc(headline_ar)}</b>\n\n"
-                f"📖 <b>ما القصة؟</b>\n"
-                f"{_esc(story_ar)}\n\n"
-                f"💡 <b>الخلاصة ومسار السيولة:</b>\n"
-                f"{_esc(bottom_ar)}"
-            ),
-            lang="ar",
+        body = (
+            f"🔥 <b>{_esc(headline_ar)}</b>\n\n"
+            f"📖 <b>ما القصة؟</b>\n"
+            f"{_esc(story_ar)}\n\n"
+            f"💡 <b>الخلاصة ومسار السيولة:</b>\n"
+            f"{_esc(bottom_ar)}"
         )
-        keyboard = [
-            [{"text": "📊 افتح ريت باث", "web_app": {"url": launch_url}}],
-            [{"text": f"🔗 {src_name_ar}", "url": src_url}],
-        ]
+        if deep_link_url:
+            body += f"\n\n🔎 <b>التقرير الكامل:</b> {deep_link_url}"
+        text = sanitize_syria_flag_emoji(normalize_preserve_newlines(body), lang="ar")
     else:
-        headline_en = _clean_single_block(en_block.get("title") or "Market Update")
-        story_en = _clean_single_block(en_block.get("summary") or _compact_money_flow(biases, "en"))[:280]
-        bottom_en = _clean_single_block(en_block.get("macro_thesis") or _compact_verdict(pw, "en"))[:260]
-        text = sanitize_syria_flag_emoji(
-            normalize_preserve_newlines(
-                f"🔥 <b>{_esc(headline_en)}</b>\n\n"
-                f"📖 <b>What Happened:</b>\n"
-                f"{_esc(story_en)}\n\n"
-                f"💡 <b>Bottom Line:</b>\n"
-                f"{_esc(bottom_en)}"
-            ),
-            lang="en",
+        headline_en = _strip_urls(_clean_single_block(en_block.get("title") or "Market Update"))
+        story_en = _strip_urls(
+            _clean_single_block(en_block.get("summary") or _compact_money_flow(biases, "en"))
+        )[:280]
+        bottom_en = _strip_urls(
+            _clean_single_block(en_block.get("macro_thesis") or _compact_verdict(pw, "en"))
+        )[:260]
+        body = (
+            f"🔥 <b>{_esc(headline_en)}</b>\n\n"
+            f"📖 <b>What Happened:</b>\n"
+            f"{_esc(story_en)}\n\n"
+            f"💡 <b>Bottom Line:</b>\n"
+            f"{_esc(bottom_en)}"
         )
-        keyboard = [
-            [{"text": "📊 Open RatePath | ريت باث", "web_app": {"url": mini_app_url}}],
-            [{"text": f"🔗 {src_name}", "url": src_url}],
-        ]
+        if deep_link_url:
+            body += f"\n\n🔎 <b>Full Deep Dive:</b> {deep_link_url}"
+        text = sanitize_syria_flag_emoji(normalize_preserve_newlines(body), lang="en")
 
     assert text.count("\n\n") >= 2, "Telegram news message must contain >= 2 blank-line separators"
 
-    return {
+    payload: dict[str, Any] = {
         "chat_id": chat_id,
         "text": text,
         "parse_mode": "HTML",
         "disable_web_page_preview": True,
-        "reply_markup": {"inline_keyboard": keyboard},
     }
+    if deep_link_url and deep_link_btn_text:
+        payload["reply_markup"] = {
+            "inline_keyboard": [[{"text": deep_link_btn_text, "url": deep_link_url}]]
+        }
+    return payload
 
 
 def build_vip_channel_payload(
@@ -419,87 +463,115 @@ def build_vip_channel_payload(
     chat_id: str,
     mini_app_url: str = "https://ratepath.io/",
     lang: ChannelLang = "en",
+    is_special_topic: bool | None = None,
+    topic_asset: str | None = None,
 ) -> dict[str, Any]:
-    """Build clean 3-block VIP news-only brief (ZERO price tickers, strict `\\n\\n` spacing)."""
+    """Build clean 3-block VIP news-only brief (ZERO price tickers, ZERO links on regular posts)."""
     del feed_payload  # News alerts strictly contain ZERO exchange rates or price tickers
 
+    special_flag = (
+        bool(news_item.get("is_special_topic", False))
+        if is_special_topic is None
+        else bool(is_special_topic)
+    )
     twin = match_closest_historical_twin(news_item)
     en_block = news_item.get("en", {})
     ar_block = news_item.get("ar", {})
     pw = news_item.get("priced_in_warning", {})
     biases = news_item.get("assets_bias_24h", {})
 
-    if lang == "en":
-        launch_url = build_lang_mini_app_url(mini_app_url, "en")
-        headline_en = _clean_single_block(en_block.get("title") or "VIP Market Brief")
-        story_en = _clean_single_block(
-            en_block.get("summary") or _compact_money_flow(biases, "en")
-        )[:320]
-        verdict_part = _clean_single_block(
-            en_block.get("macro_thesis") or pw.get("en") or _compact_verdict(pw, "en")
-        )[:220]
-        twin_hint = _clean_single_block(twin.get("headline_en") or "")[:100]
-        bottom_en = f"{verdict_part} (Precedent: {twin_hint})" if twin_hint else verdict_part
-        text = sanitize_syria_flag_emoji(
-            normalize_preserve_newlines(
-                f"🔥 <b>[VIP] {_esc(headline_en)}</b>\n\n"
-                f"📖 <b>What Happened:</b>\n"
-                f"{_esc(story_en)}\n\n"
-                f"💡 <b>Bottom Line:</b>\n"
-                f"{_esc(bottom_en)}"
-            ),
-            lang="en",
+    deep_link_url: str | None = None
+    deep_link_btn_text: str | None = None
+    if special_flag:
+        resolved_sym = _resolve_topic_asset_symbol(news_item, topic_asset)
+        link_lang: Literal["en", "ar"] = "ar" if lang == "ar" else "en"
+        deep_link_url = build_special_topic_deep_link(mini_app_url, resolved_sym, link_lang)
+        deep_link_btn_text = (
+            f"🔎 ملف VIP الكامل لـ {resolved_sym}"
+            if link_lang == "ar"
+            else f"🔎 VIP {resolved_sym} Deep Dive"
         )
-        keyboard = [[{"text": "🚀 Open RatePath VIP", "web_app": {"url": launch_url}}]]
+
+    if lang == "en":
+        headline_en = _strip_urls(_clean_single_block(en_block.get("title") or "VIP Market Brief"))
+        story_en = _strip_urls(
+            _clean_single_block(en_block.get("summary") or _compact_money_flow(biases, "en"))
+        )[:320]
+        verdict_part = _strip_urls(
+            _clean_single_block(
+                en_block.get("macro_thesis") or pw.get("en") or _compact_verdict(pw, "en")
+            )
+        )[:220]
+        twin_hint = _strip_urls(_clean_single_block(twin.get("headline_en") or ""))[:100]
+        bottom_en = f"{verdict_part} (Precedent: {twin_hint})" if twin_hint else verdict_part
+        body = (
+            f"🔥 <b>[VIP] {_esc(headline_en)}</b>\n\n"
+            f"📖 <b>What Happened:</b>\n"
+            f"{_esc(story_en)}\n\n"
+            f"💡 <b>Bottom Line:</b>\n"
+            f"{_esc(bottom_en)}"
+        )
+        if deep_link_url:
+            body += f"\n\n🔎 <b>Full Deep Dive:</b> {deep_link_url}"
+        text = sanitize_syria_flag_emoji(normalize_preserve_newlines(body), lang="en")
 
     elif lang == "ar":
-        launch_url = build_lang_mini_app_url(mini_app_url, "ar")
-        headline_ar = _clean_single_block(ar_block.get("title") or "ملخص VIP للأسواق")
-        story_ar = _clean_single_block(
-            ar_block.get("summary") or _compact_money_flow(biases, "ar")
+        headline_ar = _strip_urls(_clean_single_block(ar_block.get("title") or "ملخص VIP للأسواق"))
+        story_ar = _strip_urls(
+            _clean_single_block(ar_block.get("summary") or _compact_money_flow(biases, "ar"))
         )[:320]
-        verdict_part_ar = _clean_single_block(
-            ar_block.get("macro_thesis") or pw.get("ar") or _compact_verdict(pw, "ar")
+        verdict_part_ar = _strip_urls(
+            _clean_single_block(
+                ar_block.get("macro_thesis") or pw.get("ar") or _compact_verdict(pw, "ar")
+            )
         )[:220]
-        twin_hint_ar = _clean_single_block(twin.get("headline_ar") or "")[:100]
+        twin_hint_ar = _strip_urls(_clean_single_block(twin.get("headline_ar") or ""))[:100]
         bottom_ar = f"{verdict_part_ar} (سابقة تاريخية: {twin_hint_ar})" if twin_hint_ar else verdict_part_ar
-        text = sanitize_syria_flag_emoji(
-            normalize_preserve_newlines(
-                f"🔥 <b>[VIP] {_esc(headline_ar)}</b>\n\n"
-                f"📖 <b>ما القصة؟</b>\n"
-                f"{_esc(story_ar)}\n\n"
-                f"💡 <b>الخلاصة ومسار السيولة:</b>\n"
-                f"{_esc(bottom_ar)}"
-            ),
-            lang="ar",
+        body = (
+            f"🔥 <b>[VIP] {_esc(headline_ar)}</b>\n\n"
+            f"📖 <b>ما القصة؟</b>\n"
+            f"{_esc(story_ar)}\n\n"
+            f"💡 <b>الخلاصة ومسار السيولة:</b>\n"
+            f"{_esc(bottom_ar)}"
         )
-        keyboard = [[{"text": "🚀 افتح ريت باث VIP", "web_app": {"url": launch_url}}]]
+        if deep_link_url:
+            body += f"\n\n🔎 <b>التقرير الكامل:</b> {deep_link_url}"
+        text = sanitize_syria_flag_emoji(normalize_preserve_newlines(body), lang="ar")
 
     else:
-        headline_en = _clean_single_block(en_block.get("title") or "VIP Market Brief")
-        story_en = _clean_single_block(en_block.get("summary") or _compact_money_flow(biases, "en"))[:280]
-        bottom_en = _clean_single_block(en_block.get("macro_thesis") or pw.get("en") or _compact_verdict(pw, "en"))[:260]
-        text = sanitize_syria_flag_emoji(
-            normalize_preserve_newlines(
-                f"🔥 <b>[VIP] {_esc(headline_en)}</b>\n\n"
-                f"📖 <b>What Happened:</b>\n"
-                f"{_esc(story_en)}\n\n"
-                f"💡 <b>Bottom Line:</b>\n"
-                f"{_esc(bottom_en)}"
-            ),
-            lang="en",
+        headline_en = _strip_urls(_clean_single_block(en_block.get("title") or "VIP Market Brief"))
+        story_en = _strip_urls(
+            _clean_single_block(en_block.get("summary") or _compact_money_flow(biases, "en"))
+        )[:280]
+        bottom_en = _strip_urls(
+            _clean_single_block(
+                en_block.get("macro_thesis") or pw.get("en") or _compact_verdict(pw, "en")
+            )
+        )[:260]
+        body = (
+            f"🔥 <b>[VIP] {_esc(headline_en)}</b>\n\n"
+            f"📖 <b>What Happened:</b>\n"
+            f"{_esc(story_en)}\n\n"
+            f"💡 <b>Bottom Line:</b>\n"
+            f"{_esc(bottom_en)}"
         )
-        keyboard = [[{"text": "🚀 Open RatePath VIP | ريت باث", "web_app": {"url": mini_app_url}}]]
+        if deep_link_url:
+            body += f"\n\n🔎 <b>Full Deep Dive:</b> {deep_link_url}"
+        text = sanitize_syria_flag_emoji(normalize_preserve_newlines(body), lang="en")
 
     assert text.count("\n\n") >= 2, "Telegram VIP message must contain >= 2 blank-line separators"
 
-    return {
+    payload: dict[str, Any] = {
         "chat_id": chat_id,
         "text": text,
         "parse_mode": "HTML",
         "disable_web_page_preview": True,
-        "reply_markup": {"inline_keyboard": keyboard},
     }
+    if deep_link_url and deep_link_btn_text:
+        payload["reply_markup"] = {
+            "inline_keyboard": [[{"text": deep_link_btn_text, "url": deep_link_url}]]
+        }
+    return payload
 
 
 def build_admin_watchdog_payload(
@@ -672,7 +744,7 @@ async def broadcast_feed_to_telegram(
                         item,
                         feed_payload,
                         chat_id=chat_id,
-                        mini_app_url=cfg.mini_app_url,
+                        mini_app_url=cfg.public_site_url,
                         lang=lang_mode,
                     )
                 else:
@@ -680,7 +752,7 @@ async def broadcast_feed_to_telegram(
                         item,
                         feed_payload,
                         chat_id=chat_id,
-                        mini_app_url=cfg.mini_app_url,
+                        mini_app_url=cfg.public_site_url,
                         lang=lang_mode,
                     )
 

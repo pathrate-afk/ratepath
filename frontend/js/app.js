@@ -320,6 +320,21 @@ async function fetchCatalogFeed() {
   }
 }
 
+function resolveInitialAssetParam() {
+  try {
+    const raw = (new URLSearchParams(window.location.search).get("asset") || "").trim().toUpperCase();
+    if (!raw) return null;
+    if (raw === "XAU" || raw === "GOLD") return "XAU_OZ";
+    if (raw === "XAG" || raw === "SILVER") return "XAG_OZ";
+    return raw;
+  } catch {
+    return null;
+  }
+}
+
+const INITIAL_DEEP_LINK_ASSET = resolveInitialAssetParam();
+let deepLinkAssetApplied = false;
+
 function rebuildCatalogFromState() {
   if (!state.feed) return;
   const prevRaw = localStorage.getItem(STORAGE_KEYS.PREV_FEED);
@@ -332,6 +347,17 @@ function rebuildCatalogFromState() {
   );
   state.previousCatalog = prevFeed ? buildAssetCatalog(prevFeed, state.catalogFeed) : null;
   state.tickDeltas = computeTickDeltas(state.catalog, state.previousCatalog);
+
+  if (!deepLinkAssetApplied && INITIAL_DEEP_LINK_ASSET) {
+    const directMatch = state.catalog.byId[INITIAL_DEEP_LINK_ASSET];
+    const codeMatch = directMatch
+      ? directMatch
+      : state.catalog.allSearchable.find((item) => item.code === INITIAL_DEEP_LINK_ASSET);
+    if (codeMatch) {
+      state.baseAssetId = codeMatch.id;
+      deepLinkAssetApplied = true;
+    }
+  }
 
   if (!state.catalog.byId[state.baseAssetId]) {
     state.baseAssetId = "USD";
