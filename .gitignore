@@ -1,0 +1,30 @@
+# Virtual environments & dependencies
+.venv/
+venv/
+node_modules/
+
+# Python bytecode & test caches
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# Secrets & environment
+.env
+.env.local
+.env.*.local
+File APIs for AI .txt
+*API*.txt
+*secret*.txt
+
+# Atomic write staging & build artifacts
+*.tmp.json
+dist/
+build/
+
+# OS metadata
+.DS_Store
+Thumbs.db

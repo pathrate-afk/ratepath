@@ -1,0 +1,10 @@
+.venv/
+node_modules/
+__pycache__/
+*.pyc
+.pytest_cache/
+.env
+File APIs for AI .txt
+*API*.txt
+*.tmp.json
+dist/

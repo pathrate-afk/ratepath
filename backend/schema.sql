@@ -1,0 +1,171 @@
+-- ============================================================================
+-- RatePath (ريت باث) — Supabase PostgreSQL + pgvector Market Memory Schema
+-- Gate 1: Historical Macro Twins & 24-Hour Self-Evaluation Accuracy Lessons
+-- Encoding: UTF-8
+-- ============================================================================
+
+-- 1. Required Extensions
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
+CREATE EXTENSION IF NOT EXISTS vector;
+
+-- 2. Core Market Memory Table
+CREATE TABLE IF NOT EXISTS public.market_memory (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    event_key TEXT UNIQUE NOT NULL,
+    record_type TEXT NOT NULL CHECK (
+        record_type IN ('historical_macro_twin', 'live_prediction', 'evaluated_lesson')
+    ),
+    event_timestamp TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    macro_regime TEXT NOT NULL DEFAULT 'global_macro',
+
+    -- Verified Provenance
+    source_name TEXT NOT NULL,
+    source_url TEXT NOT NULL CHECK (source_url ~ '^https?://'),
+
+    -- Bilingual Macro Event & Strategist Thesis (UTF-8 EN / AR)
+    headline_en TEXT NOT NULL,
+    headline_ar TEXT NOT NULL,
+    summary_en TEXT NOT NULL,
+    summary_ar TEXT NOT NULL,
+
+    -- Priced-In Risk & 24h Asset Directional Biases
+    priced_in_warning JSONB NOT NULL DEFAULT '{}'::jsonb,
+    assets_bias_24h JSONB NOT NULL,
+
+    -- T+0 Baseline Snapshot & T+24h Realized Market Prices (Exact Decimal Strings)
+    baseline_prices JSONB NOT NULL DEFAULT '{}'::jsonb,
+    realized_prices_24h JSONB DEFAULT NULL,
+    realized_changes_pct JSONB DEFAULT NULL,
+
+    -- 24h Self-Evaluation Grading & Extracted Bilingual Lessons
+    evaluation_status TEXT NOT NULL DEFAULT 'pending' CHECK (
+        evaluation_status IN ('pending', 'graded', 'historical_anchor')
+    ),
+    accuracy_score NUMERIC(5, 2) CHECK (
+        accuracy_score IS NULL OR (accuracy_score >= 0.00 AND accuracy_score <= 100.00)
+    ),
+    evaluated_at TIMESTAMPTZ DEFAULT NULL,
+    lesson_en TEXT DEFAULT NULL,
+    lesson_ar TEXT DEFAULT NULL,
+
+    -- Semantic Vector Embedding (768-d compatible with gemini-embedding-001)
+    embedding vector(768),
+
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+COMMENT ON TABLE public.market_memory IS
+'RatePath (ريت باث) institutional memory storing historical macro twins and 24-hour self-graded forecast lessons.';
+
+-- 3. Automatic updated_at Trigger
+CREATE OR REPLACE FUNCTION public.set_market_memory_updated_at()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    NEW.updated_at = NOW();
+    RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS trg_market_memory_updated_at ON public.market_memory;
+CREATE TRIGGER trg_market_memory_updated_at
+BEFORE UPDATE ON public.market_memory
+FOR EACH ROW
+EXECUTE FUNCTION public.set_market_memory_updated_at();
+
+-- 4. Performance & Vector Similarity Indexes
+CREATE INDEX IF NOT EXISTS idx_market_memory_eval_due
+    ON public.market_memory (evaluation_status, event_timestamp)
+    WHERE evaluation_status = 'pending';
+
+CREATE INDEX IF NOT EXISTS idx_market_memory_record_type
+    ON public.market_memory (record_type, event_timestamp DESC);
+
+CREATE INDEX IF NOT EXISTS idx_market_memory_assets_bias_gin
+    ON public.market_memory USING GIN (assets_bias_24h);
+
+CREATE INDEX IF NOT EXISTS idx_market_memory_embedding_hnsw
+    ON public.market_memory USING hnsw (embedding vector_cosine_ops)
+    WITH (m = 16, ef_construction = 64);
+
+-- 5. Semantic Retrieval RPC: Historical Macro Twins + Graded Accuracy Lessons
+CREATE OR REPLACE FUNCTION public.match_market_memory(
+    query_embedding vector(768),
+    match_threshold DOUBLE PRECISION DEFAULT 0.65,
+    match_count INTEGER DEFAULT 5
+)
+RETURNS TABLE (
+    id UUID,
+    event_key TEXT,
+    record_type TEXT,
+    event_timestamp TIMESTAMPTZ,
+    macro_regime TEXT,
+    headline_en TEXT,
+    headline_ar TEXT,
+    assets_bias_24h JSONB,
+    realized_changes_pct JSONB,
+    accuracy_score NUMERIC(5, 2),
+    lesson_en TEXT,
+    lesson_ar TEXT,
+    similarity DOUBLE PRECISION
+)
+LANGUAGE sql
+STABLE
+AS $$
+    SELECT
+        mm.id,
+        mm.event_key,
+        mm.record_type,
+        mm.event_timestamp,
+        mm.macro_regime,
+        mm.headline_en,
+        mm.headline_ar,
+        mm.assets_bias_24h,
+        mm.realized_changes_pct,
+        mm.accuracy_score,
+        mm.lesson_en,
+        mm.lesson_ar,
+        1 - (mm.embedding <=> query_embedding) AS similarity
+    FROM public.market_memory AS mm
+    WHERE mm.embedding IS NOT NULL
+      AND mm.evaluation_status IN ('historical_anchor', 'graded')
+      AND (1 - (mm.embedding <=> query_embedding)) >= match_threshold
+    ORDER BY mm.embedding <=> query_embedding ASC
+    LIMIT match_count;
+$$;
+
+-- 6. 24-Hour Due Predictions View for Evaluator Loop
+CREATE OR REPLACE VIEW public.v_pending_24h_evaluations AS
+SELECT
+    id,
+    event_key,
+    event_timestamp,
+    headline_en,
+    headline_ar,
+    assets_bias_24h,
+    baseline_prices
+FROM public.market_memory
+WHERE record_type = 'live_prediction'
+  AND evaluation_status = 'pending'
+  AND event_timestamp <= (NOW() - INTERVAL '24 hours')
+ORDER BY event_timestamp ASC;
+
+-- 7. Row-Level Security (RLS) Hardening
+ALTER TABLE public.market_memory ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Allow public read of verified lessons and twins" ON public.market_memory;
+CREATE POLICY "Allow public read of verified lessons and twins"
+    ON public.market_memory
+    FOR SELECT
+    TO anon, authenticated
+    USING (evaluation_status IN ('historical_anchor', 'graded'));
+
+DROP POLICY IF EXISTS "Allow service_role full access to market_memory" ON public.market_memory;
+CREATE POLICY "Allow service_role full access to market_memory"
+    ON public.market_memory
+    FOR ALL
+    TO service_role
+    USING (true)
+    WITH CHECK (true);

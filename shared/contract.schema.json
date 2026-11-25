@@ -1,0 +1,493 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ratepath.io/schemas/contract.schema.json",
+  "title": "RatePath (ريت باث) Live Feed Contract",
+  "description": "Strict banking-grade data contract for RatePath live_feed.json enforcing exact Decimal string representations, ISO-8601 timestamps, verified macro news provenance, and bilingual (EN/AR) UTF-8 integrity.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "meta",
+    "fiat",
+    "gold",
+    "crypto",
+    "news"
+  ],
+  "$defs": {
+    "iso8601_timestamp": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?(Z|[+-]\\d{2}:\\d{2})$"
+    },
+    "decimal_positive": {
+      "type": "string",
+      "description": "Strictly positive exact Decimal string (> 0, no NaN, no Infinity, no scientific float notation).",
+      "pattern": "^(0\\.[0-9]*[1-9][0-9]*|[1-9][0-9]*(\\.[0-9]+)?)$"
+    },
+    "decimal_non_negative": {
+      "type": "string",
+      "description": "Non-negative exact Decimal string (>= 0).",
+      "pattern": "^(0|[1-9][0-9]*)(\\.[0-9]+)?$"
+    },
+    "decimal_signed": {
+      "type": "string",
+      "description": "Signed exact Decimal string for perpetual funding rates and net spreads.",
+      "pattern": "^-?(0|[1-9][0-9]*)(\\.[0-9]+)?$"
+    },
+    "arabic_text": {
+      "type": "string",
+      "minLength": 3,
+      "pattern": "[\\u0600-\\u06FF]",
+      "description": "UTF-8 Arabic text verified to contain authentic Arabic script characters."
+    },
+    "english_text": {
+      "type": "string",
+      "minLength": 3,
+      "pattern": "[A-Za-z]"
+    },
+    "bias_direction": {
+      "type": "string",
+      "enum": [
+        "bullish",
+        "bearish",
+        "neutral"
+      ]
+    },
+    "fiat_pair_entry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "units_per_usd",
+        "usd_per_unit",
+        "pair_label",
+        "display_rate"
+      ],
+      "properties": {
+        "units_per_usd": {
+          "$ref": "#/$defs/decimal_positive"
+        },
+        "usd_per_unit": {
+          "$ref": "#/$defs/decimal_positive"
+        },
+        "pair_label": {
+          "type": "string",
+          "minLength": 7,
+          "maxLength": 7
+        },
+        "display_rate": {
+          "$ref": "#/$defs/decimal_positive"
+        }
+      }
+    },
+    "crypto_asset_entry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "symbol",
+        "spot_price",
+        "spot_source",
+        "funding"
+      ],
+      "properties": {
+        "symbol": {
+          "type": "string",
+          "enum": [
+            "BTC",
+            "ETH",
+            "SOL"
+          ]
+        },
+        "spot_price": {
+          "$ref": "#/$defs/decimal_positive"
+        },
+        "spot_source": {
+          "type": "string",
+          "minLength": 2
+        },
+        "funding": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "primary_exchange",
+            "primary_rate",
+            "secondary_exchange",
+            "secondary_rate",
+            "net_spread",
+            "spread_bps",
+            "annualized_spread_pct",
+            "arbitrage_signal"
+          ],
+          "properties": {
+            "primary_exchange": {
+              "type": "string",
+              "minLength": 2
+            },
+            "primary_rate": {
+              "$ref": "#/$defs/decimal_signed"
+            },
+            "secondary_exchange": {
+              "type": "string",
+              "minLength": 2
+            },
+            "secondary_rate": {
+              "$ref": "#/$defs/decimal_signed"
+            },
+            "net_spread": {
+              "$ref": "#/$defs/decimal_signed"
+            },
+            "spread_bps": {
+              "$ref": "#/$defs/decimal_non_negative"
+            },
+            "annualized_spread_pct": {
+              "$ref": "#/$defs/decimal_non_negative"
+            },
+            "arbitrage_signal": {
+              "type": "string",
+              "minLength": 3
+            }
+          }
+        }
+      }
+    },
+    "news_item": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "published_at",
+        "source_name",
+        "source_url",
+        "en",
+        "ar",
+        "priced_in_warning",
+        "assets_bias_24h",
+        "confidence_score",
+        "auditor_verified"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 8,
+          "maxLength": 64
+        },
+        "published_at": {
+          "$ref": "#/$defs/iso8601_timestamp"
+        },
+        "source_name": {
+          "type": "string",
+          "minLength": 2
+        },
+        "source_url": {
+          "type": "string",
+          "format": "uri",
+          "pattern": "^https?://[^\\s/$.?#].[^\\s]*$"
+        },
+        "en": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "title",
+            "summary",
+            "macro_thesis"
+          ],
+          "properties": {
+            "title": {
+              "$ref": "#/$defs/english_text"
+            },
+            "summary": {
+              "$ref": "#/$defs/english_text"
+            },
+            "macro_thesis": {
+              "$ref": "#/$defs/english_text"
+            }
+          }
+        },
+        "ar": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "title",
+            "summary",
+            "macro_thesis"
+          ],
+          "properties": {
+            "title": {
+              "$ref": "#/$defs/arabic_text"
+            },
+            "summary": {
+              "$ref": "#/$defs/arabic_text"
+            },
+            "macro_thesis": {
+              "$ref": "#/$defs/arabic_text"
+            }
+          }
+        },
+        "priced_in_warning": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "active",
+            "severity",
+            "en",
+            "ar"
+          ],
+          "properties": {
+            "active": {
+              "type": "boolean"
+            },
+            "severity": {
+              "type": "string",
+              "enum": [
+                "low",
+                "moderate",
+                "high"
+              ]
+            },
+            "en": {
+              "$ref": "#/$defs/english_text"
+            },
+            "ar": {
+              "$ref": "#/$defs/arabic_text"
+            }
+          }
+        },
+        "assets_bias_24h": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "USD",
+            "XAU",
+            "BTC"
+          ],
+          "properties": {
+            "USD": {
+              "$ref": "#/$defs/bias_direction"
+            },
+            "EUR": {
+              "$ref": "#/$defs/bias_direction"
+            },
+            "GBP": {
+              "$ref": "#/$defs/bias_direction"
+            },
+            "XAU": {
+              "$ref": "#/$defs/bias_direction"
+            },
+            "BTC": {
+              "$ref": "#/$defs/bias_direction"
+            },
+            "ETH": {
+              "$ref": "#/$defs/bias_direction"
+            },
+            "SOL": {
+              "$ref": "#/$defs/bias_direction"
+            }
+          }
+        },
+        "confidence_score": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 100
+        },
+        "auditor_verified": {
+          "type": "boolean"
+        }
+      }
+    }
+  },
+  "properties": {
+    "meta": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "platform",
+        "platform_ar",
+        "schema_version",
+        "generated_at",
+        "ai_mode",
+        "status"
+      ],
+      "properties": {
+        "platform": {
+          "type": "string",
+          "const": "RatePath"
+        },
+        "platform_ar": {
+          "type": "string",
+          "const": "ريت باث"
+        },
+        "schema_version": {
+          "type": "string",
+          "const": "1.0.0"
+        },
+        "generated_at": {
+          "$ref": "#/$defs/iso8601_timestamp"
+        },
+        "ai_mode": {
+          "type": "string",
+          "enum": [
+            "live_llm",
+            "deterministic_fallback"
+          ]
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "healthy",
+            "degraded"
+          ]
+        }
+      }
+    },
+    "fiat": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "base",
+        "updated_at",
+        "source",
+        "rates"
+      ],
+      "properties": {
+        "base": {
+          "type": "string",
+          "const": "USD"
+        },
+        "updated_at": {
+          "$ref": "#/$defs/iso8601_timestamp"
+        },
+        "source": {
+          "type": "string",
+          "minLength": 2
+        },
+        "rates": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "EUR",
+            "GBP",
+            "TRY",
+            "SAR",
+            "AED",
+            "EGP"
+          ],
+          "properties": {
+            "EUR": {
+              "$ref": "#/$defs/fiat_pair_entry"
+            },
+            "GBP": {
+              "$ref": "#/$defs/fiat_pair_entry"
+            },
+            "TRY": {
+              "$ref": "#/$defs/fiat_pair_entry"
+            },
+            "SAR": {
+              "$ref": "#/$defs/fiat_pair_entry"
+            },
+            "AED": {
+              "$ref": "#/$defs/fiat_pair_entry"
+            },
+            "EGP": {
+              "$ref": "#/$defs/fiat_pair_entry"
+            }
+          }
+        }
+      }
+    },
+    "gold": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "currency",
+        "troy_ounce_grams",
+        "updated_at",
+        "source",
+        "prices"
+      ],
+      "properties": {
+        "currency": {
+          "type": "string",
+          "const": "USD"
+        },
+        "troy_ounce_grams": {
+          "type": "string",
+          "const": "31.1034768"
+        },
+        "updated_at": {
+          "$ref": "#/$defs/iso8601_timestamp"
+        },
+        "source": {
+          "type": "string",
+          "minLength": 2
+        },
+        "prices": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "XAU_OZ",
+            "GRAM_24K",
+            "GRAM_21K",
+            "GRAM_18K"
+          ],
+          "properties": {
+            "XAU_OZ": {
+              "$ref": "#/$defs/decimal_positive"
+            },
+            "GRAM_24K": {
+              "$ref": "#/$defs/decimal_positive"
+            },
+            "GRAM_21K": {
+              "$ref": "#/$defs/decimal_positive"
+            },
+            "GRAM_18K": {
+              "$ref": "#/$defs/decimal_positive"
+            }
+          }
+        }
+      }
+    },
+    "crypto": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "quote_currency",
+        "updated_at",
+        "assets"
+      ],
+      "properties": {
+        "quote_currency": {
+          "type": "string",
+          "const": "USD"
+        },
+        "updated_at": {
+          "$ref": "#/$defs/iso8601_timestamp"
+        },
+        "assets": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "BTC",
+            "ETH",
+            "SOL"
+          ],
+          "properties": {
+            "BTC": {
+              "$ref": "#/$defs/crypto_asset_entry"
+            },
+            "ETH": {
+              "$ref": "#/$defs/crypto_asset_entry"
+            },
+            "SOL": {
+              "$ref": "#/$defs/crypto_asset_entry"
+            }
+          }
+        }
+      }
+    },
+    "news": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/news_item"
+      }
+    }
+  }
+}

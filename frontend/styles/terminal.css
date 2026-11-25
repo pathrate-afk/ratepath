@@ -1,0 +1,70 @@
+/* RatePath (ريت باث) — Institutional Zero-CLS Bilingual Stylesheet */
+
+:root {
+  color-scheme: dark;
+  --rp-bg: #070b14;
+  --rp-panel: #0f172a;
+  --rp-gold: #d4af37;
+  --rp-emerald: #10b981;
+  --rp-rose: #f43f5e;
+}
+
+html {
+  background-color: var(--rp-bg);
+  color: #f8fafc;
+  font-family: "Inter", "IBM Plex Sans Arabic", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+html[dir="rtl"] {
+  font-family: "IBM Plex Sans Arabic", "Inter", system-ui, -apple-system, sans-serif;
+}
+
+/* Prevent Cumulative Layout Shift (CLS) during instant EN <-> AR switching */
+header.rp-header {
+  min-height: 64px;
+}
+
+.rp-ticker-strip {
+  min-height: 46px;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.rp-ticker-strip::-webkit-scrollbar {
+  display: none;
+}
+
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Custom sleek terminal scrollbars on desktop */
+@media (min-width: 1024px) {
+  ::-webkit-scrollbar {
+    width: 7px;
+    height: 7px;
+  }
+  ::-webkit-scrollbar-track {
+    background: #070b14;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: #1e293b;
+    border-radius: 9999px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: #334155;
+  }
+}
+
+/* Safe-area padding for mobile iOS/Telegram Mini App bottom bar */
+.pb-safe-bottom {
+  padding-bottom: calc(4.75rem + env(safe-area-inset-bottom, 0px));
+}
+
+@media (min-width: 1024px) {
+  .pb-safe-bottom {
+    padding-bottom: 2rem;
+  }
+}

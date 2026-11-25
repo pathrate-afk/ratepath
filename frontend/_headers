@@ -1,0 +1,43 @@
+# RatePath (ريت باث) — Cloudflare Pages Security & Optimal Cache Headers
+
+/*
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: strict-origin-when-cross-origin
+  Strict-Transport-Security: max-age=31536000; includeSubDomains; preload
+  Permissions-Policy: camera=(), microphone=(), geolocation=(), payment=()
+  Content-Security-Policy: frame-ancestors 'self' https://web.telegram.org https://*.telegram.org;
+
+/index.html
+  Cache-Control: public, max-age=0, must-revalidate
+
+/ar
+  Cache-Control: public, max-age=0, must-revalidate
+
+/sw.js
+  Cache-Control: public, max-age=0, must-revalidate
+  Service-Worker-Allowed: /
+
+/manifest.json
+  Cache-Control: public, max-age=3600
+  Content-Type: application/manifest+json; charset=utf-8
+
+/monetization.config.js
+  Cache-Control: public, max-age=300, stale-while-revalidate=600
+
+/public/live_feed.json
+  Access-Control-Allow-Origin: *
+  Access-Control-Allow-Methods: GET, HEAD, OPTIONS
+  Cache-Control: public, max-age=60, stale-while-revalidate=240
+  Content-Type: application/json; charset=utf-8
+
+/live_feed.json
+  Access-Control-Allow-Origin: *
+  Access-Control-Allow-Methods: GET, HEAD, OPTIONS
+  Cache-Control: public, max-age=60, stale-while-revalidate=240
+  Content-Type: application/json; charset=utf-8
+
+/favicon.ico
+  Cache-Control: public, max-age=604800
+
+/icons/*
+  Cache-Control: public, max-age=31536000, immutable

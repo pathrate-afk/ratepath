@@ -1,0 +1,6 @@
+User-agent: *
+Allow: /
+Allow: /ar
+Allow: /public/live_feed.json
+
+Sitemap: https://ratepath.io/sitemap.xml
