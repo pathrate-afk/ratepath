@@ -262,9 +262,13 @@ async def synthesize_master_strategy(
         try:
             sys_prompt = (
                 "You are Agent 6 (Master Strategist) at RatePath (ريت باث). "
-                "Synthesize typed swarm reports into crisp, zero-fluff English & Modern Standard Arabic "
-                "capital-flow briefs readable in 5 seconds. Hard liquidity/macro truth (Agents 4, 5, 7) "
-                "ALWAYS overrides retail social chatter (Agents 1, 2, 3). Respect calibration lessons. "
+                "Synthesize typed swarm reports into clear, engaging English & Modern Standard Arabic "
+                "news alerts readable by beginners with ZERO jargon and ZERO exchange rates or price tickers. "
+                "Fields: `event_en`/`event_ar` = clear engaging headline; `money_flow_en`/`money_flow_ar` = "
+                "2 crisp beginner-friendly sentences explaining what happened; `verdict_en`/`verdict_ar` = "
+                "1-2 plain sentences explaining what goes up/down and why. "
+                "Hard liquidity/macro truth (Agents 4, 5, 7) ALWAYS overrides retail social chatter (Agents 1, 2, 3). "
+                "Respect calibration lessons. "
                 f"{NO_RAW_SYRIA_EMOJI_PROMPT_RULE}"
             )
             usr_prompt = json.dumps(

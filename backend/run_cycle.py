@@ -30,8 +30,9 @@ from backend.config import (
 from backend.evaluator import MarketMemoryStore, extract_price_snapshot
 from backend.math_engine import parse_strict_decimal
 from backend.publisher import execute_live_cycle
+from backend.rates_bulletin import maybe_broadcast_rates_bulletin
 from backend.sources.coinmarketcap import generate_and_publish_catalog_feed
-from backend.telegram_bot import broadcast_feed_to_telegram, send_admin_watchdog_alert
+from backend.telegram_bot import send_admin_watchdog_alert
 
 LAST_EVAL_REDIS_KEY: str = "ratepath:last_eval_ts"
 HOURLY_EVAL_INTERVAL_SECONDS: int = 3600
@@ -173,12 +174,19 @@ async def run_single_cycle(
     memory_store: MarketMemoryStore | None = None,
     cycle_executor: Any = None,
     catalog_generator: Any = None,
+    bulletin_broadcaster: Any = None,
     telegram_broadcaster: Any = None,
     http_client: httpx.AsyncClient | None = None,
     now_utc: datetime | None = None,
     lane1_fast_pricing: bool = True,
 ) -> dict[str, Any]:
-    """Run 1 complete Lane-1 fast cycle (<5s, zero LLM, Agent 7 Price Guardian) + catalog + hourly eval gate."""
+    """Run Lane-1 pricing ONLY (`live_feed.json` + `catalog_feed.json` + change-only Rates Bulletin).
+
+    CRITICAL: `run_cycle.py` NEVER calls `ai_strategist` LLM and NEVER broadcasts news alerts.
+    News alerts are broadcast EXCLUSIVELY by `backend/agents/orchestrator.py` (`ratepath_swarm.yml`).
+    """
+    del telegram_broadcaster  # Legacy news broadcaster permanently disconnected from Lane-1 worker
+    del lane1_fast_pricing
     enforce_utf8_runtime()
     cfg = settings or Settings.load()
     gate = eval_gate or HourlyEvaluationGate(settings=cfg)
@@ -187,7 +195,7 @@ async def run_single_cycle(
     now_ts = utc_epoch_seconds(now_dt)
 
     try:
-        # 1. Execute market + RSS + Agent 7 Price Guardian + atomic `live_feed.json` write
+        # 1. Execute market pricing + Agent 7 Price Guardian + SP-Today SYP -> `live_feed.json` (ZERO AI news)
         if cycle_executor is not None:
             feed_payload = await cycle_executor()
         else:
@@ -197,10 +205,12 @@ async def run_single_cycle(
                 settings=cfg,
                 run_evaluator=False,
                 broadcast_telegram=False,
-                use_llm=not lane1_fast_pricing,
+                use_llm=False,
+                skip_ai_news=True,
             )
 
-        # 1b. Build lightweight `catalog_feed.json` (155+ World FX + SP-Today SYP + Silver + Top-300 CMC)
+        # 1b. Build lightweight `catalog_feed.json` (165+ World FX + SP-Today SYP + Silver + Top-300 CMC)
+        catalog_payload: dict[str, Any] | None = None
         catalog_meta: dict[str, Any] = {}
         if catalog_generator is not None:
             catalog_payload = await catalog_generator(feed_payload)
@@ -220,13 +230,19 @@ async def run_single_cycle(
             except Exception as cat_exc:
                 catalog_meta = {"error": f"{type(cat_exc).__name__}: {cat_exc}"}
 
-        # 2. Deduplicated 4-channel EN/AR Telegram broadcast
-        if telegram_broadcaster is not None:
-            tg_summary = await telegram_broadcaster(feed_payload)
-        else:
-            tg_summary = await broadcast_feed_to_telegram(
-                feed_payload, settings=cfg, client=http_client
+        # 2. Standalone Change-Only Rates Bulletin (NEVER news alerts; 3h cooldown + move threshold)
+        if bulletin_broadcaster is not None:
+            bulletin_summary = await bulletin_broadcaster(feed_payload, catalog_payload)
+        elif cycle_executor is None:
+            bulletin_summary = await maybe_broadcast_rates_bulletin(
+                feed_payload,
+                catalog_payload,
+                settings=cfg,
+                client=http_client,
+                now_utc=now_dt,
             )
+        else:
+            bulletin_summary = {"status": "skipped_mock_cycle", "sent": 0, "movers": []}
 
         # 3. Hourly 24h Self-Evaluation Gate via Upstash `ratepath:last_eval_ts`
         last_ts, gate_backend = await gate.get_last_eval_ts(client=http_client)
@@ -262,7 +278,8 @@ async def run_single_cycle(
             "catalog_crypto_count": catalog_meta.get("crypto_count", 0),
             "catalog_syp_source": catalog_meta.get("syp_source", ""),
             "catalog_cmc_source": catalog_meta.get("cmc_source", ""),
-            "telegram": tg_summary,
+            "rates_bulletin": bulletin_summary,
+            "news_broadcast_disabled_in_worker": True,
             "evaluator_ran": eval_due,
             "graded_count": graded_count,
             "eval_gate_backend": gate_backend,

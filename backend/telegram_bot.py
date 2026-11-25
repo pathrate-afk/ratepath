@@ -18,6 +18,7 @@ from __future__ import annotations
 import hashlib
 import html
 import json
+import re
 from datetime import datetime, timezone
 from decimal import Decimal
 from pathlib import Path
@@ -39,9 +40,15 @@ from backend.config import (
 from backend.math_engine import parse_strict_decimal
 from backend.seed_history import get_historical_macro_twins
 
-DEDUP_TTL_SECONDS_STR: str = "604800"  # 7 days
+# Strictly disabled until real verified affiliate accounts are configured
+AFFILIATES_ENABLED: bool = False
+
+DEDUP_TTL_SECONDS_STR: str = "172800"  # 48 hours
 MAX_LOCAL_DEDUP_ENTRIES: int = 1000
 HIGH_YIELD_CARRY_THRESHOLD_PCT: Decimal = Decimal("2.00")
+
+_HSPACE_ONLY_RE = re.compile(r"[ \t]+")
+_MULTI_BLANK_LINES_RE = re.compile(r"\n{3,}")
 
 ChannelLang = Literal["en", "ar", "bilingual"]
 
@@ -73,6 +80,21 @@ def _utc_now_iso() -> str:
 def _esc(text: Any) -> str:
     """Escape HTML special characters for Telegram HTML parse_mode."""
     return html.escape(str(text or ""), quote=True)
+
+
+def normalize_preserve_newlines(text: Any) -> str:
+    """Collapse horizontal spaces (`[ \\t]+`) per line while strictly preserving `\\n` and `\\n\\n`."""
+    raw = str(text or "").replace("\r\n", "\n").replace("\r", "\n")
+    cleaned_lines = [_HSPACE_ONLY_RE.sub(" ", line).strip() for line in raw.split("\n")]
+    joined = "\n".join(cleaned_lines).strip()
+    return _MULTI_BLANK_LINES_RE.sub("\n\n", joined)
+
+
+def _clean_single_block(text: Any) -> str:
+    """Clean one prose paragraph using horizontal-space-only collapsing (never strips intentional breaks)."""
+    raw = str(text or "").replace("\r\n", "\n").replace("\r", "\n")
+    lines = [_HSPACE_ONLY_RE.sub(" ", ln).strip() for ln in raw.split("\n") if ln.strip()]
+    return " ".join(lines).strip()
 
 
 def build_lang_mini_app_url(base_url: str, lang: Literal["en", "ar"]) -> str:
@@ -303,37 +325,33 @@ def build_public_channel_payload(
     mini_app_url: str = "https://ratepath.io/",
     lang: ChannelLang = "en",
 ) -> dict[str, Any]:
-    """Build 5-second scannable 4-line pure-EN (`?lang=en`) or pure-AR (`?lang=ar`) flash post."""
-    gold_oz = feed_payload.get("gold", {}).get("prices", {}).get("XAU_OZ", "N/A")
-    btc_spot = feed_payload.get("crypto", {}).get("assets", {}).get("BTC", {}).get("spot_price", "N/A")
-    syp_entry = feed_payload.get("fiat", {}).get("rates", {}).get("SYP", {})
-    syp_rate = (
-        str(syp_entry.get("display_rate") or syp_entry.get("units_per_usd") or "").strip()
-        if isinstance(syp_entry, dict)
-        else ""
-    )
+    """Build clean 3-block news-only post (ZERO prices/tickers, strict `\\n\\n` paragraph spacing)."""
+    del feed_payload  # News alerts strictly contain ZERO exchange rates or price tickers
 
     en_block = news_item.get("en", {})
     ar_block = news_item.get("ar", {})
     pw = news_item.get("priced_in_warning", {})
     biases = news_item.get("assets_bias_24h", {})
-    twin = match_closest_historical_twin(news_item)
     src_name = str(news_item.get("source_name", "Global Wire"))
     src_name_ar = _SOURCE_AR_LABELS.get(src_name, src_name)
     src_url = str(news_item.get("source_url", "https://ratepath.io/"))
 
     if lang == "en":
         launch_url = build_lang_mini_app_url(mini_app_url, "en")
-        flow_en = _compact_money_flow(biases, "en")
-        verdict_en = _compact_verdict(pw, "en")
-        twin_en = str(twin.get("headline_en", "Historical macro precedent"))[:110]
-        syp_chunk_en = f" · <code>{SYRIA_SAFE_TICKER_EN} {_esc(syp_rate)}</code>" if syp_rate else ""
+        headline_en = _clean_single_block(en_block.get("title") or "Market Update")
+        story_en = _clean_single_block(
+            en_block.get("summary") or _compact_money_flow(biases, "en")
+        )[:320]
+        bottom_en = _clean_single_block(
+            en_block.get("macro_thesis") or _compact_verdict(pw, "en")
+        )[:300]
         text = sanitize_syria_flag_emoji(
-            (
-                f"📌 <b>Event:</b> {_esc(en_block.get('title'))}\n"
-                f"💰 <b>Money Flow:</b> {_esc(flow_en)} · <code>XAU ${_esc(gold_oz)}</code> · <code>BTC ${_esc(btc_spot)}</code>{syp_chunk_en}\n"
-                f"🕰 <b>Historical Twin:</b> {_esc(twin_en)}\n"
-                f"⚠️ <b>Verdict:</b> {_esc(verdict_en)} (<a href=\"{_esc(src_url)}\">{_esc(src_name)}</a>)"
+            normalize_preserve_newlines(
+                f"🔥 <b>{_esc(headline_en)}</b>\n\n"
+                f"📖 <b>What Happened:</b>\n"
+                f"{_esc(story_en)}\n\n"
+                f"💡 <b>Bottom Line:</b>\n"
+                f"{_esc(bottom_en)}"
             ),
             lang="en",
         )
@@ -343,16 +361,20 @@ def build_public_channel_payload(
         ]
     elif lang == "ar":
         launch_url = build_lang_mini_app_url(mini_app_url, "ar")
-        flow_ar = _compact_money_flow(biases, "ar")
-        verdict_ar = _compact_verdict(pw, "ar")
-        twin_ar = str(twin.get("headline_ar", "سوابق تاريخية للأسواق"))[:110]
-        syp_chunk_ar = f" · <code>{SYRIA_SAFE_TICKER_AR} {_esc(syp_rate)}</code>" if syp_rate else ""
+        headline_ar = _clean_single_block(ar_block.get("title") or "تحديث الأسواق")
+        story_ar = _clean_single_block(
+            ar_block.get("summary") or _compact_money_flow(biases, "ar")
+        )[:320]
+        bottom_ar = _clean_single_block(
+            ar_block.get("macro_thesis") or _compact_verdict(pw, "ar")
+        )[:300]
         text = sanitize_syria_flag_emoji(
-            (
-                f"📌 <b>الحدث:</b> {_esc(ar_block.get('title'))}\n"
-                f"💰 <b>حركة السيولة:</b> {_esc(flow_ar)} · <code>الذهب ${_esc(gold_oz)}</code> · <code>بيتكوين ${_esc(btc_spot)}</code>{syp_chunk_ar}\n"
-                f"🕰 <b>التوأم التاريخي:</b> {_esc(twin_ar)}\n"
-                f"⚠️ <b>الخلاصة:</b> {_esc(verdict_ar)} (<a href=\"{_esc(src_url)}\">{_esc(src_name_ar)}</a>)"
+            normalize_preserve_newlines(
+                f"🔥 <b>{_esc(headline_ar)}</b>\n\n"
+                f"📖 <b>ما القصة؟</b>\n"
+                f"{_esc(story_ar)}\n\n"
+                f"💡 <b>الخلاصة ومسار السيولة:</b>\n"
+                f"{_esc(bottom_ar)}"
             ),
             lang="ar",
         )
@@ -361,15 +383,16 @@ def build_public_channel_payload(
             [{"text": f"🔗 {src_name_ar}", "url": src_url}],
         ]
     else:
-        flow_en = _compact_money_flow(biases, "en")
-        verdict_en = _compact_verdict(pw, "en")
-        syp_chunk_en = f" · <code>{SYRIA_SAFE_TICKER_EN} {_esc(syp_rate)}</code>" if syp_rate else ""
+        headline_en = _clean_single_block(en_block.get("title") or "Market Update")
+        story_en = _clean_single_block(en_block.get("summary") or _compact_money_flow(biases, "en"))[:280]
+        bottom_en = _clean_single_block(en_block.get("macro_thesis") or _compact_verdict(pw, "en"))[:260]
         text = sanitize_syria_flag_emoji(
-            (
-                f"📌 <b>Event:</b> {_esc(en_block.get('title'))} | {_esc(ar_block.get('title'))}\n"
-                f"💰 <b>Money Flow:</b> {_esc(flow_en)} · <code>XAU ${_esc(gold_oz)}</code> · <code>BTC ${_esc(btc_spot)}</code>{syp_chunk_en}\n"
-                f"🕰 <b>Historical Twin:</b> {_esc(twin.get('headline_en'))}\n"
-                f"⚠️ <b>Verdict:</b> {_esc(verdict_en)} (<a href=\"{_esc(src_url)}\">{_esc(src_name)}</a>)"
+            normalize_preserve_newlines(
+                f"🔥 <b>{_esc(headline_en)}</b>\n\n"
+                f"📖 <b>What Happened:</b>\n"
+                f"{_esc(story_en)}\n\n"
+                f"💡 <b>Bottom Line:</b>\n"
+                f"{_esc(bottom_en)}"
             ),
             lang="en",
         )
@@ -377,6 +400,8 @@ def build_public_channel_payload(
             [{"text": "📊 Open RatePath | ريت باث", "web_app": {"url": mini_app_url}}],
             [{"text": f"🔗 {src_name}", "url": src_url}],
         ]
+
+    assert text.count("\n\n") >= 2, "Telegram news message must contain >= 2 blank-line separators"
 
     return {
         "chat_id": chat_id,
@@ -395,71 +420,82 @@ def build_vip_channel_payload(
     mini_app_url: str = "https://ratepath.io/",
     lang: ChannelLang = "en",
 ) -> dict[str, Any]:
-    """Build 5-second scannable 4-line VIP institutional brief with twin reaction & funding carry."""
-    twin = match_closest_historical_twin(news_item)
-    spreads = extract_high_yield_funding_opportunities(feed_payload)
+    """Build clean 3-block VIP news-only brief (ZERO price tickers, strict `\\n\\n` spacing)."""
+    del feed_payload  # News alerts strictly contain ZERO exchange rates or price tickers
 
+    twin = match_closest_historical_twin(news_item)
     en_block = news_item.get("en", {})
     ar_block = news_item.get("ar", {})
     pw = news_item.get("priced_in_warning", {})
     biases = news_item.get("assets_bias_24h", {})
-    src_name = str(news_item.get("source_name", "Global Wire"))
-    src_name_ar = _SOURCE_AR_LABELS.get(src_name, src_name)
-    src_url = str(news_item.get("source_url", "https://ratepath.io/"))
-    twin_moves = " · ".join(f"{k} {v}%" for k, v in list(twin.get("realized_changes_pct", {}).items())[:3])
 
     if lang == "en":
         launch_url = build_lang_mini_app_url(mini_app_url, "en")
-        flow_en = _compact_money_flow(biases, "en")
-        carry_en = (
-            f"{spreads[0]['symbol']} {spreads[0]['annualized_spread_pct']}% APR ({spreads[0]['arbitrage_signal']})"
-            if spreads
-            else "Neutral carry"
-        )
-        verdict_en = str(pw.get("en") or _compact_verdict(pw, "en"))[:140]
-        text = (
-            f"📌 <b>Event [VIP]:</b> {_esc(en_block.get('title'))}\n"
-            f"💰 <b>Money Flow:</b> {_esc(flow_en)} · Carry: <code>{_esc(carry_en)}</code>\n"
-            f"🕰 <b>Historical Twin:</b> {_esc(twin.get('headline_en'))} (<code>{_esc(twin_moves)}</code>)\n"
-            f"⚠️ <b>Verdict:</b> {_esc(verdict_en)} (<a href=\"{_esc(src_url)}\">{_esc(src_name)}</a>)"
+        headline_en = _clean_single_block(en_block.get("title") or "VIP Market Brief")
+        story_en = _clean_single_block(
+            en_block.get("summary") or _compact_money_flow(biases, "en")
+        )[:320]
+        verdict_part = _clean_single_block(
+            en_block.get("macro_thesis") or pw.get("en") or _compact_verdict(pw, "en")
+        )[:220]
+        twin_hint = _clean_single_block(twin.get("headline_en") or "")[:100]
+        bottom_en = f"{verdict_part} (Precedent: {twin_hint})" if twin_hint else verdict_part
+        text = sanitize_syria_flag_emoji(
+            normalize_preserve_newlines(
+                f"🔥 <b>[VIP] {_esc(headline_en)}</b>\n\n"
+                f"📖 <b>What Happened:</b>\n"
+                f"{_esc(story_en)}\n\n"
+                f"💡 <b>Bottom Line:</b>\n"
+                f"{_esc(bottom_en)}"
+            ),
+            lang="en",
         )
         keyboard = [[{"text": "🚀 Open RatePath VIP", "web_app": {"url": launch_url}}]]
 
     elif lang == "ar":
         launch_url = build_lang_mini_app_url(mini_app_url, "ar")
-        flow_ar = _compact_money_flow(biases, "ar")
-        carry_ar = (
-            f"{spreads[0]['symbol']} بعائد {spreads[0]['annualized_spread_pct']}% ({_translate_arbitrage_signal_ar(spreads[0]['arbitrage_signal'])})"
-            if spreads
-            else "فروق تمويل محايدة"
-        )
-        verdict_ar = str(pw.get("ar") or _compact_verdict(pw, "ar"))[:140]
-        text = (
-            f"📌 <b>الحدث [VIP]:</b> {_esc(ar_block.get('title'))}\n"
-            f"💰 <b>حركة السيولة:</b> {_esc(flow_ar)} · التمويل: {_esc(carry_ar)}\n"
-            f"🕰 <b>التوأم التاريخي:</b> {_esc(twin.get('headline_ar'))} (<code>{_esc(twin_moves)}</code>)\n"
-            f"⚠️ <b>الخلاصة:</b> {_esc(verdict_ar)} (<a href=\"{_esc(src_url)}\">{_esc(src_name_ar)}</a>)"
+        headline_ar = _clean_single_block(ar_block.get("title") or "ملخص VIP للأسواق")
+        story_ar = _clean_single_block(
+            ar_block.get("summary") or _compact_money_flow(biases, "ar")
+        )[:320]
+        verdict_part_ar = _clean_single_block(
+            ar_block.get("macro_thesis") or pw.get("ar") or _compact_verdict(pw, "ar")
+        )[:220]
+        twin_hint_ar = _clean_single_block(twin.get("headline_ar") or "")[:100]
+        bottom_ar = f"{verdict_part_ar} (سابقة تاريخية: {twin_hint_ar})" if twin_hint_ar else verdict_part_ar
+        text = sanitize_syria_flag_emoji(
+            normalize_preserve_newlines(
+                f"🔥 <b>[VIP] {_esc(headline_ar)}</b>\n\n"
+                f"📖 <b>ما القصة؟</b>\n"
+                f"{_esc(story_ar)}\n\n"
+                f"💡 <b>الخلاصة ومسار السيولة:</b>\n"
+                f"{_esc(bottom_ar)}"
+            ),
+            lang="ar",
         )
         keyboard = [[{"text": "🚀 افتح ريت باث VIP", "web_app": {"url": launch_url}}]]
 
     else:
-        flow_en = _compact_money_flow(biases, "en")
-        carry_en = (
-            f"{spreads[0]['symbol']} {spreads[0]['annualized_spread_pct']}% APR ({spreads[0]['arbitrage_signal']})"
-            if spreads
-            else "Neutral carry"
-        )
-        text = (
-            f"📌 <b>Event [VIP]:</b> {_esc(en_block.get('title'))} | {_esc(ar_block.get('title'))}\n"
-            f"💰 <b>Money Flow:</b> {_esc(flow_en)} · Carry: <code>{_esc(carry_en)}</code>\n"
-            f"🕰 <b>Historical Twin:</b> {_esc(twin.get('headline_en'))} (<code>{_esc(twin_moves)}</code>)\n"
-            f"⚠️ <b>Verdict:</b> {_esc(pw.get('en'))} (<a href=\"{_esc(src_url)}\">{_esc(src_name)}</a>)"
+        headline_en = _clean_single_block(en_block.get("title") or "VIP Market Brief")
+        story_en = _clean_single_block(en_block.get("summary") or _compact_money_flow(biases, "en"))[:280]
+        bottom_en = _clean_single_block(en_block.get("macro_thesis") or pw.get("en") or _compact_verdict(pw, "en"))[:260]
+        text = sanitize_syria_flag_emoji(
+            normalize_preserve_newlines(
+                f"🔥 <b>[VIP] {_esc(headline_en)}</b>\n\n"
+                f"📖 <b>What Happened:</b>\n"
+                f"{_esc(story_en)}\n\n"
+                f"💡 <b>Bottom Line:</b>\n"
+                f"{_esc(bottom_en)}"
+            ),
+            lang="en",
         )
         keyboard = [[{"text": "🚀 Open RatePath VIP | ريت باث", "web_app": {"url": mini_app_url}}]]
 
+    assert text.count("\n\n") >= 2, "Telegram VIP message must contain >= 2 blank-line separators"
+
     return {
         "chat_id": chat_id,
-        "text": sanitize_syria_flag_emoji(text, lang="ar" if lang == "ar" else "en"),
+        "text": text,
         "parse_mode": "HTML",
         "disable_web_page_preview": True,
         "reply_markup": {"inline_keyboard": keyboard},
@@ -500,15 +536,21 @@ async def _send_telegram_payload(
     client: httpx.AsyncClient,
     bot_token: str,
     payload: dict[str, Any],
+    *,
+    enforce_paragraph_spacing: bool = False,
 ) -> dict[str, Any]:
-    """POST `sendMessage` via Telegram Bot API with channel `web_app` -> `url` fallback."""
+    """POST `sendMessage` via Telegram Bot API with spacing guard & `web_app` -> `url` fallback."""
     safe_payload = dict(payload)
-    if isinstance(safe_payload.get("text"), str) and RAW_SYRIA_FLAG_EMOJI in safe_payload["text"]:
-        # Belt-and-suspenders guard: never emit raw U+1F1F8 U+1F1FE over Telegram API
-        has_arabic = any("\u0600" <= ch <= "\u06FF" for ch in safe_payload["text"])
-        safe_payload["text"] = sanitize_syria_flag_emoji(
-            safe_payload["text"], lang="ar" if has_arabic else "en"
-        )
+    if isinstance(safe_payload.get("text"), str):
+        text_val = normalize_preserve_newlines(safe_payload["text"])
+        if RAW_SYRIA_FLAG_EMOJI in text_val:
+            has_arabic = any("\u0600" <= ch <= "\u06FF" for ch in text_val)
+            text_val = sanitize_syria_flag_emoji(text_val, lang="ar" if has_arabic else "en")
+        if enforce_paragraph_spacing:
+            assert text_val.count("\n\n") >= 2, (
+                f"Telegram post failed paragraph spacing guard (found {text_val.count(chr(10) * 2)} blank lines)"
+            )
+        safe_payload["text"] = text_val
     api_url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
     resp = await client.post(
         api_url,
@@ -643,7 +685,12 @@ async def broadcast_feed_to_telegram(
                     )
 
                 try:
-                    await _send_telegram_payload(http_client, cfg.telegram_bot_token, payload)
+                    await _send_telegram_payload(
+                        http_client,
+                        cfg.telegram_bot_token,
+                        payload,
+                        enforce_paragraph_spacing=True,
+                    )
                     counters[f"{target_key}_sent"] += 1
                 except Exception as exc:
                     await send_admin_watchdog_alert(

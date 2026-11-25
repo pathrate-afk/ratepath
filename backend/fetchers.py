@@ -26,7 +26,6 @@ import feedparser
 import httpx
 
 from backend.math_engine import (
-    OPTIONAL_FIAT_CODES,
     REQUIRED_FIAT_CODES,
     SanityGuardError,
     loads_decimal_json,
@@ -70,7 +69,7 @@ RSS_FEEDS: tuple[tuple[str, str], ...] = (
 )
 
 _HTML_TAG_RE = re.compile(r"<[^>]+>")
-_WHITESPACE_RE = re.compile(r"\s+")
+_HSPACE_RE = re.compile(r"[ \t]+")
 
 
 class FetcherError(RuntimeError):
@@ -122,7 +121,8 @@ def utc_now_iso() -> str:
 def _clean_rss_text(raw: str) -> str:
     unescaped = html.unescape(raw or "")
     no_tags = _HTML_TAG_RE.sub(" ", unescaped)
-    return _WHITESPACE_RE.sub(" ", no_tags).strip()
+    lines = [_HSPACE_RE.sub(" ", ln).strip() for ln in no_tags.replace("\r\n", "\n").splitlines()]
+    return "\n".join(ln for ln in lines if ln).strip()
 
 
 def _normalize_rss_timestamp(entry: Any) -> str:
@@ -174,14 +174,8 @@ async def _fetch_fiat_er_api(client: httpx.AsyncClient) -> FiatFetchResult:
         if code not in rates_obj:
             raise FetcherError(f"open.er-api.com missing currency {code}.")
         extracted[code] = parse_strict_decimal(rates_obj[code], field_name=f"er_api.{code}")
-    for opt_code in OPTIONAL_FIAT_CODES:
-        if opt_code in rates_obj:
-            try:
-                extracted[opt_code] = parse_strict_decimal(
-                    rates_obj[opt_code], field_name=f"er_api.{opt_code}"
-                )
-            except SanityGuardError:
-                pass
+    # SYP is STRICTLY banned from open.er-api.com (sourced exclusively via backend/sources/sptoday.py)
+    extracted.pop("SYP", None)
     return FiatFetchResult(
         source="open.er-api.com",
         updated_at=utc_now_iso(),
@@ -205,15 +199,8 @@ async def _fetch_fiat_currency_cdn(
         if lower not in usd_map:
             raise FetcherError(f"{source_name} missing currency {code}.")
         extracted[code] = parse_strict_decimal(usd_map[lower], field_name=f"{source_name}.{code}")
-    for opt_code in OPTIONAL_FIAT_CODES:
-        lower = opt_code.lower()
-        if lower in usd_map:
-            try:
-                extracted[opt_code] = parse_strict_decimal(
-                    usd_map[lower], field_name=f"{source_name}.{opt_code}"
-                )
-            except SanityGuardError:
-                pass
+    # SYP is STRICTLY banned from generic FX CDNs (sourced exclusively via backend/sources/sptoday.py)
+    extracted.pop("SYP", None)
     return FiatFetchResult(
         source=source_name,
         updated_at=utc_now_iso(),

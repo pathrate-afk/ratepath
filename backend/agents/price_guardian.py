@@ -15,6 +15,7 @@ import httpx
 from backend.agents.contracts import AgentReport, utc_now_iso
 from backend.math_engine import (
     QUANT_2DP,
+    QUANT_4DP,
     DecimalInput,
     format_decimal,
     loads_decimal_json,
@@ -22,6 +23,9 @@ from backend.math_engine import (
 )
 
 MAX_SCREEN_VS_REAL_SPREAD_PCT: Decimal = Decimal("4.00")
+MAX_SYP_BUY_SELL_SPREAD_PCT: Decimal = Decimal("5.00")
+SYP_NEW_MIN_RATE: Decimal = Decimal("50")
+SYP_NEW_MAX_RATE: Decimal = Decimal("500")
 PCT_MULTIPLIER: Decimal = Decimal("100")
 
 
@@ -148,4 +152,79 @@ async def verify_gold_with_price_guardian(
         asset_label="XAU_OZ",
         screen_source=screen_source,
         benchmark_source="binance_vision_paxg",
+    )
+
+
+def validate_syp_sptoday_spread(
+    buy_rate: DecimalInput,
+    sell_rate: DecimalInput,
+    *,
+    source: str = "sp-today",
+    max_spread_pct: Decimal = MAX_SYP_BUY_SELL_SPREAD_PCT,
+) -> GuardianPriceVerdict:
+    """Validate SYP strictly against SP-Today Buy/Sell spread sanity (NEVER open.er-api).
+
+    Enforces:
+    - `50 < buy_rate < 500` and `50 < sell_rate < 500` (new SYP scale)
+    - `buy_rate <= sell_rate`
+    - Buy/Sell spread `< 5.00%`
+    """
+    buy_dec = parse_strict_decimal(buy_rate, field_name="syp.buy")
+    sell_dec = parse_strict_decimal(sell_rate, field_name="syp.sell")
+
+    with localcontext() as ctx:
+        ctx.prec = 28
+        mid_dec = (buy_dec + sell_dec) / Decimal("2")
+        spread_pct = (
+            ((sell_dec - buy_dec) / buy_dec) * PCT_MULTIPLIER
+            if buy_dec > Decimal("0")
+            else Decimal("100")
+        )
+
+    in_range = (
+        SYP_NEW_MIN_RATE < buy_dec < SYP_NEW_MAX_RATE
+        and SYP_NEW_MIN_RATE < sell_dec < SYP_NEW_MAX_RATE
+    )
+    order_valid = buy_dec <= sell_dec
+    spread_valid = spread_pct < max_spread_pct
+    rejected = not (in_range and order_valid and spread_valid)
+
+    spread_str = format_decimal(abs(spread_pct), QUANT_2DP)
+    flags = ["SYP_SPREAD_REJECTED"] if rejected else ["SYP_SPTODAY_VERIFIED"]
+    headline = (
+        f"Agent 7 rejected invalid SYP SP-Today quote "
+        f"(buy={format_decimal(buy_dec, QUANT_4DP)}, sell={format_decimal(sell_dec, QUANT_4DP)}, spread={spread_str}%)."
+        if rejected
+        else f"Agent 7 verified SYP SP-Today quote (mid={format_decimal(mid_dec, QUANT_4DP)}, spread={spread_str}%)."
+    )
+
+    report = AgentReport(
+        agent_id="agent_7_price_guardian",
+        tier="hard_truth",
+        timestamp=utc_now_iso(),
+        healthy=not rejected,
+        signal_direction="stress" if rejected else "neutral",
+        confidence=95 if not rejected else 20,
+        headline=headline,
+        evidence_urls=["https://sp-today.com/en"],
+        metrics={
+            "asset": "SYP",
+            "buy_rate": format_decimal(buy_dec, QUANT_4DP),
+            "sell_rate": format_decimal(sell_dec, QUANT_4DP),
+            "mid_rate": format_decimal(mid_dec, QUANT_4DP),
+            "buy_sell_spread_pct": spread_str,
+            "source": source,
+            "corrupt_spike_rejected": "true" if rejected else "false",
+        },
+        flags=flags,
+    )
+
+    return GuardianPriceVerdict(
+        accepted_price=mid_dec,
+        screen_price=sell_dec,
+        real_benchmark_price=buy_dec,
+        screen_vs_real_spread_pct=spread_str,
+        corrupt_spike_rejected=rejected,
+        source_used=source,
+        report=report,
     )

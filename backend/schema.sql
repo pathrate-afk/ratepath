@@ -211,3 +211,49 @@ CREATE POLICY "Users can update own workspace preferences"
     TO authenticated
     USING (auth.uid() = user_id)
     WITH CHECK (auth.uid() = user_id);
+
+-- 9. Automated VIP Crypto Subscriptions Table (`public.vip_subscriptions`)
+CREATE TABLE IF NOT EXISTS public.vip_subscriptions (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    order_id TEXT UNIQUE NOT NULL,
+    payment_id TEXT,
+    user_email TEXT,
+    telegram_user_id TEXT,
+    plan_tier TEXT NOT NULL DEFAULT 'monthly',
+    lang TEXT NOT NULL DEFAULT 'ar',
+    amount_usd NUMERIC(10, 2) NOT NULL,
+    payment_status TEXT NOT NULL DEFAULT 'waiting',
+    invite_link_issued TEXT,
+    expires_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_vip_subscriptions_user_email
+    ON public.vip_subscriptions (user_email);
+
+CREATE INDEX IF NOT EXISTS idx_vip_subscriptions_status_expires
+    ON public.vip_subscriptions (payment_status, expires_at);
+
+DROP TRIGGER IF EXISTS trg_vip_subscriptions_updated_at ON public.vip_subscriptions;
+CREATE TRIGGER trg_vip_subscriptions_updated_at
+BEFORE UPDATE ON public.vip_subscriptions
+FOR EACH ROW
+EXECUTE FUNCTION public.set_market_memory_updated_at();
+
+ALTER TABLE public.vip_subscriptions ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Users can view own subscription by email" ON public.vip_subscriptions;
+CREATE POLICY "Users can view own subscription by email"
+    ON public.vip_subscriptions
+    FOR SELECT
+    TO authenticated
+    USING (auth.jwt() ->> 'email' = user_email);
+
+DROP POLICY IF EXISTS "Allow service_role full access to vip_subscriptions" ON public.vip_subscriptions;
+CREATE POLICY "Allow service_role full access to vip_subscriptions"
+    ON public.vip_subscriptions
+    FOR ALL
+    TO service_role
+    USING (true)
+    WITH CHECK (true);

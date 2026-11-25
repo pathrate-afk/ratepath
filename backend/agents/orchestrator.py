@@ -33,10 +33,17 @@ from backend.agents.telegram_scanner import collect_telegram_scanner
 from backend.ai_strategist import MultiProviderRotator
 from backend.config import (
     LIVE_FEED_TARGET_PATH,
+    LOCAL_MEMORY_FALLBACK_PATH,
     WORKSPACE_ROOT,
     Settings,
     enforce_utf8_runtime,
     sanitize_syria_flag_emoji,
+)
+from backend.evaluator import (
+    MarketMemoryStore,
+    build_deterministic_embedding,
+    extract_price_snapshot,
+    normalize_supabase_rest_base,
 )
 from backend.fetchers import create_http_client, fetch_gold_spot
 from backend.math_engine import loads_decimal_json
@@ -44,9 +51,22 @@ from backend.seed_history import get_historical_macro_twins
 from backend.telegram_bot import broadcast_feed_to_telegram
 
 CONVICTION_PUBLISH_THRESHOLD: int = 75
-SWARM_HASH_TTL_SECONDS_STR: str = "14400"  # 4 hours
+SWARM_HASH_TTL_SECONDS_STR: str = "172800"  # 48 hours (Layer-1 Redis dedup)
+JACCARD_DUPLICATE_THRESHOLD_PCT: int = 45   # >= 0.45 keyword overlap = skip (Layer-2 Supabase dedup)
+SUPABASE_DEDUP_LOOKBACK_ROWS: int = 25
 SOURCE_TRUST_WEIGHTS_REDIS_KEY: str = "ratepath:source_trust_weights"
 LOCAL_SWARM_DEDUP_PATH: Path = WORKSPACE_ROOT / "backend" / "swarm_dedup.tmp.json"
+
+_TOKEN_WORD_RE = re.compile(r"[A-Za-z0-9\u0600-\u06FF]{3,}")
+_DEDUP_STOPWORDS: frozenset[str] = frozenset(
+    {
+        "the", "and", "for", "with", "from", "that", "this", "into", "over", "after",
+        "amid", "news", "ratepath", "market", "markets", "update", "report", "says",
+        "will", "have", "has", "are", "was", "were", "its", "their", "about",
+        "في", "من", "على", "إلى", "عن", "مع", "هذا", "هذه", "التي", "الذي",
+        "بعد", "قبل", "حول", "بين", "خلال", "تحديث", "الأسواق", "السوق", "ريت", "باث",
+    }
+)
 
 DEFAULT_TRUST_WEIGHTS: dict[str, int] = {
     "agent_1_social_pulse": 20,
@@ -114,12 +134,133 @@ def detect_hierarchy_and_retail_trap(
 
 
 def compute_swarm_content_hash(brief: StrategistBrief) -> str:
-    """Deterministic content hash for Upstash dedup gating of swarm alerts."""
+    """Deterministic content hash for Upstash 48h dedup gating of swarm alerts."""
     bias_str = ",".join(f"{k}:{v}" for k, v in sorted(brief.assets_bias_24h.items()))
     canonical = (
         f"{brief.matched_twin_key}|{brief.stage}|{brief.event_en.strip().lower()[:120]}|{bias_str}"
     )
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()[:24]
+
+
+def tokenize_keywords_for_jaccard(text: str) -> set[str]:
+    """Extract normalized EN/AR keywords (`len >= 3`, stopwords removed) for semantic dedup."""
+    normalized = (
+        str(text or "")
+        .lower()
+        .replace("أ", "ا")
+        .replace("إ", "ا")
+        .replace("آ", "ا")
+        .replace("ة", "ه")
+        .replace("ى", "ي")
+    )
+    return {
+        tok
+        for tok in _TOKEN_WORD_RE.findall(normalized)
+        if tok not in _DEDUP_STOPWORDS
+    }
+
+
+def is_jaccard_duplicate(
+    candidate_text: str,
+    existing_text: str,
+    *,
+    threshold_pct: int = JACCARD_DUPLICATE_THRESHOLD_PCT,
+) -> bool:
+    """Return True if keyword Jaccard similarity >= `threshold_pct`% (`>= 0.45`, ZERO floats)."""
+    cand_tokens = tokenize_keywords_for_jaccard(candidate_text)
+    exist_tokens = tokenize_keywords_for_jaccard(existing_text)
+    if not cand_tokens or not exist_tokens:
+        return False
+    inter = len(cand_tokens & exist_tokens)
+    union = len(cand_tokens | exist_tokens)
+    if union == 0:
+        return False
+    return (inter * 100) >= (threshold_pct * union)
+
+
+async def fetch_recent_market_memory_rows(
+    settings: Settings,
+    *,
+    client: httpx.AsyncClient | None = None,
+    limit: int = SUPABASE_DEDUP_LOOKBACK_ROWS,
+    local_memory_path: Path = LOCAL_MEMORY_FALLBACK_PATH,
+) -> list[dict[str, str]]:
+    """Query last `limit` (25) rows from Supabase `public.market_memory` (or local fallback)."""
+    if settings.has_live_supabase:
+        rest_base = normalize_supabase_rest_base(settings.supabase_url)
+        owns_client = client is None
+        http_client = client or httpx.AsyncClient(timeout=httpx.Timeout(8))
+        try:
+            resp = await http_client.get(
+                f"{rest_base}/market_memory",
+                params={
+                    "select": "headline_en,headline_ar,summary_en,summary_ar,record_type",
+                    "record_type": "neq.historical_macro_twin",
+                    "order": "created_at.desc",
+                    "limit": str(limit),
+                },
+                headers={
+                    "apikey": settings.supabase_key,
+                    "Authorization": f"Bearer {settings.supabase_key}",
+                },
+            )
+            if resp.status_code == 200:
+                rows = json.loads(resp.text)
+                if isinstance(rows, list):
+                    return [r for r in rows if isinstance(r, dict)]
+        except Exception:
+            pass
+        finally:
+            if owns_client:
+                await http_client.aclose()
+
+    if local_memory_path.exists():
+        try:
+            rows = json.loads(local_memory_path.read_text(encoding="utf-8"))
+            if isinstance(rows, list):
+                non_anchors = [
+                    r for r in rows
+                    if isinstance(r, dict) and r.get("record_type") != "historical_macro_twin"
+                ]
+                return non_anchors[-limit:]
+        except Exception:
+            pass
+    return []
+
+
+async def check_supabase_jaccard_duplicate(
+    brief: StrategistBrief,
+    settings: Settings,
+    *,
+    client: httpx.AsyncClient | None = None,
+    recent_rows: list[dict[str, Any]] | None = None,
+    local_memory_path: Path = LOCAL_MEMORY_FALLBACK_PATH,
+) -> tuple[bool, str | None]:
+    """Layer-2 dedup: compare candidate headline/story against last 25 `market_memory` rows (>= 0.45)."""
+    rows = (
+        recent_rows
+        if recent_rows is not None
+        else await fetch_recent_market_memory_rows(
+            settings, client=client, local_memory_path=local_memory_path
+        )
+    )
+    cand_en = f"{brief.event_en} {brief.money_flow_en}"
+    cand_ar = f"{brief.event_ar} {brief.money_flow_ar}"
+
+    for row in rows:
+        hist_en = str(row.get("headline_en") or "")
+        hist_en_full = f"{hist_en} {row.get('summary_en') or ''}"
+        hist_ar = str(row.get("headline_ar") or "")
+        hist_ar_full = f"{hist_ar} {row.get('summary_ar') or ''}"
+
+        if (
+            is_jaccard_duplicate(brief.event_en, hist_en)
+            or is_jaccard_duplicate(cand_en, hist_en_full)
+            or is_jaccard_duplicate(brief.event_ar, hist_ar)
+            or is_jaccard_duplicate(cand_ar, hist_ar_full)
+        ):
+            return True, hist_en[:90] or hist_ar[:90]
+    return False, None
 
 
 def audit_strategist_brief(
@@ -299,9 +440,11 @@ async def evaluate_swarm_reports(
     use_llm: bool = True,
     dry_run: bool = False,
     local_dedup_path: Path = LOCAL_SWARM_DEDUP_PATH,
+    local_memory_path: Path = LOCAL_MEMORY_FALLBACK_PATH,
+    recent_memory_rows: list[dict[str, Any]] | None = None,
     trust_weights: dict[str, int] | None = None,
 ) -> OrchestratorDecision:
-    """Core Central Orchestrator pipeline: Hierarchy -> Agent 6 -> Auditor -> Conviction & Hash Gate."""
+    """Core Central Orchestrator pipeline: Hierarchy -> Agent 6 -> Auditor -> Conviction & 2-Layer Dedup."""
     cfg = settings or Settings.load()
     weights = trust_weights or await load_dynamic_trust_weights(cfg, client=client)
     hierarchy = detect_hierarchy_and_retail_trap(reports, trust_weights=weights)
@@ -327,12 +470,25 @@ async def evaluate_swarm_reports(
         publish_allowed = False
         rejection_reason = f"conviction_below_gate:{conviction}<{CONVICTION_PUBLISH_THRESHOLD}"
     elif not dry_run:
+        # Layer 1: Upstash Redis 48h TTL content hash
         is_new = await claim_swarm_content_hash(
             content_hash, cfg, client=client, local_cache_path=local_dedup_path
         )
         if not is_new:
             publish_allowed = False
             rejection_reason = "duplicate_content_hash_silenced"
+        else:
+            # Layer 2: Supabase `public.market_memory` last-25 Jaccard similarity (>= 0.45 = skip)
+            is_sem_dup, matched_title = await check_supabase_jaccard_duplicate(
+                audited_brief,
+                cfg,
+                client=client,
+                recent_rows=recent_memory_rows,
+                local_memory_path=local_memory_path,
+            )
+            if is_sem_dup:
+                publish_allowed = False
+                rejection_reason = f"duplicate_supabase_jaccard_silenced:{matched_title or 'recent'}"
 
     return OrchestratorDecision(
         timestamp=utc_now_iso(),
@@ -441,6 +597,36 @@ async def run_lane2_swarm(
             await broadcast_feed_to_telegram(
                 payload_for_tg, settings=cfg, client=client, max_posts_per_cycle=1
             )
+            # Persist broadcast into Supabase `public.market_memory` so Layer-2 Jaccard dedup remembers it
+            try:
+                mem_store = MarketMemoryStore(settings=cfg)
+                vec = build_deterministic_embedding(
+                    f"{decision.brief.event_en} {decision.brief.money_flow_en}"
+                )
+                baseline_prices = extract_price_snapshot(feed_snapshot) if feed_snapshot else {}
+                await mem_store.upsert_records(
+                    [
+                        {
+                            "event_key": f"swarm-{decision.content_hash[:16]}",
+                            "record_type": "live_prediction",
+                            "event_timestamp": decision.timestamp,
+                            "macro_regime": decision.brief.stage,
+                            "source_name": "RatePath Swarm",
+                            "source_url": f"https://ratepath.io/#swarm-{decision.content_hash[:12]}",
+                            "headline_en": decision.brief.event_en,
+                            "headline_ar": decision.brief.event_ar,
+                            "summary_en": decision.brief.money_flow_en,
+                            "summary_ar": decision.brief.money_flow_ar,
+                            "priced_in_warning": swarm_news_item["priced_in_warning"],
+                            "assets_bias_24h": decision.brief.assets_bias_24h,
+                            "baseline_prices": baseline_prices,
+                            "evaluation_status": "pending",
+                            "embedding": "[" + ",".join(vec) + "]",
+                        }
+                    ]
+                )
+            except Exception:
+                pass
 
         return decision
 

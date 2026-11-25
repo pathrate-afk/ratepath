@@ -177,12 +177,13 @@ def test_telegram_sanitizer_and_syp_tickers_strip_raw_emoji() -> None:
     for payload in (en_pub, ar_pub, en_vip, ar_vip, adm):
         assert RAW_SYRIA_FLAG_EMOJI not in payload["text"]
 
+    # News alerts sanitize raw Syria emoji -> safe EN/AR ticker AND carry ZERO inline price clutter
     assert SYRIA_SAFE_TICKER_EN in en_pub["text"]
-    assert "11000.0000" in en_pub["text"]
+    assert "11000.0000" not in en_pub["text"]
     assert not re.search(r"[\u0600-\u06FF]", en_pub["text"])
 
     assert SYRIA_SAFE_TICKER_AR in ar_pub["text"]
-    assert "11000.0000" in ar_pub["text"]
+    assert "11000.0000" not in ar_pub["text"]
 
 
 def test_llm_prompts_and_pydantic_models_enforce_no_raw_syria_emoji() -> None:

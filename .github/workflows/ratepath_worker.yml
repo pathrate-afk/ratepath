@@ -36,7 +36,7 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Execute RatePath single market/AI/Telegram/evaluator cycle
+      - name: Execute Lane-1 pricing, catalog & change-only Rates Bulletin cycle (zero news alerts)
         env:
           PYTHONUTF8: "1"
           GEMINI_API_KEY_1: ${{ secrets.GEMINI_API_KEY_1 }}

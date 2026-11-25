@@ -40,6 +40,7 @@ from backend.math_engine import (
     loads_decimal_json,
     parse_strict_decimal,
 )
+from backend.sources.sptoday import fetch_syp_sptoday_3tier, parse_sptoday_web_html
 
 CMC_PUBLIC_LISTING_URL: str = (
     "https://api.coinmarketcap.com/data-api/v3/cryptocurrency/listing"
@@ -557,15 +558,14 @@ def parse_sp_today_usd_syp_html(html_text: str) -> dict[str, str] | None:
         return None
 
 
-async def fetch_sp_today_syp_rate(client: httpx.AsyncClient) -> dict[str, str] | None:
-    """Fetch official Damascus USD/SYP market rate from sp-today.com (graceful None on error)."""
-    try:
-        resp = await client.get(SP_TODAY_USD_URL, timeout=httpx.Timeout(8))
-        if resp.status_code != 200:
-            return None
-        return parse_sp_today_usd_syp_html(resp.text)
-    except Exception:
-        return None
+async def fetch_sp_today_syp_rate(
+    client: httpx.AsyncClient,
+    *,
+    settings: Settings | None = None,
+) -> dict[str, str] | None:
+    """Delegate SYP strictly to the 3-tier `backend/sources/sptoday.py` fetcher."""
+    quote = await fetch_syp_sptoday_3tier(client, settings=settings)
+    return quote.to_dict() if quote is not None else None
 
 
 async def fetch_silver_spot(
@@ -608,12 +608,14 @@ async def fetch_silver_spot(
 
 async def fetch_global_155_fiat_rates(
     client: httpx.AsyncClient,
+    *,
+    settings: Settings | None = None,
 ) -> tuple[dict[str, Decimal], str, dict[str, str] | None]:
-    """Fetch all 155+ global & Arab ISO fiat currencies (`open.er-api.com` -> jsdelivr -> CF)."""
+    """Fetch 155+ global & Arab ISO fiat currencies; SYP is strictly sourced ONLY via SP-Today."""
     fiat_map: dict[str, Decimal] = {}
     source_used = "open.er-api.com"
 
-    # Attempt 1: open.er-api.com (160+ world & Arab currencies)
+    # Attempt 1: open.er-api.com (160+ world & Arab currencies — SYP STRICTLY EXCLUDED)
     try:
         resp = await client.get("https://open.er-api.com/v6/latest/USD")
         resp.raise_for_status()
@@ -621,7 +623,7 @@ async def fetch_global_155_fiat_rates(
         rates = data.get("rates", {}) if isinstance(data, dict) else {}
         for raw_code, raw_val in rates.items():
             code = str(raw_code).strip().upper()
-            if not _ISO_CODE_RE.match(code):
+            if code == "SYP" or not _ISO_CODE_RE.match(code):
                 continue
             try:
                 fiat_map[code] = parse_strict_decimal(raw_val, field_name=f"fx.{code}")
@@ -632,7 +634,7 @@ async def fetch_global_155_fiat_rates(
     except Exception:
         fiat_map = {}
 
-    # Attempt 2 / 3: jsdelivr & Cloudflare currency-api mirrors
+    # Attempt 2 / 3: jsdelivr & Cloudflare currency-api mirrors (SYP STRICTLY EXCLUDED)
     if len(fiat_map) < 100:
         for url, label in (
             ("https://cdn.jsdelivr.net/npm/@fawazahmed0/currency-api@latest/v1/currencies/usd.json", "jsdelivr_currency_api"),
@@ -645,7 +647,7 @@ async def fetch_global_155_fiat_rates(
                 usd_map = data.get("usd", {}) if isinstance(data, dict) else {}
                 for raw_code, raw_val in usd_map.items():
                     code = str(raw_code).strip().upper()
-                    if not _ISO_CODE_RE.match(code):
+                    if code == "SYP" or not _ISO_CODE_RE.match(code):
                         continue
                     try:
                         fiat_map[code] = parse_strict_decimal(raw_val, field_name=f"fx.{code}")
@@ -658,9 +660,10 @@ async def fetch_global_155_fiat_rates(
                 continue
 
     fiat_map.setdefault("USD", Decimal("1"))
+    fiat_map.pop("SYP", None)
 
-    # Enrich SYP with official SP-Today Damascus market rate when reachable
-    sp_today_info = await fetch_sp_today_syp_rate(client)
+    # Populate SYP EXCLUSIVELY from 3-tier SP-Today fetcher (Web -> t.me/s -> Upstash last_good)
+    sp_today_info = await fetch_sp_today_syp_rate(client, settings=settings)
     if sp_today_info and sp_today_info.get("mid_rate"):
         fiat_map["SYP"] = parse_strict_decimal(sp_today_info["mid_rate"], field_name="sp_today.mid")
 
@@ -822,7 +825,7 @@ async def generate_and_publish_catalog_feed(
     try:
         (fiat_map, fiat_source, syp_sp_today), (silver_oz, silver_source), cmc_res = (
             await asyncio.gather(
-                fetch_global_155_fiat_rates(http_client),
+                fetch_global_155_fiat_rates(http_client, settings=cfg),
                 fetch_silver_spot(http_client, fallback_gold_oz=gold_oz_usd),
                 fetch_cmc_top_cryptos(
                     http_client,

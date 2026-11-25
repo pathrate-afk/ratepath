@@ -3,13 +3,13 @@
     "platform": "RatePath",
     "platform_ar": "ريت باث",
     "schema_version": "1.0.0",
-    "generated_at": "2026-11-25T20:37:26Z",
+    "generated_at": "2026-11-25T21:56:24Z",
     "ai_mode": "deterministic_fallback",
     "status": "healthy"
   },
   "fiat": {
     "base": "USD",
-    "updated_at": "2026-11-25T20:37:20Z",
+    "updated_at": "2026-11-25T21:56:19Z",
     "source": "open.er-api.com",
     "rates": {
       "EUR": {
@@ -49,72 +49,72 @@
         "display_rate": "54.2259"
       },
       "SYP": {
-        "units_per_usd": "121.5337",
-        "usd_per_unit": "0.0082",
+        "units_per_usd": "152.5000",
+        "usd_per_unit": "0.0066",
         "pair_label": "USD/SYP",
-        "display_rate": "121.5337"
+        "display_rate": "152.5000"
       }
     }
   },
   "gold": {
     "currency": "USD",
     "troy_ounce_grams": "31.1034768",
-    "updated_at": "2026-11-25T20:37:21Z",
+    "updated_at": "2026-11-25T21:56:19Z",
     "source": "swissquote_xau_bbo",
-    "screen_vs_real_spread_pct": "0.08",
+    "screen_vs_real_spread_pct": "0.06",
     "prices": {
-      "XAU_OZ": "3569.90",
-      "GRAM_24K": "114.77",
-      "GRAM_21K": "100.43",
-      "GRAM_18K": "86.08"
+      "XAU_OZ": "3584.51",
+      "GRAM_24K": "115.24",
+      "GRAM_21K": "100.84",
+      "GRAM_18K": "86.43"
     }
   },
   "crypto": {
     "quote_currency": "USD",
-    "updated_at": "2026-11-25T20:37:22Z",
+    "updated_at": "2026-11-25T21:56:20Z",
     "assets": {
       "BTC": {
         "symbol": "BTC",
-        "spot_price": "59971.43",
+        "spot_price": "60288.66",
         "spot_source": "binance_vision",
         "funding": {
           "primary_exchange": "binance",
           "primary_rate": "0.00010000",
           "secondary_exchange": "bybit",
-          "secondary_rate": "0.00008203",
-          "net_spread": "0.00001797",
-          "spread_bps": "0.18",
-          "annualized_spread_pct": "1.97",
+          "secondary_rate": "0.00008579",
+          "net_spread": "0.00001421",
+          "spread_bps": "0.14",
+          "annualized_spread_pct": "1.56",
           "arbitrage_signal": "short_binance_long_bybit"
         }
       },
       "ETH": {
         "symbol": "ETH",
-        "spot_price": "1683.38",
+        "spot_price": "1687.56",
         "spot_source": "binance_vision",
         "funding": {
           "primary_exchange": "binance",
-          "primary_rate": "0.00006350",
+          "primary_rate": "0.00005669",
           "secondary_exchange": "bybit",
           "secondary_rate": "0.00010000",
-          "net_spread": "-0.00003650",
-          "spread_bps": "0.37",
-          "annualized_spread_pct": "4.00",
+          "net_spread": "-0.00004331",
+          "spread_bps": "0.43",
+          "annualized_spread_pct": "4.74",
           "arbitrage_signal": "short_bybit_long_binance"
         }
       },
       "SOL": {
         "symbol": "SOL",
-        "spot_price": "70.28",
+        "spot_price": "70.70",
         "spot_source": "binance_vision",
         "funding": {
           "primary_exchange": "binance",
-          "primary_rate": "0.00000213",
+          "primary_rate": "0.00001485",
           "secondary_exchange": "bybit",
           "secondary_rate": "0.00010000",
-          "net_spread": "-0.00009787",
-          "spread_bps": "0.98",
-          "annualized_spread_pct": "10.72",
+          "net_spread": "-0.00008515",
+          "spread_bps": "0.85",
+          "annualized_spread_pct": "9.32",
           "arbitrage_signal": "short_bybit_long_binance"
         }
       }

@@ -24,21 +24,23 @@ _MSG_BLOCK_RE = re.compile(
     re.DOTALL | re.IGNORECASE,
 )
 _TAG_STRIP_RE = re.compile(r"<[^>]+>")
-_SPACE_RE = re.compile(r"\s+")
+_HSPACE_RE = re.compile(r"[ \t]+")
 
 _HYPE_WORDS = ("just in", "breaking", "surges", "soars", "bullish", "etf inflow", "record high")
 _STRESS_WORDS = ("hack", "exploit", "halt", "depeg", "war", "sanctions", "crash", "emergency")
 
 
 def parse_telegram_preview_html(raw_html: str) -> list[str]:
-    """Extract clean message snippets from `https://t.me/s/<channel>` HTML."""
+    """Extract clean message snippets from `https://t.me/s/<channel>` HTML preserving line breaks."""
     matches = _MSG_BLOCK_RE.findall(raw_html or "")
     cleaned: list[str] = []
     for raw_block in matches[-6:]:
-        text = html.unescape(_TAG_STRIP_RE.sub(" ", raw_block))
-        text = _SPACE_RE.sub(" ", text).strip()
-        if len(text) >= 15:
-            cleaned.append(text[:240])
+        with_breaks = re.sub(r"<br\s*/?>", "\n", raw_block, flags=re.IGNORECASE)
+        text = html.unescape(_TAG_STRIP_RE.sub(" ", with_breaks))
+        lines = [_HSPACE_RE.sub(" ", ln).strip() for ln in text.replace("\r\n", "\n").splitlines()]
+        normalized = "\n".join(ln for ln in lines if ln).strip()
+        if len(normalized) >= 15:
+            cleaned.append(normalized[:240])
     return cleaned
 
 

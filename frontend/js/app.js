@@ -41,6 +41,7 @@ import {
   verifyEmailOtp,
 } from "./auth_sync.js";
 import {
+  AFFILIATES_ENABLED,
   CATALOG_FEED_URL,
   CMC_SEARCH_API_URL,
   LIVE_FEED_URL,
@@ -642,6 +643,13 @@ function applyMonetizationConfigDom() {
 function renderContextualAffiliateCta() {
   const box = document.getElementById("affiliate-cta-box");
   if (!box || !state.catalog) return;
+
+  if (!AFFILIATES_ENABLED || MONETIZATION_CONFIG?.AFFILIATES_ENABLED === false) {
+    box.innerHTML = "";
+    box.classList.add("hidden");
+    return;
+  }
+  box.classList.remove("hidden");
 
   const t = TRANSLATIONS[state.lang];
   const aff = MONETIZATION_CONFIG?.affiliates || {};

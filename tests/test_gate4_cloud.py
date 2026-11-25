@@ -122,6 +122,11 @@ def test_telegram_payload_formatting_and_upstash_deduplication(tmp_path: Path) -
     assert pub_en["chat_id"] == "@RatePathEN"
     assert pub_en["parse_mode"] == "HTML"
     assert not _ARABIC_RE.search(pub_en["text"])
+    assert pub_en["text"].count("\n\n") >= 2
+    assert "🔥 <b>" in pub_en["text"]
+    assert "📖 <b>What Happened:</b>" in pub_en["text"]
+    assert "💡 <b>Bottom Line:</b>" in pub_en["text"]
+    assert "2655.40" not in pub_en["text"]  # ZERO inline price tickers in news alerts
     en_btn = pub_en["reply_markup"]["inline_keyboard"][0][0]
     assert en_btn["web_app"]["url"] == "https://ratepath.io/?lang=en"
     assert not _ARABIC_RE.search(en_btn["text"])
@@ -134,12 +139,10 @@ def test_telegram_payload_formatting_and_upstash_deduplication(tmp_path: Path) -
         lang="en",
     )
     assert not _ARABIC_RE.search(vip_en["text"])
-    assert "📌 <b>Event [VIP]:</b>" in vip_en["text"]
-    assert "💰 <b>Money Flow:</b>" in vip_en["text"]
-    assert "🕰 <b>Historical Twin:</b>" in vip_en["text"]
-    assert "⚠️ <b>Verdict:</b>" in vip_en["text"]
-    assert "2.19% APR" in vip_en["text"]
-    assert "short_binance_long_bybit" in vip_en["text"]
+    assert vip_en["text"].count("\n\n") >= 2
+    assert "🔥 <b>[VIP]" in vip_en["text"]
+    assert "📖 <b>What Happened:</b>" in vip_en["text"]
+    assert "💡 <b>Bottom Line:</b>" in vip_en["text"]
     assert vip_en["reply_markup"]["inline_keyboard"][0][0]["web_app"]["url"] == "https://ratepath.io/?lang=en"
 
     # 2. Pure-Arabic Public & VIP Payloads (Authentic Arabic + ZERO EN chrome + `?lang=ar`)
@@ -152,11 +155,12 @@ def test_telegram_payload_formatting_and_upstash_deduplication(tmp_path: Path) -
     )
     assert pub_ar["chat_id"] == "@RatePathAR"
     assert _ARABIC_RE.search(pub_ar["text"])
-    assert "📌 <b>الحدث:</b>" in pub_ar["text"]
-    assert "💰 <b>حركة السيولة:</b>" in pub_ar["text"]
-    assert "🕰 <b>التوأم التاريخي:</b>" in pub_ar["text"]
-    assert "⚠️ <b>الخلاصة:</b>" in pub_ar["text"]
-    assert "Money Flow" not in pub_ar["text"]
+    assert pub_ar["text"].count("\n\n") >= 2
+    assert "🔥 <b>" in pub_ar["text"]
+    assert "📖 <b>ما القصة؟</b>" in pub_ar["text"]
+    assert "💡 <b>الخلاصة ومسار السيولة:</b>" in pub_ar["text"]
+    assert "What Happened" not in pub_ar["text"]
+    assert "2655.40" not in pub_ar["text"]  # ZERO inline price tickers in news alerts
     ar_btn = pub_ar["reply_markup"]["inline_keyboard"][0][0]
     assert ar_btn["web_app"]["url"] == "https://ratepath.io/?lang=ar"
     assert _ARABIC_RE.search(ar_btn["text"])
@@ -169,9 +173,10 @@ def test_telegram_payload_formatting_and_upstash_deduplication(tmp_path: Path) -
         lang="ar",
     )
     assert _ARABIC_RE.search(vip_ar["text"])
-    assert "🕰 <b>التوأم التاريخي:</b>" in vip_ar["text"]
-    assert "Historical Twin" not in vip_ar["text"]
-    assert "2.19%" in vip_ar["text"]
+    assert vip_ar["text"].count("\n\n") >= 2
+    assert "📖 <b>ما القصة؟</b>" in vip_ar["text"]
+    assert "💡 <b>الخلاصة ومسار السيولة:</b>" in vip_ar["text"]
+    assert "Bottom Line" not in vip_ar["text"]
     assert vip_ar["reply_markup"]["inline_keyboard"][0][0]["web_app"]["url"] == "https://ratepath.io/?lang=ar"
 
     # 3. Silent Admin Watchdog formatting & placeholder graceful skip

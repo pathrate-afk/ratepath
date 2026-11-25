@@ -26,6 +26,7 @@ from backend.config import (
     enforce_utf8_runtime,
 )
 from backend.evaluator import MarketMemoryStore, extract_price_snapshot
+from backend.sources.sptoday import fetch_syp_sptoday_3tier
 from backend.telegram_bot import broadcast_feed_to_telegram
 from backend.fetchers import (
     CRYPTO_SYMBOLS,
@@ -151,6 +152,18 @@ def _load_previous_baselines(target_path: Path) -> tuple[dict[str, str] | None, 
         return None, None, None
 
 
+def _load_existing_news_items(target_path: Path) -> list[dict[str, Any]]:
+    """Reuse previously published news records when Lane-1 fast pricing skips ai_strategist."""
+    if not target_path.exists():
+        return []
+    try:
+        prev = json.loads(target_path.read_text(encoding="utf-8"))
+        items = prev.get("news", [])
+        return items if isinstance(items, list) and items else []
+    except Exception:
+        return []
+
+
 async def execute_live_cycle(
     *,
     target_path: Path = LIVE_FEED_TARGET_PATH,
@@ -160,8 +173,9 @@ async def execute_live_cycle(
     run_evaluator: bool = True,
     broadcast_telegram: bool = True,
     use_llm: bool = True,
+    skip_ai_news: bool = False,
 ) -> dict[str, Any]:
-    """Fetch live markets + macro RSS, verify via Agent 7 Price Guardian, run AI, and publish."""
+    """Fetch live markets, verify Gold + SP-Today SYP via Agent 7, and publish `live_feed.json`."""
     enforce_utf8_runtime()
     resolved_settings = settings or Settings.load()
     prev_fiat, prev_gold, prev_crypto = (
@@ -169,15 +183,27 @@ async def execute_live_cycle(
         if enforce_previous_tick_guard
         else (None, None, None)
     )
+    existing_news = _load_existing_news_items(target_path) if skip_ai_news else []
 
     async with create_http_client() as client:
-        fiat_res, gold_res, spot_res, funding_pair, raw_news = await asyncio.gather(
-            fetch_fiat_rates(client),
-            fetch_gold_spot(client),
-            fetch_crypto_spot(client),
-            fetch_cross_exchange_funding(client),
-            fetch_macro_news(client, max_items=5),
-        )
+        if skip_ai_news and existing_news:
+            fiat_res, gold_res, spot_res, funding_pair, syp_quote = await asyncio.gather(
+                fetch_fiat_rates(client),
+                fetch_gold_spot(client),
+                fetch_crypto_spot(client),
+                fetch_cross_exchange_funding(client),
+                fetch_syp_sptoday_3tier(client, settings=resolved_settings),
+            )
+            raw_news = []
+        else:
+            fiat_res, gold_res, spot_res, funding_pair, syp_quote, raw_news = await asyncio.gather(
+                fetch_fiat_rates(client),
+                fetch_gold_spot(client),
+                fetch_crypto_spot(client),
+                fetch_cross_exchange_funding(client),
+                fetch_syp_sptoday_3tier(client, settings=resolved_settings),
+                fetch_macro_news(client, max_items=5),
+            )
 
         # Lane 1 Agent 7 (Price Guardian): Pure Decimal cross-check against PAXG/USDT (<1s, zero LLM)
         guardian_verdict = await verify_gold_with_price_guardian(
@@ -186,7 +212,12 @@ async def execute_live_cycle(
             screen_source=gold_res.source,
         )
 
-        fiat_rates_table = build_fiat_rates(fiat_res.units_per_usd, prev_fiat)
+        # SYP is strictly sourced ONLY from 3-tier SP-Today (NEVER open.er-api)
+        fiat_input = {k: v for k, v in fiat_res.units_per_usd.items() if k != "SYP"}
+        if syp_quote is not None:
+            fiat_input["SYP"] = syp_quote.mid_rate
+
+        fiat_rates_table = build_fiat_rates(fiat_input, prev_fiat)
         gold_prices_table = compute_gold_prices(guardian_verdict.accepted_price, prev_gold)
 
         primary_venue, secondary_venue = funding_pair
@@ -224,29 +255,35 @@ async def execute_live_cycle(
         if "SYP" in fiat_rates_table:
             market_context["USD_SYP"] = fiat_rates_table["SYP"]["units_per_usd"]
 
-        ai_settings = (
-            resolved_settings
-            if use_llm
-            else Settings(
-                gemini_api_key="placeholder",
-                groq_api_key="placeholder",
-                openrouter_api_key="placeholder",
-                supabase_url=resolved_settings.supabase_url,
-                supabase_key=resolved_settings.supabase_key,
-                upstash_redis_rest_url=resolved_settings.upstash_redis_rest_url,
-                upstash_redis_rest_token=resolved_settings.upstash_redis_rest_token,
-                telegram_bot_token=resolved_settings.telegram_bot_token,
-                telegram_public_channel=resolved_settings.telegram_public_channel,
-                telegram_vip_channel=resolved_settings.telegram_vip_channel,
-                admin_chat_id=resolved_settings.admin_chat_id,
+        analyzed_news = []
+        if skip_ai_news and existing_news:
+            news_payload_list = existing_news
+            ai_mode = "deterministic_fallback"
+        else:
+            ai_settings = (
+                resolved_settings
+                if (use_llm and not skip_ai_news)
+                else Settings(
+                    gemini_api_key="placeholder",
+                    groq_api_key="placeholder",
+                    openrouter_api_key="placeholder",
+                    supabase_url=resolved_settings.supabase_url,
+                    supabase_key=resolved_settings.supabase_key,
+                    upstash_redis_rest_url=resolved_settings.upstash_redis_rest_url,
+                    upstash_redis_rest_token=resolved_settings.upstash_redis_rest_token,
+                    telegram_bot_token=resolved_settings.telegram_bot_token,
+                    telegram_public_channel=resolved_settings.telegram_public_channel,
+                    telegram_vip_channel=resolved_settings.telegram_vip_channel,
+                    admin_chat_id=resolved_settings.admin_chat_id,
+                )
             )
-        )
-        analyzed_news, ai_mode = await analyze_macro_news_batch(
-            raw_news,
-            market_context,
-            settings=ai_settings,
-            client=client,
-        )
+            analyzed_news, ai_mode = await analyze_macro_news_batch(
+                raw_news,
+                market_context,
+                settings=ai_settings,
+                client=client,
+            )
+            news_payload_list = [item.model_dump() for item in analyzed_news]
 
     generated_at = utc_now_iso()
     feed_payload: dict[str, Any] = {
@@ -277,7 +314,7 @@ async def execute_live_cycle(
             "updated_at": spot_res.updated_at,
             "assets": crypto_assets_table,
         },
-        "news": [item.model_dump() for item in analyzed_news],
+        "news": news_payload_list,
     }
 
     publish_live_feed_atomic(
@@ -286,13 +323,14 @@ async def execute_live_cycle(
         schema_path=schema_path,
     )
 
-    # Record T+0 predictions; optionally run 24h evaluator and Telegram broadcast
+    # Record T+0 predictions only when fresh analyzed_news was generated
     memory_store = MarketMemoryStore(settings=resolved_settings)
     snapshot = extract_price_snapshot(feed_payload)
-    await memory_store.record_live_predictions(analyzed_news, snapshot)
+    if analyzed_news:
+        await memory_store.record_live_predictions(analyzed_news, snapshot)
     if run_evaluator:
         await memory_store.evaluate_due_predictions(snapshot)
-    if broadcast_telegram:
+    if broadcast_telegram and not skip_ai_news:
         await broadcast_feed_to_telegram(feed_payload, settings=resolved_settings)
 
     return feed_payload

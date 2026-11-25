@@ -20,10 +20,14 @@ export const CMC_SEARCH_API_URL = "/api/cmc-search";
 export const SUPABASE_URL = "https://kyhljlkituvhyiawjtqr.supabase.co";
 export const SUPABASE_PUBLIC_ANON_KEY = "SUPABASE_PUBLIC_ANON_KEY";
 
+// Affiliate monetization toggle — strictly FALSE until verified partner accounts are activated
+export const AFFILIATES_ENABLED = false;
+
 // Public Canonical Site URL (Cloudflare Pages / Custom Domain)
 export const PUBLIC_SITE_URL = "https://ratepath.io";
 
 export const MONETIZATION_CONFIG = {
+  AFFILIATES_ENABLED,
   LIVE_FEED_URL,
   CATALOG_FEED_URL,
   CMC_SEARCH_API_URL,
