@@ -1,6 +1,6 @@
 /* RatePath (ريت باث) Offline-First Service Worker (Bypassed on localhost) */
-const CACHE_VERSION = "ratepath-pwa-v6";
-const FEED_CACHE_NAME = "ratepath-live-feed-v2";
+const CACHE_VERSION = "ratepath-pwa-v7";
+const FEED_CACHE_NAME = "ratepath-live-feed-v3";
 
 const IS_LOCALHOST =
   self.location.hostname === "localhost" ||
@@ -17,6 +17,8 @@ const APP_SHELL_ASSETS = [
   "./styles/terminal.css",
   "./js/decimal-math.js",
   "./js/syria-flag.js",
+  "./js/workspace.js",
+  "./js/auth_sync.js",
   "./js/i18n.js",
   "./js/quote-card.js",
   "./js/app.js",
@@ -25,7 +27,8 @@ const APP_SHELL_ASSETS = [
   "./icons/apple-touch-icon.png",
   "./icons/icon-192x192.png",
   "./icons/icon-512x512.png",
-  "./public/live_feed.json"
+  "./public/live_feed.json",
+  "./public/catalog_feed.json"
 ];
 
 self.addEventListener("install", (event) => {
@@ -61,8 +64,11 @@ self.addEventListener("fetch", (event) => {
 
   const url = new URL(request.url);
 
-  // Network-first with guaranteed offline cache fallback for live_feed.json
-  if (url.pathname.endsWith("/live_feed.json")) {
+  // Network-first with guaranteed offline cache fallback for live_feed.json & catalog_feed.json
+  if (url.pathname.endsWith("/live_feed.json") || url.pathname.endsWith("/catalog_feed.json")) {
+    const fallbackShellAsset = url.pathname.endsWith("/catalog_feed.json")
+      ? "./public/catalog_feed.json"
+      : "./public/live_feed.json";
     event.respondWith(
       fetch(request)
         .then((networkResp) => {
@@ -77,7 +83,7 @@ self.addEventListener("fetch", (event) => {
           const cachedFeed = await feedCache.match(request);
           if (cachedFeed) return cachedFeed;
           const shellCache = await caches.open(CACHE_VERSION);
-          return shellCache.match("./public/live_feed.json");
+          return shellCache.match(fallbackShellAsset);
         })
     );
     return;

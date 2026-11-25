@@ -68,3 +68,37 @@ header.rp-header {
     padding-bottom: 2rem;
   }
 }
+
+/* Customizable Personal Workspace Drag-and-Drop & Edit Mode States */
+.rp-edit-card {
+  border-style: dashed !important;
+  border-color: rgba(251, 191, 36, 0.45) !important;
+}
+
+.rp-drag-handle {
+  touch-action: none;
+  cursor: grab;
+}
+
+.rp-drag-handle:active {
+  cursor: grabbing;
+}
+
+.rp-dragging {
+  opacity: 0.45;
+  transform: scale(0.97);
+}
+
+.rp-drag-over {
+  border-color: #fbbf24 !important;
+  box-shadow: 0 0 0 2px rgba(251, 191, 36, 0.45);
+  background-color: rgba(251, 191, 36, 0.1) !important;
+}
+
+.rp-coin-logo {
+  width: 24px;
+  height: 24px;
+  border-radius: 9999px;
+  object-fit: cover;
+  background-color: rgba(15, 23, 42, 0.9);
+}

@@ -171,10 +171,35 @@ def route_worker_http_request(
             head_only=head_only,
         )
 
+    if clean_path in (
+        "/catalog_feed.json",
+        "/public/catalog_feed.json",
+        "/frontend/public/catalog_feed.json",
+    ):
+        catalog_path = feed_path.with_name("catalog_feed.json")
+        if not catalog_path.exists():
+            warming_body = json.dumps(
+                {
+                    "status": "warming_up",
+                    "message": "Global 155+ FX & CoinMarketCap catalog is warming up.",
+                },
+                ensure_ascii=False,
+            ).encode("utf-8")
+            return build_http_response(503, "Service Unavailable", warming_body, head_only=head_only)
+
+        cat_bytes = catalog_path.read_text(encoding="utf-8").encode("utf-8")
+        return build_http_response(
+            200,
+            "OK",
+            cat_bytes,
+            cache_control="public, max-age=120, stale-while-revalidate=300",
+            head_only=head_only,
+        )
+
     not_found_body = json.dumps(
         {
             "error": "Not Found",
-            "endpoints": ["/health", "/live_feed.json"],
+            "endpoints": ["/health", "/live_feed.json", "/catalog_feed.json"],
         },
         ensure_ascii=False,
     ).encode("utf-8")

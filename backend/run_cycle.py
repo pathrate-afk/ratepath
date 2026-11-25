@@ -20,6 +20,7 @@ from typing import Any
 import httpx
 
 from backend.config import (
+    CATALOG_FEED_TARGET_PATH,
     CONTRACT_SCHEMA_PATH,
     LIVE_FEED_TARGET_PATH,
     WORKSPACE_ROOT,
@@ -27,7 +28,9 @@ from backend.config import (
     enforce_utf8_runtime,
 )
 from backend.evaluator import MarketMemoryStore, extract_price_snapshot
+from backend.math_engine import parse_strict_decimal
 from backend.publisher import execute_live_cycle
+from backend.sources.coinmarketcap import generate_and_publish_catalog_feed
 from backend.telegram_bot import broadcast_feed_to_telegram, send_admin_watchdog_alert
 
 LAST_EVAL_REDIS_KEY: str = "ratepath:last_eval_ts"
@@ -164,16 +167,18 @@ async def run_single_cycle(
     *,
     settings: Settings | None = None,
     target_path: Path = LIVE_FEED_TARGET_PATH,
+    catalog_target_path: Path = CATALOG_FEED_TARGET_PATH,
     schema_path: Path = CONTRACT_SCHEMA_PATH,
     eval_gate: HourlyEvaluationGate | None = None,
     memory_store: MarketMemoryStore | None = None,
     cycle_executor: Any = None,
+    catalog_generator: Any = None,
     telegram_broadcaster: Any = None,
     http_client: httpx.AsyncClient | None = None,
     now_utc: datetime | None = None,
     lane1_fast_pricing: bool = True,
 ) -> dict[str, Any]:
-    """Run 1 complete Lane-1 fast cycle (<5s, zero LLM, Agent 7 Price Guardian) + hourly eval gate."""
+    """Run 1 complete Lane-1 fast cycle (<5s, zero LLM, Agent 7 Price Guardian) + catalog + hourly eval gate."""
     enforce_utf8_runtime()
     cfg = settings or Settings.load()
     gate = eval_gate or HourlyEvaluationGate(settings=cfg)
@@ -194,6 +199,26 @@ async def run_single_cycle(
                 broadcast_telegram=False,
                 use_llm=not lane1_fast_pricing,
             )
+
+        # 1b. Build lightweight `catalog_feed.json` (155+ World FX + SP-Today SYP + Silver + Top-300 CMC)
+        catalog_meta: dict[str, Any] = {}
+        if catalog_generator is not None:
+            catalog_payload = await catalog_generator(feed_payload)
+            catalog_meta = catalog_payload.get("meta", {}) if isinstance(catalog_payload, dict) else {}
+        elif cycle_executor is None:
+            try:
+                gold_oz = parse_strict_decimal(
+                    feed_payload["gold"]["prices"]["XAU_OZ"], field_name="catalog.gold_oz"
+                )
+                catalog_payload = await generate_and_publish_catalog_feed(
+                    gold_oz_usd=gold_oz,
+                    settings=cfg,
+                    target_path=catalog_target_path,
+                    client=http_client,
+                )
+                catalog_meta = catalog_payload.get("meta", {})
+            except Exception as cat_exc:
+                catalog_meta = {"error": f"{type(cat_exc).__name__}: {cat_exc}"}
 
         # 2. Deduplicated 4-channel EN/AR Telegram broadcast
         if telegram_broadcaster is not None:
@@ -233,12 +258,17 @@ async def run_single_cycle(
             "xau_oz": feed_payload["gold"]["prices"]["XAU_OZ"],
             "btc_spot": feed_payload["crypto"]["assets"]["BTC"]["spot_price"],
             "news_count": len(feed_payload["news"]),
+            "catalog_fiat_count": catalog_meta.get("fiat_count", 0),
+            "catalog_crypto_count": catalog_meta.get("crypto_count", 0),
+            "catalog_syp_source": catalog_meta.get("syp_source", ""),
+            "catalog_cmc_source": catalog_meta.get("cmc_source", ""),
             "telegram": tg_summary,
             "evaluator_ran": eval_due,
             "graded_count": graded_count,
             "eval_gate_backend": gate_backend,
             "next_eval_in_seconds": next_eval_in_seconds,
             "live_feed_path": str(target_path),
+            "catalog_feed_path": str(catalog_target_path),
         }
     except Exception as exc:
         await send_admin_watchdog_alert(

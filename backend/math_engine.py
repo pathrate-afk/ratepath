@@ -31,6 +31,7 @@ INVERSE_QUOTED_FIAT: frozenset[str] = frozenset({"EUR", "GBP"})
 
 QUANT_2DP: Decimal = Decimal("0.01")
 QUANT_4DP: Decimal = Decimal("0.0001")
+QUANT_6DP: Decimal = Decimal("0.000001")
 QUANT_8DP: Decimal = Decimal("0.00000001")
 
 

@@ -53,6 +53,8 @@ class RatePathRequestHandler(SimpleHTTPRequestHandler):
         # Support `/frontend/public/live_feed.json`, `/public/live_feed.json`, and `/live_feed.json`
         if clean_path in ("/frontend/public/live_feed.json", "/live_feed.json"):
             return str(FRONTEND_DIR / "public" / "live_feed.json")
+        if clean_path in ("/frontend/public/catalog_feed.json", "/catalog_feed.json"):
+            return str(FRONTEND_DIR / "public" / "catalog_feed.json")
         if clean_path.startswith("/frontend/"):
             clean_path = clean_path[len("/frontend") :]
         return super().translate_path(clean_path)

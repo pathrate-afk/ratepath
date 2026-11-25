@@ -77,13 +77,20 @@ export function formatScaled(scaledValue, displayDecimals = 2, useGrouping = tru
 }
 
 /**
- * Build unified 14-asset catalog strictly from `shared/contract.schema.json` live_feed.json.
- * Every asset stores exact `usdPerUnit` and (for Fiat) `unitsPerUsd` in 18-decimal BigInt.
+ * Build unified cross-asset catalog merging `live_feed.json` (core pricing + news bias),
+ * `catalog_feed.json` (155+ world/Arab FX, SP-Today SYP, Silver, Top-300 CoinMarketCap),
+ * and any visitor-added long-tail custom tokens (`customAssets`).
+ * Every asset stores exact `usdPerUnitScaled` and `unitsPerUsdScaled` in 18-decimal BigInt.
  */
-export function buildAssetCatalog(feed) {
+export function buildAssetCatalog(feed, catalogFeed = null, customAssets = {}) {
   const fiatRates = feed?.fiat?.rates || {};
   const goldPrices = feed?.gold?.prices || {};
   const cryptoAssets = feed?.crypto?.assets || {};
+
+  const extFiat = catalogFeed?.fiat || {};
+  const extMetals = catalogFeed?.metals || {};
+  const extCryptoList = Array.isArray(catalogFeed?.crypto) ? catalogFeed.crypto : [];
+  const extCryptoById = Object.fromEntries(extCryptoList.map((c) => [c.id, c]));
 
   // Aggregate 24h consensus bias across news items for live directional badges
   const biasScore = { USD: 0, EUR: 0, GBP: 0, XAU: 0, BTC: 0, ETH: 0, SOL: 0 };
@@ -100,78 +107,145 @@ export function buildAssetCatalog(feed) {
   const resolveSignal = (score) =>
     score > 0 ? "bullish" : score < 0 ? "bearish" : "neutral";
 
-  const makeFiatEntry = (code, symbol, decimals = 2, biasKey = null) => {
+  const signalFromPct = (pctStr, fallback = "neutral") => {
+    const raw = String(pctStr || "").trim();
+    if (!raw || raw === "0.00") return fallback;
+    if (raw.startsWith("-")) return "bearish";
+    if (raw.startsWith("+") || Number(raw) > 0) return "bullish";
+    return fallback;
+  };
+
+  const makeFiatEntry = (code, fallbackSymbol, decimals = 2, biasKey = null) => {
+    const catMeta = extFiat[code] || {};
     if (code === "USD") {
       return {
         id: "USD",
         code: "USD",
         category: "fiat",
         symbol: "$",
+        nameEn: catMeta.name_en || "US Dollar",
+        nameAr: catMeta.name_ar || "الدولار الأمريكي",
         decimals: 2,
         pairLabel: "USD/USD",
         spotDisplay: "1.0000",
         unitsPerUsdScaled: SCALE,
         usdPerUnitScaled: SCALE,
         signal: resolveSignal(biasScore.USD),
+        sourceTag: null,
+        logoUrl: "",
+        change24hPct: null,
       };
     }
-    const entry = fiatRates[code];
-    const unitsScaled = parseDecimalToScaled(entry?.units_per_usd || "1") || SCALE;
-    // Exact inverse at 18-decimal BigInt precision: (SCALE * SCALE) / unitsPerUsd
+
+    // Prefer SP-Today official SYP market rate from catalog_feed when available
+    const useCatalogForSyp = code === "SYP" && catMeta.units_per_usd && catMeta.source === "sp-today";
+    const entry = useCatalogForSyp ? catMeta : fiatRates[code] || catMeta;
+    const unitsStr = entry?.units_per_usd || "1";
+    const unitsScaled = parseDecimalToScaled(unitsStr) || SCALE;
     const usdPerUnitScaled = (SCALE * SCALE + unitsScaled / 2n) / unitsScaled;
+
     return {
       id: code,
       code,
       category: "fiat",
-      symbol,
+      symbol: catMeta.symbol || fallbackSymbol || code,
+      nameEn: catMeta.name_en || code,
+      nameAr: catMeta.name_ar || code,
       decimals,
       pairLabel: entry?.pair_label || `USD/${code}`,
-      spotDisplay: entry?.display_rate || "1.0000",
+      spotDisplay: entry?.display_rate || unitsStr,
       unitsPerUsdScaled: unitsScaled,
       usdPerUnitScaled,
       signal: biasKey ? resolveSignal(biasScore[biasKey]) : "neutral",
+      sourceTag: entry?.source || null,
+      buyRate: entry?.buy_rate || null,
+      sellRate: entry?.sell_rate || null,
+      logoUrl: "",
+      change24hPct: null,
     };
   };
 
-  const makeGoldEntry = (id, shortCode, unitTag) => {
-    const rawUsd = goldPrices[id] || "1";
+  const makeMetalEntry = (id, shortCode, unitTag, symbol = "Au", fallbackNameEn = null, fallbackNameAr = null) => {
+    const extM = extMetals[id] || {};
+    const rawUsd = goldPrices[id] || extM.price_usd || "1";
     const usdScaled = parseDecimalToScaled(rawUsd) || SCALE;
     return {
       id,
       code: shortCode,
       unitTag,
       category: "gold",
-      symbol: "Au",
-      decimals: 2,
+      symbol,
+      nameEn: extM.name_en || fallbackNameEn || shortCode,
+      nameAr: extM.name_ar || fallbackNameAr || shortCode,
+      decimals: id === "XAG_GRAM" ? 4 : 2,
       pairLabel: `${shortCode}/USD`,
       spotDisplay: rawUsd,
       unitsPerUsdScaled: (SCALE * SCALE + usdScaled / 2n) / usdScaled,
       usdPerUnitScaled: usdScaled,
       signal: resolveSignal(biasScore.XAU),
+      logoUrl: "",
+      change24hPct: null,
     };
   };
 
   const makeCryptoEntry = (code, symbol, decimals) => {
     const asset = cryptoAssets[code] || {};
-    const rawUsd = asset.spot_price || "1";
+    const cmcMeta = extCryptoById[code] || {};
+    const rawUsd = asset.spot_price || cmcMeta.price_usd || "1";
     const usdScaled = parseDecimalToScaled(rawUsd) || SCALE;
+    const chg24 = cmcMeta.change_24h_pct || null;
     return {
       id: code,
       code,
       category: "crypto",
       symbol,
+      nameEn: cmcMeta.name || code,
+      nameAr: cmcMeta.name || code,
       decimals,
       pairLabel: `${code}/USD`,
       spotDisplay: rawUsd,
       spotSource: asset.spot_source || "binance_vision",
       funding: asset.funding || null,
+      cmcId: cmcMeta.cmc_id ?? null,
+      cmcRank: cmcMeta.rank ?? null,
+      logoUrl: cmcMeta.logo_url || "",
+      change24hPct: chg24,
       unitsPerUsdScaled: (SCALE * SCALE + usdScaled / 2n) / usdScaled,
       usdPerUnitScaled: usdScaled,
-      signal: resolveSignal(biasScore[code]),
+      signal: biasScore[code] ? resolveSignal(biasScore[code]) : signalFromPct(chg24, "neutral"),
     };
   };
 
-  const ordered = [
+  const makeExtendedCryptoEntry = (coin) => {
+    const rawUsd = String(coin.price_usd || "1");
+    const usdScaled = parseDecimalToScaled(rawUsd) || SCALE;
+    const displayDec =
+      usdScaled >= SCALE * 1000n ? 6 : usdScaled >= SCALE ? 4 : 2;
+    const chg24 = coin.change_24h_pct || "0.00";
+    return {
+      id: coin.id,
+      code: coin.symbol,
+      category: "crypto",
+      symbol: coin.symbol,
+      nameEn: coin.name || coin.symbol,
+      nameAr: coin.name || coin.symbol,
+      decimals: displayDec,
+      pairLabel: `${coin.symbol}/USD`,
+      spotDisplay: rawUsd,
+      spotSource: "coinmarketcap",
+      funding: null,
+      cmcId: coin.cmc_id ?? null,
+      cmcRank: coin.rank ?? null,
+      logoUrl: coin.logo_url || "",
+      change24hPct: chg24,
+      unitsPerUsdScaled: (SCALE * SCALE + usdScaled / 2n) / usdScaled,
+      usdPerUnitScaled: usdScaled,
+      signal: signalFromPct(chg24, "neutral"),
+    };
+  };
+
+  // 1. Core 15 built-in assets first
+  const coreAssets = [
     makeFiatEntry("USD", "$", 2, "USD"),
     makeFiatEntry("EUR", "€", 2, "EUR"),
     makeFiatEntry("GBP", "£", 2, "GBP"),
@@ -179,24 +253,85 @@ export function buildAssetCatalog(feed) {
     makeFiatEntry("AED", "د.إ", 2, null),
     makeFiatEntry("EGP", "E£", 2, null),
     makeFiatEntry("TRY", "₺", 2, null),
-    ...(fiatRates.SYP ? [makeFiatEntry("SYP", "ل.س", 2, null)] : []),
-    makeGoldEntry("XAU_OZ", "XAU", "oz"),
-    makeGoldEntry("GRAM_24K", "24K", "g"),
-    makeGoldEntry("GRAM_21K", "21K", "g"),
-    makeGoldEntry("GRAM_18K", "18K", "g"),
+    ...(fiatRates.SYP || extFiat.SYP ? [makeFiatEntry("SYP", "ل.س", 2, null)] : []),
+    makeMetalEntry("XAU_OZ", "XAU", "oz", "Au", "Gold Troy Ounce", "أونصة الذهب الفوري"),
+    makeMetalEntry("GRAM_24K", "24K", "g", "Au", "Gold 24K Gram", "جرام الذهب عيار 24"),
+    makeMetalEntry("GRAM_21K", "21K", "g", "Au", "Gold 21K Gram", "جرام الذهب عيار 21"),
+    makeMetalEntry("GRAM_18K", "18K", "g", "Au", "Gold 18K Gram", "جرام الذهب عيار 18"),
     makeCryptoEntry("BTC", "₿", 6),
     makeCryptoEntry("ETH", "Ξ", 5),
     makeCryptoEntry("SOL", "◎", 4),
   ];
 
-  const byId = Object.fromEntries(ordered.map((item) => [item.id, item]));
-  return { ordered, byId };
+  const byId = Object.fromEntries(coreAssets.map((item) => [item.id, item]));
+  const allSearchable = [...coreAssets];
+
+  // 2. Extended Metals: Silver (XAG_OZ & XAG_GRAM)
+  for (const [metalId, shortCode, unitTag] of [
+    ["XAG_OZ", "XAG", "oz"],
+    ["XAG_GRAM", "Ag/g", "g"],
+  ]) {
+    if (extMetals[metalId] && !byId[metalId]) {
+      const m = makeMetalEntry(metalId, shortCode, unitTag, "Ag");
+      byId[metalId] = m;
+      allSearchable.push(m);
+    }
+  }
+
+  // 3. Extended 155+ World & Arab Currencies from `catalog_feed.json`
+  for (const code of Object.keys(extFiat)) {
+    if (byId[code]) continue;
+    const f = makeFiatEntry(code, extFiat[code]?.symbol || code, 2, null);
+    byId[code] = f;
+    allSearchable.push(f);
+  }
+
+  // 4. Extended Top-300 CoinMarketCap Cryptocurrencies from `catalog_feed.json`
+  for (const coin of extCryptoList) {
+    if (!coin?.id || byId[coin.id]) continue;
+    const c = makeExtendedCryptoEntry(coin);
+    byId[coin.id] = c;
+    allSearchable.push(c);
+  }
+
+  // 5. Visitor-added long-tail custom assets (e.g., discovered via `/api/cmc-search`)
+  for (const [cid, desc] of Object.entries(customAssets || {})) {
+    if (!desc || byId[cid]) continue;
+    if (desc.category === "fiat" && desc.units_per_usd) {
+      const unitsScaled = parseDecimalToScaled(desc.units_per_usd) || SCALE;
+      const usdPerUnitScaled = (SCALE * SCALE + unitsScaled / 2n) / unitsScaled;
+      const customFiat = {
+        id: cid,
+        code: desc.code || cid,
+        category: "fiat",
+        symbol: desc.symbol || cid,
+        nameEn: desc.name_en || desc.name || cid,
+        nameAr: desc.name_ar || desc.name || cid,
+        decimals: 2,
+        pairLabel: `USD/${desc.code || cid}`,
+        spotDisplay: desc.units_per_usd,
+        unitsPerUsdScaled: unitsScaled,
+        usdPerUnitScaled,
+        signal: "neutral",
+        logoUrl: "",
+        change24hPct: null,
+      };
+      byId[cid] = customFiat;
+      allSearchable.push(customFiat);
+    } else if (desc.price_usd) {
+      const customCrypto = makeExtendedCryptoEntry({ ...desc, id: cid });
+      byId[cid] = customCrypto;
+      allSearchable.push(customCrypto);
+    }
+  }
+
+  return { ordered: coreAssets, allSearchable, byId };
 }
 
 /**
- * Convert a single input amount from `sourceId` across all 14 Fiat, Gold, and Crypto assets.
+ * Convert a single input amount from `sourceId` across the active workspace assets (or entire catalog).
  */
-export function convertAllAssets(rawAmountStr, sourceId, catalog) {
+export function convertAllAssets(rawAmountStr, sourceId, catalog, targetIds = null) {
   const sourceAsset = catalog.byId[sourceId] || catalog.byId.USD;
   const parsedAmount = parseDecimalToScaled(rawAmountStr);
   const safeAmount = parsedAmount !== null && parsedAmount >= 0n ? parsedAmount : 0n;
@@ -204,8 +339,12 @@ export function convertAllAssets(rawAmountStr, sourceId, catalog) {
   // Total value in USD (18-decimal scaled)
   const totalUsdScaled = (safeAmount * sourceAsset.usdPerUnitScaled + SCALE / 2n) / SCALE;
 
+  const targets = Array.isArray(targetIds)
+    ? targetIds.map((id) => catalog.byId[id]).filter(Boolean)
+    : catalog.ordered;
+
   const conversions = {};
-  for (const target of catalog.ordered) {
+  const convertOne = (target) => {
     let targetScaled;
     if (target.id === sourceAsset.id) {
       targetScaled = safeAmount;
@@ -223,6 +362,13 @@ export function convertAllAssets(rawAmountStr, sourceId, catalog) {
       formatted: formatScaled(targetScaled, target.decimals, true),
       rawPlain: formatScaled(targetScaled, target.decimals, false),
     };
+  };
+
+  convertOne(sourceAsset);
+  for (const target of targets) {
+    if (!conversions[target.id]) {
+      convertOne(target);
+    }
   }
 
   return {

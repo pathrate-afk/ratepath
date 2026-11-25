@@ -144,6 +144,12 @@ export function renderQuoteCardCanvas(canvas, state) {
   ctx.lineWidth = 1.5;
   ctx.stroke();
 
+  const resolveAssetLabel = (id, meta) => {
+    if (t.assets[id]) return t.assets[id];
+    if (lang === "ar") return meta?.nameAr || meta?.nameEn || meta?.code || id;
+    return meta?.nameEn || meta?.code || id;
+  };
+
   const srcAmountFormatted = conversions[sourceAsset.id]?.formatted || state.amount || "1";
   let heroLabelX = 84;
   if (sourceAsset.id === "SYP") {
@@ -154,7 +160,7 @@ export function renderQuoteCardCanvas(canvas, state) {
   ctx.fillStyle = "#94A3B8";
   ctx.font = "600 16px system-ui, sans-serif";
   ctx.fillText(
-    `${t.baseAssetLabel.toUpperCase()} (${t.assets[sourceAsset.id] || sourceAsset.code})`,
+    `${t.baseAssetLabel.toUpperCase()} (${resolveAssetLabel(sourceAsset.id, sourceAsset)})`,
     heroLabelX,
     176
   );
@@ -168,10 +174,14 @@ export function renderQuoteCardCanvas(canvas, state) {
   ctx.font = "700 24px monospace";
   ctx.fillText(`≈ $${usdEquivalentFormatted} USD`, width - 84, 218);
 
-  // 7. 8-Card Institutional Benchmark Matrix (2 rows x 4 cols)
-  const showcaseIds = state.catalog?.byId?.SYP
+  // 7. 8-Card Institutional Benchmark Matrix (reflects visitor workspace order when customized)
+  const wsIds = Array.isArray(state.workspace?.ordered_ids)
+    ? state.workspace.ordered_ids.filter((id) => state.catalog?.byId?.[id] && id !== "USD")
+    : [];
+  const defaultShowcase = state.catalog?.byId?.SYP
     ? ["XAU_OZ", "GRAM_24K", "GRAM_21K", "BTC", "EUR", "SAR", "TRY", "SYP"]
     : ["XAU_OZ", "GRAM_24K", "GRAM_21K", "BTC", "EUR", "SAR", "AED", "EGP"];
+  const showcaseIds = wsIds.length >= 4 ? wsIds.slice(0, 8) : defaultShowcase;
   const cardW = 258;
   const cardH = 122;
   const gapX = 18;
@@ -210,7 +220,8 @@ export function renderQuoteCardCanvas(canvas, state) {
     ctx.textAlign = "right";
     ctx.fillStyle = "#94A3B8";
     ctx.font = "500 13px system-ui, sans-serif";
-    ctx.fillText(t.assets[id] || id, x + cardW - 18, y + 32);
+    const cardLabel = resolveAssetLabel(id, assetMeta);
+    ctx.fillText(cardLabel.length > 18 ? cardLabel.slice(0, 17) + "…" : cardLabel, x + cardW - 18, y + 32);
 
     ctx.textAlign = "left";
     ctx.fillStyle = "#F8FAFC";

@@ -57,9 +57,10 @@ jobs:
           TELEGRAM_PUBLIC_CHANNEL_AR: ${{ secrets.TELEGRAM_PUBLIC_CHANNEL_AR }}
           TELEGRAM_VIP_CHANNEL_AR: ${{ secrets.TELEGRAM_VIP_CHANNEL_AR }}
           MINI_APP_URL: ${{ secrets.MINI_APP_URL }}
+          CMC_PRO_API_KEY: ${{ secrets.CMC_PRO_API_KEY }}
         run: python -m backend.run_cycle
 
-      - name: Force-push ONLY live_feed.json as clean orphan commit to live-data branch
+      - name: Force-push live_feed.json & catalog_feed.json as clean orphan commit to live-data branch
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -68,12 +69,18 @@ jobs:
 
           STAGE_DIR="$(mktemp -d)"
           cp frontend/public/live_feed.json "$STAGE_DIR/live_feed.json"
+          if [ -s frontend/public/catalog_feed.json ]; then
+            cp frontend/public/catalog_feed.json "$STAGE_DIR/catalog_feed.json"
+          fi
 
           cd "$STAGE_DIR"
           git init -b live-data
           git config user.name "RatePath Serverless Bot"
           git config user.email "bot@ratepath.io"
           git add live_feed.json
-          git commit -m "chore(live-data): update live_feed.json ($(date -u +%Y-%m-%dT%H:%M:%SZ))"
+          if [ -s catalog_feed.json ]; then
+            git add catalog_feed.json
+          fi
+          git commit -m "chore(live-data): update live_feed.json & catalog_feed.json ($(date -u +%Y-%m-%dT%H:%M:%SZ))"
           git remote add origin "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
           git push --force origin live-data

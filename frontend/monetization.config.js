@@ -5,15 +5,30 @@
  * affiliate links, A-Ads unit ID, NOWPayments VIP checkout link, and EN/AR Telegram channels.
  */
 
-// Live Serverless Feed URL (GitHub Actions `live-data` orphan branch with CORS)
+// Live Serverless Feed URLs (GitHub Actions `live-data` orphan branch with CORS)
 export const LIVE_FEED_URL =
   "https://raw.githubusercontent.com/pathrate-afk/ratepath/live-data/live_feed.json";
+
+export const CATALOG_FEED_URL =
+  "https://raw.githubusercontent.com/pathrate-afk/ratepath/live-data/catalog_feed.json";
+
+// On-Demand CoinMarketCap Long-Tail Search Proxy (Cloudflare Pages Function)
+export const CMC_SEARCH_API_URL = "/api/cmc-search";
+
+// Public Supabase Auth & Preferences Sync Config
+// SECURITY: ONLY place a public anon / publishable client key here (never a privileged backend secret key).
+export const SUPABASE_URL = "https://kyhljlkituvhyiawjtqr.supabase.co";
+export const SUPABASE_PUBLIC_ANON_KEY = "SUPABASE_PUBLIC_ANON_KEY";
 
 // Public Canonical Site URL (Cloudflare Pages / Custom Domain)
 export const PUBLIC_SITE_URL = "https://ratepath.io";
 
 export const MONETIZATION_CONFIG = {
-  LIVE_FEED_URL,https://raw.githubusercontent.com/pathrate-afk/ratepath/live-data/live_feed.json
+  LIVE_FEED_URL,
+  CATALOG_FEED_URL,
+  CMC_SEARCH_API_URL,
+  SUPABASE_URL,
+  SUPABASE_PUBLIC_ANON_KEY,
   PUBLIC_SITE_URL,
   cloudFeedUrl: LIVE_FEED_URL,
 

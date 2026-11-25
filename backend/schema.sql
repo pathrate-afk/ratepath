@@ -179,3 +179,35 @@ CREATE POLICY "Allow service_role full access to market_memory"
     TO service_role
     USING (true)
     WITH CHECK (true);
+
+-- 8. Personal Workspace Preferences Table (`public.user_preferences`)
+CREATE TABLE IF NOT EXISTS public.user_preferences (
+    user_id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
+    email TEXT DEFAULT NULL,
+    layout_config JSONB NOT NULL DEFAULT '{}'::jsonb,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+ALTER TABLE public.user_preferences ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Users can read own workspace preferences" ON public.user_preferences;
+CREATE POLICY "Users can read own workspace preferences"
+    ON public.user_preferences
+    FOR SELECT
+    TO authenticated
+    USING (auth.uid() = user_id);
+
+DROP POLICY IF EXISTS "Users can insert own workspace preferences" ON public.user_preferences;
+CREATE POLICY "Users can insert own workspace preferences"
+    ON public.user_preferences
+    FOR INSERT
+    TO authenticated
+    WITH CHECK (auth.uid() = user_id);
+
+DROP POLICY IF EXISTS "Users can update own workspace preferences" ON public.user_preferences;
+CREATE POLICY "Users can update own workspace preferences"
+    ON public.user_preferences
+    FOR UPDATE
+    TO authenticated
+    USING (auth.uid() = user_id)
+    WITH CHECK (auth.uid() = user_id);

@@ -16,6 +16,7 @@ WORKSPACE_ROOT: Path = Path(__file__).resolve().parent.parent
 DEFAULT_ENV_PATH: Path = WORKSPACE_ROOT / ".env"
 CONTRACT_SCHEMA_PATH: Path = WORKSPACE_ROOT / "shared" / "contract.schema.json"
 LIVE_FEED_TARGET_PATH: Path = WORKSPACE_ROOT / "frontend" / "public" / "live_feed.json"
+CATALOG_FEED_TARGET_PATH: Path = WORKSPACE_ROOT / "frontend" / "public" / "catalog_feed.json"
 LOCAL_MEMORY_FALLBACK_PATH: Path = WORKSPACE_ROOT / "backend" / "market_memory.tmp.json"
 LOCAL_TELEGRAM_DEDUP_PATH: Path = WORKSPACE_ROOT / "backend" / "telegram_dedup.tmp.json"
 
@@ -132,6 +133,7 @@ class Settings:
     telegram_vip_channel_ar: str = "placeholder"
     gemini_api_keys: tuple[str, ...] = ()
     groq_api_keys: tuple[str, ...] = ()
+    cmc_pro_api_key: str = "placeholder"
 
     def __post_init__(self) -> None:
         # Synchronize numbered key pools with single-key fields cleanly (backward-compatible)
@@ -185,6 +187,7 @@ class Settings:
             ),
             gemini_api_keys=gemini_pool,
             groq_api_keys=groq_pool,
+            cmc_pro_api_key=_get("CMC_PRO_API_KEY"),
         )
 
     @property
