@@ -48,6 +48,11 @@ PLACEHOLDER_TOKENS: frozenset[str] = frozenset(
     {"", "placeholder", "none", "null", "changeme", "your_api_key_here"}
 )
 
+# Supabase rejects `sb_secret_` keys with HTTP 401 ("Forbidden use of secret API key in browser")
+# whenever the User-Agent looks like a browser (contains "Mozilla"). All server-side Supabase
+# requests MUST send this explicit non-browser User-Agent.
+SUPABASE_SERVER_USER_AGENT: str = "RatePath-Backend/2.0 (server)"
+
 
 def enforce_utf8_runtime() -> None:
     """Ensure Windows stdio streams use UTF-8 so Arabic script never corrupts."""

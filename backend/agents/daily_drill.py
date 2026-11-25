@@ -40,6 +40,7 @@ from backend.ai_strategist import (
     probe_provider_via_rotator,
 )
 from backend.config import (
+    SUPABASE_SERVER_USER_AGENT,
     LIVE_FEED_TARGET_PATH,
     Settings,
     enforce_utf8_runtime,
@@ -49,6 +50,7 @@ from backend.evaluator import (
     MarketMemoryStore,
     build_deterministic_embedding,
     extract_price_snapshot,
+    load_latest_live_feed,
     normalize_supabase_rest_base,
 )
 from backend.math_engine import loads_decimal_json, parse_strict_decimal
@@ -115,7 +117,7 @@ async def save_source_trust_weights(
 async def store_calibration_lesson(
     lesson_en: str,
     lesson_ar: str,
-    accuracy_score_str: str,
+    accuracy_score_str: str | None,
     settings: Settings,
     *,
     store: MarketMemoryStore | None = None,
@@ -183,6 +185,7 @@ async def cleanup_old_transient_rows(
             },
             headers={
                 "apikey": settings.supabase_key,
+                "User-Agent": SUPABASE_SERVER_USER_AGENT,
                 "Authorization": f"Bearer {settings.supabase_key}",
                 "Prefer": "return=minimal",
             },
@@ -353,40 +356,49 @@ async def run_daily_calibration_lab(
     cfg = settings or Settings.load()
     store = MarketMemoryStore(settings=cfg)
 
-    # 1. 24h Post-Mortem Grader
+    # 1. 24h Post-Mortem Grader (fetches fresh live-data feed if local `main` copy is stale)
     graded_rows: list[dict[str, Any]] = []
-    if feed_path.exists():
-        try:
-            feed_obj = loads_decimal_json(feed_path.read_text(encoding="utf-8"))
+    try:
+        feed_obj = await load_latest_live_feed(
+            feed_path,
+            allow_remote_live_data=(feed_path == LIVE_FEED_TARGET_PATH),
+        )
+        if feed_obj:
             snapshot = extract_price_snapshot(feed_obj)
             graded_rows = await store.evaluate_due_predictions(snapshot)
-        except Exception:
-            graded_rows = []
+    except Exception:
+        graded_rows = []
 
+    prev_weights = await load_dynamic_trust_weights(cfg)
     if graded_rows:
         total_acc = sum(
             parse_strict_decimal(str(r.get("accuracy_score", "0")), allow_zero=True)
             for r in graded_rows
         )
         avg_acc = (total_acc / Decimal(len(graded_rows))).quantize(Decimal("0.01"))
+        avg_acc_str: str | None = format(avg_acc, "f")
+        new_weights = calibrate_source_trust_weights(prev_weights, avg_acc)
+        await save_source_trust_weights(new_weights, cfg)
+        lesson_en = (
+            f"24h Accuracy {avg_acc_str}% across {len(graded_rows)} graded calls: "
+            f"maintain 3x weighting on hard liquidity/macro truth and block RETAIL_TRAP euphoria."
+        )
+        lesson_ar = (
+            f"دقة تقييم 24 ساعة بلغت {avg_acc_str}% عبر {len(graded_rows)} توقعات: "
+            f"الاستمرار في ترجيح السيولة الحقيقية 3 أضعاف وحجب فخاخ حماس الأفراد."
+        )
     else:
-        avg_acc = Decimal("100.00")
+        avg_acc_str = None
+        lesson_en = (
+            "0 predictions reached the 24h grading window today: "
+            "keeping calibrated source trust weights unchanged."
+        )
+        lesson_ar = (
+            "لم تصل أي توقعات إلى نافذة التقييم (24 ساعة) اليوم: "
+            "الإبقاء على أوزان ثقة المصادر الحالية دون تعديل."
+        )
 
-    avg_acc_str = format(avg_acc, "f")
-
-    # 2. Dynamic Source Trust Weight Calibration in Upstash Redis + 1-line Calibration Lesson
-    prev_weights = await load_dynamic_trust_weights(cfg)
-    new_weights = calibrate_source_trust_weights(prev_weights, avg_acc)
-    await save_source_trust_weights(new_weights, cfg)
-
-    lesson_en = (
-        f"24h Accuracy {avg_acc_str}% across {len(graded_rows)} graded calls: "
-        f"maintain 3x weighting on hard liquidity/macro truth and block RETAIL_TRAP euphoria."
-    )
-    lesson_ar = (
-        f"دقة تقييم 24 ساعة بلغت {avg_acc_str}% عبر {len(graded_rows)} توقعات: "
-        f"الاستمرار في ترجيح السيولة الحقيقية 3 أضعاف وحجب فخاخ حماس الأفراد."
-    )
+    # 2. Store 1-line Calibration Lesson in Supabase (NULL accuracy_score when 0 calls graded)
     lesson_status = await store_calibration_lesson(
         lesson_en, lesson_ar, avg_acc_str, cfg, store=store
     )
@@ -407,12 +419,13 @@ async def run_daily_calibration_lab(
     # 6. Private Admin Readiness Scorecard to ADMIN_CHAT_ID
     admin_sent = False
     if send_admin_report:
+        acc_label = f"{avg_acc_str}%" if avg_acc_str is not None else "N/A (0 due)"
         scorecard_text = (
             f"Readiness: {gauntlet['readiness_pct']}% "
             f"(Spike={gauntlet['drills']['corrupt_9pct_spike_blocked']}, "
             f"Trap={gauntlet['drills']['retail_trap_tvl_drain_caught']}, "
             f"Crisis={gauntlet['drills']['blind_crisis_replay_passed']})\n"
-            f"24h Accuracy: {avg_acc_str}% (graded={len(graded_rows)}, lesson={lesson_status})\n"
+            f"24h Accuracy: {acc_label} (graded={len(graded_rows)}, lesson={lesson_status})\n"
             f"Fastest Healthy Model: {bench['fastest_healthy_model']}\n"
             f"90d Transient Cleanup: ran={cleanup.get('ran')}"
         )

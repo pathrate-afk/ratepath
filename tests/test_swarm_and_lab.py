@@ -6,13 +6,24 @@ import asyncio
 from decimal import Decimal
 from pathlib import Path
 
-from backend.agents.contracts import AgentReport, StrategistBrief
+from backend.agents.contracts import (
+    CANONICAL_BIAS_ASSETS,
+    AgentReport,
+    StrategistBrief,
+    normalize_assets_bias,
+)
 from backend.agents.crypto_solvency import evaluate_solvency_telemetry
 from backend.agents.daily_drill import (
     calibrate_source_trust_weights,
     run_adversarial_gauntlet,
     run_daily_calibration_lab,
 )
+from backend.agents.macro_life_filter import (
+    _ENERGY_SHIPPING_RE,
+    _LIFE_INFLATION_RE,
+    _RISK_OFF_RE,
+)
+from backend.agents.master_strategist import query_century_memory_twins
 from backend.agents.orchestrator import (
     DEFAULT_TRUST_WEIGHTS,
     audit_strategist_brief,
@@ -20,8 +31,10 @@ from backend.agents.orchestrator import (
     evaluate_swarm_reports,
 )
 from backend.agents.price_guardian import evaluate_screen_vs_real_price
-from backend.agents.telegram_scanner import parse_telegram_preview_html
-from backend.config import WORKSPACE_ROOT, Settings
+from backend.agents.search_trends import _CRYPTO_SEARCH_RE, _MACRO_SEARCH_RE
+from backend.agents.telegram_scanner import _HYPE_RE, parse_telegram_preview_html
+from backend.config import SUPABASE_SERVER_USER_AGENT, WORKSPACE_ROOT, Settings
+from backend.evaluator import MarketMemoryStore, grade_prediction_24h
 from backend.seed_history import get_historical_macro_twins
 
 
@@ -212,6 +225,94 @@ def test_zero_fluff_ui_and_new_github_workflows() -> None:
 
     assert 'cron: "3,23,43 * * * *"' in swarm_wf
     assert "python -m backend.agents.orchestrator" in swarm_wf
+    assert "live-data/live_feed.json" in swarm_wf
+    assert "PUBLIC_SITE_URL:" in swarm_wf
     assert 'cron: "30 5 * * *"' in drill_wf
     assert "python -m backend.agents.daily_drill" in drill_wf
+    assert "live-data/live_feed.json" in drill_wf
+    assert "PUBLIC_SITE_URL:" in drill_wf
     assert 'cron: "0 0 1 * *"' in keep_wf
+
+
+def test_agent_audit_fixes_supabase_ua_bias_normalization_and_no_false_retail_trap() -> None:
+    """Regression suite for every root-cause bug caught during full 7-agent swarm audit."""
+    # 1. Server User-Agent must NEVER include 'Mozilla' (triggers Supabase sb_secret_ HTTP 401)
+    assert "mozilla" not in SUPABASE_SERVER_USER_AGENT.lower()
+    store = MarketMemoryStore(settings=_offline_settings())
+    hdrs = store._supabase_headers()
+    assert hdrs.get("User-Agent") == SUPABASE_SERVER_USER_AGENT
+
+    # 2. Canonical bias normalization maps free-form LLM keys (`gold`, `crypto`, `dollar`) cleanly
+    normalized = normalize_assets_bias(
+        {"oil": "bullish", "gold": "bullish", "crypto": "bearish", "dollar": "bullish"}
+    )
+    assert tuple(normalized.keys()) == CANONICAL_BIAS_ASSETS
+    assert normalized["XAU"] == "bullish"
+    assert normalized["USD"] == "bullish"
+    assert normalized["BTC"] == "bearish"
+
+    # Legacy alias keys still grade cleanly in 24h evaluator
+    graded = grade_prediction_24h(
+        {"gold": "bullish", "crypto": "bearish"},
+        {"XAU_OZ": "3500.00", "BTC": "70000.00"},
+        {"XAU_OZ": "3600.00", "BTC": "68000.00"},
+    )
+    assert graded["accuracy_score"] == "100.00"
+
+    # 3. Whole-word regexes reject substring false positives
+    assert not _ENERGY_SHIPPING_RE.search("Political turmoil in Las Vegas")
+    assert _ENERGY_SHIPPING_RE.search("Crude oil jumps above $90 per barrel")
+    assert not _RISK_OFF_RE.search("Company wins award moving toward growth")
+    assert _RISK_OFF_RE.search("Regional war escalates energy risks")
+    assert not _LIFE_INFLATION_RE.search("Current quarterly earnings update")
+    assert _LIFE_INFLATION_RE.search("Household rent and grocery inflation rises")
+    assert not _MACRO_SEARCH_RE.search("FedEx and Golden State Warriors trending")
+    assert _MACRO_SEARCH_RE.search("Federal Reserve gold outlook")
+    assert not _HYPE_RE.search("JUST IN: Breaking news from Reuters")
+    assert _HYPE_RE.search("Parabolic altseason moon FOMO surge")
+    assert _CRYPTO_SEARCH_RE.search("bitcoin ethereum surge")
+
+    # 4. Macro oil shock + neutral CoinGecko trending + healthy DeFi must NOT trigger RETAIL_TRAP
+    macro_oil = AgentReport(
+        agent_id="agent_4_macro_life_filter",
+        tier="hard_truth",
+        healthy=True,
+        signal_direction="risk_off",
+        confidence=85,
+        headline="Oil rises above $90 a barrel as shipping risks intensify",
+        flags=["ENERGY_SHIPPING_PRESSURE"],
+    )
+    defi_ok = AgentReport(
+        agent_id="agent_5_crypto_solvency",
+        tier="hard_truth",
+        healthy=True,
+        signal_direction="neutral",
+        confidence=90,
+        headline="DeFi TVL stable; stablecoin pegs intact",
+        flags=["SOLVENCY_HEALTHY"],
+    )
+    coingecko_trending = AgentReport(
+        agent_id="agent_2_search_trends",
+        tier="crowd_chatter",
+        healthy=True,
+        signal_direction="neutral",
+        confidence=55,
+        headline="CoinGecko trending: BTC, ETH, SOL",
+        flags=["COINGECKO_TRENDING_ACTIVE"],
+    )
+    hierarchy = detect_hierarchy_and_retail_trap([macro_oil, defi_ok, coingecko_trending])
+    assert hierarchy["crowd_euphoric"] is False
+    assert hierarchy["retail_trap_flagged"] is False
+
+    # 5. Oil macro headline must match a macro oil/stagflation twin, NEVER a crypto ICO twin
+    twins = asyncio.run(
+        query_century_memory_twins(
+            "Oil rises above $90 a barrel as energy shipping pressure surges",
+            settings=_offline_settings(),
+            match_count=3,
+        )
+    )
+    twin_keys = [str(t["event_key"]) for t in twins]
+    assert twin_keys, "Expected grounded historical twins"
+    assert not twin_keys[0].startswith("crypto-")
+    assert any("oil" in k or "stagflation" in k for k in twin_keys)

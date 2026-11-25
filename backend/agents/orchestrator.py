@@ -22,7 +22,13 @@ from typing import Any
 
 import httpx
 
-from backend.agents.contracts import AgentReport, OrchestratorDecision, StrategistBrief, utc_now_iso
+from backend.agents.contracts import (
+    AgentReport,
+    OrchestratorDecision,
+    StrategistBrief,
+    normalize_assets_bias,
+    utc_now_iso,
+)
 from backend.agents.crypto_solvency import collect_crypto_solvency
 from backend.agents.macro_life_filter import collect_macro_life_filter
 from backend.agents.master_strategist import synthesize_master_strategy
@@ -32,6 +38,7 @@ from backend.agents.social_pulse import collect_social_pulse
 from backend.agents.telegram_scanner import collect_telegram_scanner
 from backend.ai_strategist import MultiProviderRotator
 from backend.config import (
+    SUPABASE_SERVER_USER_AGENT,
     LIVE_FEED_TARGET_PATH,
     LOCAL_MEMORY_FALLBACK_PATH,
     WORKSPACE_ROOT,
@@ -43,6 +50,7 @@ from backend.evaluator import (
     MarketMemoryStore,
     build_deterministic_embedding,
     extract_price_snapshot,
+    load_latest_live_feed,
     normalize_supabase_rest_base,
 )
 from backend.fetchers import create_http_client, fetch_gold_spot
@@ -94,18 +102,28 @@ def detect_hierarchy_and_retail_trap(
     crowd_reports = [r for r in reports if r.tier == "crowd_chatter" and r.healthy]
 
     hard_flags = {f for r in hard_reports for f in r.flags}
-    crowd_flags = {f for r in crowd_reports for f in r.flags}
 
-    crowd_euphoric = any(
-        r.signal_direction in ("euphoria", "bullish") for r in crowd_reports
-    ) or bool(crowd_flags & {"RETAIL_EUPHORIA", "SEARCH_SURGE_MACRO", "TELEGRAM_BREAKING_HYPE"})
+    # Crowd euphoria = explicit euphoric direction or retail-euphoria flag only
+    # (CoinGecko "trending" lists and generic "JUST IN/BREAKING" wires are NOT euphoria).
+    crowd_euphoric = any(r.signal_direction == "euphoria" for r in crowd_reports) or any(
+        "RETAIL_EUPHORIA" in r.flags for r in crowd_reports
+    )
 
     hard_stress_or_outflow = any(
         r.signal_direction in ("stress", "bearish", "risk_off") for r in hard_reports
     ) or bool(hard_flags & {"TVL_DRAIN", "STABLECOIN_DEPEG", "CORRUPT_SPIKE_REJECTED"})
 
+    # RETAIL_TRAP is a crypto concept: crowd euphoria vs. HARD CRYPTO liquidity stress only
+    # (Agent 5 solvency stress / TVL drain / depeg, or Agent 7 corrupt-price rejection).
+    # An oil or CPI headline from Agent 4 must never turn every post into a "retail trap".
+    crypto_hard_stress = any(
+        r.agent_id in ("agent_5_crypto_solvency", "agent_7_price_guardian")
+        and r.signal_direction in ("stress", "bearish")
+        for r in hard_reports
+    ) or bool(hard_flags & {"TVL_DRAIN", "STABLECOIN_DEPEG", "CORRUPT_SPIKE_REJECTED"})
+
     corrupt_price_rejected = "CORRUPT_SPIKE_REJECTED" in hard_flags
-    retail_trap_flagged = bool(crowd_euphoric and hard_stress_or_outflow)
+    retail_trap_flagged = bool(crowd_euphoric and crypto_hard_stress)
 
     # Pure-integer weighted score emphasizing hard truth (3x weight vs crowd 1x)
     weighted_sum = 0
@@ -201,6 +219,7 @@ async def fetch_recent_market_memory_rows(
                 },
                 headers={
                     "apikey": settings.supabase_key,
+                    "User-Agent": SUPABASE_SERVER_USER_AGENT,
                     "Authorization": f"Bearer {settings.supabase_key}",
                 },
             )
@@ -269,6 +288,7 @@ def audit_strategist_brief(
 ) -> tuple[bool, int, StrategistBrief, str | None]:
     """Independent Risk & Hallucination Auditor enforcing grounding, UTF-8 AR & trap safety."""
     # 1. Grounded historical twin check (anti-hallucination)
+    brief = brief.model_copy(update={"assets_bias_24h": normalize_assets_bias(brief.assets_bias_24h)})
     if brief.matched_twin_key not in _VALID_TWIN_KEYS:
         return False, 0, brief, f"hallucinated_twin_key:{brief.matched_twin_key}"
 
@@ -587,12 +607,7 @@ async def run_lane2_swarm(
         )
 
         if decision.publish_allowed and not dry_run:
-            feed_snapshot: dict[str, Any] = {}
-            if feed_path.exists():
-                try:
-                    feed_snapshot = loads_decimal_json(feed_path.read_text(encoding="utf-8"))
-                except Exception:
-                    feed_snapshot = {}
+            feed_snapshot = await load_latest_live_feed(feed_path, client=client)
 
             is_special, topic_asset = classify_special_topic(decision, reports)
             swarm_news_item = {

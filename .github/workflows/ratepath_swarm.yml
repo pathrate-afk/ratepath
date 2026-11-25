@@ -36,6 +36,10 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
+      - name: Pull latest live_feed.json from live-data branch for accurate baseline prices
+        run: |
+          curl -fsSL "https://raw.githubusercontent.com/${GITHUB_REPOSITORY}/live-data/live_feed.json" -o frontend/public/live_feed.json || echo "Using bundled live_feed.json fallback"
+
       - name: Execute Lane-2 Central Orchestrator (Agents 1-7 + Conviction Gate >= 75)
         env:
           PYTHONUTF8: "1"
@@ -57,4 +61,5 @@ jobs:
           TELEGRAM_PUBLIC_CHANNEL_AR: ${{ secrets.TELEGRAM_PUBLIC_CHANNEL_AR }}
           TELEGRAM_VIP_CHANNEL_AR: ${{ secrets.TELEGRAM_VIP_CHANNEL_AR }}
           MINI_APP_URL: ${{ secrets.MINI_APP_URL }}
+          PUBLIC_SITE_URL: ${{ secrets.PUBLIC_SITE_URL }}
         run: python -m backend.agents.orchestrator

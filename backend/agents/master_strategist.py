@@ -10,15 +10,110 @@ Synthesizes typed `AgentReport`s from Agents 1-5 & 7 alongside:
 from __future__ import annotations
 
 import json
+import re
 from typing import Any
 
 import httpx
 
-from backend.agents.contracts import AgentReport, StrategistBrief
+from backend.agents.contracts import AgentReport, StrategistBrief, normalize_assets_bias
 from backend.ai_strategist import MultiProviderRotator, _run_llm_with_fallback
-from backend.config import NO_RAW_SYRIA_EMOJI_PROMPT_RULE, Settings, sanitize_syria_flag_emoji
+from backend.config import SUPABASE_SERVER_USER_AGENT, NO_RAW_SYRIA_EMOJI_PROMPT_RULE, Settings, sanitize_syria_flag_emoji
 from backend.evaluator import build_deterministic_embedding, normalize_supabase_rest_base
 from backend.seed_history import get_historical_macro_twins
+
+_VALID_HISTORICAL_TWIN_KEYS: frozenset[str] = frozenset(
+    str(t["event_key"]) for t in get_historical_macro_twins()
+)
+_TWIN_WORD_RE = re.compile(r"[a-z0-9]{3,}")
+_TWIN_STOPWORDS: frozenset[str] = frozenset(
+    {
+        "the", "and", "for", "with", "from", "that", "this", "into", "over", "after",
+        "amid", "news", "market", "markets", "price", "prices", "global", "macro",
+        "data", "live", "index", "today", "says", "will", "have", "has", "are",
+        "was", "were", "its", "their", "about", "below", "above", "under", "still",
+        "extreme", "fear", "greed", "fear_greed", "neutral", "healthy", "guardian",
+    }
+)
+# Domain-aware synonym expansion so macro/crypto headlines hit the exact historical twin
+_TWIN_SYNONYM_GROUPS: tuple[tuple[frozenset[str], frozenset[str]], ...] = (
+    (
+        frozenset({"oil", "crude", "brent", "wti", "opec", "energy", "fuel", "hormuz", "shipping", "tanker", "embargo"}),
+        frozenset({"oil", "embargo", "stagflation", "energy", "shock", "crude", "shipping"}),
+    ),
+    (
+        frozenset({"tariff", "tariffs", "trade", "customs", "duties", "duty", "import", "export"}),
+        frozenset({"tariff", "tariffs", "smoot", "hawley", "trade", "war", "protectionism"}),
+    ),
+    (
+        frozenset({"fed", "fomc", "powell", "ecb", "boe", "inflation", "cpi", "pce", "rates", "hike", "yields"}),
+        frozenset({"volcker", "inflation", "stagflation", "fed", "rate", "hike", "yield"}),
+    ),
+    (
+        frozenset({"war", "missile", "strike", "strikes", "sanctions", "sanction", "conflict", "geopolitical", "iran", "russia"}),
+        frozenset({"war", "sanctions", "embargo", "wwi", "gold", "oil", "geopolitical"}),
+    ),
+    (
+        frozenset({"gold", "xau", "bullion", "reserves", "sovereign", "central"}),
+        frozenset({"gold", "nixon", "sanctions", "bretton", "reserve", "revaluation"}),
+    ),
+    (
+        frozenset({"depeg", "usdc", "usdt", "stablecoin", "tvl", "drain", "solvency", "insolvency", "bankrupt", "withdrawal", "hack"}),
+        frozenset({"depeg", "terra", "luna", "ftx", "usdc", "svb", "mtgox", "solvency", "insolvency", "contagion"}),
+    ),
+    (
+        frozenset({"bank", "banking", "lehman", "credit", "default", "downgrade", "debt", "ceiling"}),
+        frozenset({"gfc", "lehman", "svb", "debt", "downgrade", "liquidity", "crash"}),
+    ),
+    (
+        frozenset({"etf", "spot", "blackrock", "institutional", "inflows"}),
+        frozenset({"etf", "spot", "institutional", "inflows"}),
+    ),
+    (
+        frozenset({"euphoria", "fomo", "mania", "parabolic", "funding", "leverage", "liquidation", "washout"}),
+        frozenset({"ico", "mania", "perp", "funding", "leverage", "flush", "retail"}),
+    ),
+)
+
+
+def _expand_twin_tokens(text: str) -> set[str]:
+    base = {t for t in _TWIN_WORD_RE.findall(text.lower()) if t not in _TWIN_STOPWORDS}
+    expanded = set(base)
+    for triggers, boosts in _TWIN_SYNONYM_GROUPS:
+        if base & triggers:
+            expanded |= boosts
+    return expanded
+
+
+def _build_prioritized_twin_query(
+    reports: list[AgentReport],
+    *,
+    retail_trap_hint: bool = False,
+) -> str:
+    """Prioritize Tier-1 hard-truth headlines over crowd chatter when matching century twins."""
+    hard_active = [
+        r for r in reports
+        if r.healthy and r.tier == "hard_truth" and r.signal_direction != "neutral"
+    ]
+    hard_all = [r for r in reports if r.healthy and r.tier == "hard_truth"]
+    crowd_active = [
+        r for r in reports
+        if r.healthy and r.tier == "crowd_chatter" and r.signal_direction != "neutral"
+    ]
+
+    parts: list[str] = []
+    # Put active hard-truth headlines and flags first (e.g. Oil/CPI/Tariffs or TVL Drain/Depeg)
+    for r in (hard_active or hard_all):
+        parts.append(r.headline)
+        if r.flags:
+            parts.append(" ".join(f.lower().replace("_", " ") for f in r.flags))
+
+    # Only include crowd chatter if a real RETAIL_TRAP is active or hard-truth reports are quiet
+    if retail_trap_hint or not hard_active:
+        for r in crowd_active[:2]:
+            parts.append(r.headline)
+
+    query = " ".join(parts).strip()[:600]
+    return query or "global macro gold usd"
 
 
 async def fetch_active_calibration_lessons(
@@ -33,6 +128,7 @@ async def fetch_active_calibration_lessons(
     rest_base = normalize_supabase_rest_base(settings.supabase_url)
     headers = {
         "apikey": settings.supabase_key,
+        "User-Agent": SUPABASE_SERVER_USER_AGENT,
         "Authorization": f"Bearer {settings.supabase_key}",
     }
     owns_client = client is None
@@ -66,7 +162,39 @@ async def query_century_memory_twins(
     client: httpx.AsyncClient | None = None,
     match_count: int = 3,
 ) -> list[dict[str, Any]]:
-    """Query Supabase `pgvector` RPC `match_market_memory`, falling back cleanly to local 35-twin index."""
+    """Retrieve grounded century macro + crypto twins using domain scoring + Supabase pgvector RPC.
+
+    Guarantees ONLY valid `historical_macro_twin` anchors (in `_VALID_HISTORICAL_TWIN_KEYS`)
+    are returned so the Auditor never rejects a `calibration_lesson` or `live_prediction` key,
+    and ensures domain-relevant historical twins always outrank SHA-256 hash noise.
+    """
+    twins_catalog = get_historical_macro_twins()
+    q_tokens = _expand_twin_tokens(query_text)
+    is_crypto_query = bool(
+        q_tokens & {"tvl", "depeg", "usdc", "usdt", "stablecoin", "solvency", "bitcoin", "btc", "eth", "sol", "crypto", "ftx", "luna", "ico", "perp", "funding", "defi"}
+    )
+
+    scored: list[tuple[int, dict[str, Any]]] = []
+    for twin in twins_catalog:
+        hay_text = (
+            f"{twin['event_key']} {twin['macro_regime']} "
+            f"{twin['headline_en']} {twin['summary_en']} {twin['lesson_en']}"
+        )
+        twin_tokens = {t for t in _TWIN_WORD_RE.findall(hay_text.lower()) if t not in _TWIN_STOPWORDS}
+        overlap = len(q_tokens & twin_tokens)
+        is_crypto_twin = str(twin["event_key"]).startswith("crypto-")
+        # Keep pure macro queries focused on macro twins unless crypto signals are explicitly present
+        domain_bonus = 2 if (is_crypto_query == is_crypto_twin) else 0
+        score = overlap * 3 + domain_bonus
+        scored.append((score, twin))
+
+    scored.sort(key=lambda pair: pair[0], reverse=True)
+    top_scored = [row for score, row in scored if score >= 5][:match_count]
+    if len(top_scored) >= match_count:
+        return top_scored[:match_count]
+
+    # Secondary check: Supabase `pgvector` RPC (strictly filtered to valid historical twin anchors)
+    rpc_twins: list[dict[str, Any]] = []
     if settings.has_live_supabase:
         rest_base = normalize_supabase_rest_base(settings.supabase_url)
         vec = build_deterministic_embedding(query_text)
@@ -78,6 +206,7 @@ async def query_century_memory_twins(
                 f"{rest_base}/rpc/match_market_memory",
                 headers={
                     "apikey": settings.supabase_key,
+                    "User-Agent": SUPABASE_SERVER_USER_AGENT,
                     "Authorization": f"Bearer {settings.supabase_key}",
                     "Content-Type": "application/json",
                 },
@@ -85,30 +214,34 @@ async def query_century_memory_twins(
                     {
                         "query_embedding": vec_literal,
                         "match_threshold": 0,
-                        "match_count": match_count,
+                        "match_count": match_count * 3,
                     },
                     ensure_ascii=False,
                 ).encode("utf-8"),
             )
             if resp.status_code == 200:
                 rows = json.loads(resp.text)
-                if isinstance(rows, list) and rows:
-                    return rows[:match_count]
+                if isinstance(rows, list):
+                    rpc_twins = [
+                        r for r in rows
+                        if isinstance(r, dict) and str(r.get("event_key", "")) in _VALID_HISTORICAL_TWIN_KEYS
+                    ]
         except Exception:
             pass
         finally:
             if owns_client:
                 await http_client.aclose()
 
-    # Deterministic keyword relevance fallback across all 35 century macro + crypto anchors
-    q_low = query_text.lower()
-    scored: list[tuple[int, dict[str, Any]]] = []
-    for twin in get_historical_macro_twins():
-        hay = f"{twin['macro_regime']} {twin['headline_en']} {twin['summary_en']} {twin['lesson_en']}".lower()
-        hits = sum(1 for tok in q_low.split() if len(tok) >= 4 and tok in hay)
-        scored.append((hits, twin))
-    scored.sort(key=lambda pair: pair[0], reverse=True)
-    return [row for _, row in scored[:match_count]]
+    merged: list[dict[str, Any]] = []
+    seen_keys: set[str] = set()
+    for row in top_scored + [r for _, r in scored] + rpc_twins:
+        key = str(row.get("event_key", ""))
+        if key and key not in seen_keys and key in _VALID_HISTORICAL_TWIN_KEYS:
+            seen_keys.add(key)
+            merged.append(row)
+            if len(merged) >= match_count:
+                break
+    return merged
 
 
 def _deterministic_swarm_synthesis(
@@ -251,7 +384,7 @@ async def synthesize_master_strategy(
 ) -> StrategistBrief:
     """Agent 6 Master Strategist synthesizing typed reports + Century Memory + Calibration Lessons."""
     cfg = settings or Settings.load()
-    query_blob = " ".join(r.headline for r in reports if r.healthy)[:600] or "global macro gold btc"
+    query_blob = _build_prioritized_twin_query(reports, retail_trap_hint=retail_trap_hint)
 
     twins = await query_century_memory_twins(query_blob, cfg, client=client, match_count=3)
     lessons = await fetch_active_calibration_lessons(cfg, client=client, limit=5)
@@ -268,6 +401,10 @@ async def synthesize_master_strategy(
                 "2 crisp beginner-friendly sentences explaining what happened; `verdict_en`/`verdict_ar` = "
                 "1-2 plain sentences explaining what goes up/down and why. "
                 "Hard liquidity/macro truth (Agents 4, 5, 7) ALWAYS overrides retail social chatter (Agents 1, 2, 3). "
+                "Only mention retail hype or a 'retail trap' when retail_trap_warning is true. "
+                "`assets_bias_24h` MUST use exactly these keys: USD, EUR, GBP, XAU, BTC, ETH, SOL "
+                "(values: bullish/bearish/neutral). `matched_twin_key` MUST be one of the provided "
+                "matched_century_twins event_key values. "
                 "Respect calibration lessons. "
                 f"{NO_RAW_SYRIA_EMOJI_PROMPT_RULE}"
             )
@@ -305,6 +442,7 @@ async def synthesize_master_strategy(
                     "money_flow_ar": sanitize_syria_flag_emoji(brief_obj.money_flow_ar, lang="ar"),
                     "verdict_en": sanitize_syria_flag_emoji(brief_obj.verdict_en, lang="en"),
                     "verdict_ar": sanitize_syria_flag_emoji(brief_obj.verdict_ar, lang="ar"),
+                    "assets_bias_24h": normalize_assets_bias(brief_obj.assets_bias_24h),
                     "provider_used": "live_llm_rotator",
                 }
             )

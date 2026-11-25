@@ -7,6 +7,7 @@ to detect lawmaker motives and household inflation stress before price repricing
 from __future__ import annotations
 
 import asyncio
+import re
 
 import feedparser
 import httpx
@@ -23,33 +24,19 @@ MACRO_LIFE_RSS_FEEDS: tuple[tuple[str, str], ...] = (
     ("Investing Commodities", "https://www.investing.com/rss/news_11.rss"),
 )
 
-_ENERGY_SHIPPING_TERMS = (
-    "oil",
-    "crude",
-    "opec",
-    "energy",
-    "shipping",
-    "red sea",
-    "strait",
-    "freight",
-    "gas",
-    "tariff",
-    "sanctions",
+# Whole-word regexes prevent false positives such as "oil" in "turmoil",
+# "war" in "award/toward/software", "rent" in "current", "gas" in "Las Vegas".
+_ENERGY_SHIPPING_RE = re.compile(
+    r"\b(oil|crude|brent|wti|opec\+?|energy|shipping|red sea|strait of hormuz|freight|natural gas|tariffs?|sanctions?)\b",
+    re.IGNORECASE,
 )
-_LIFE_INFLATION_TERMS = (
-    "inflation",
-    "cpi",
-    "rent",
-    "mortgage",
-    "grocery",
-    "food prices",
-    "cost of living",
-    "unemployment",
-    "payrolls",
-    "rate cut",
-    "rate hike",
-    "interest rate",
+_LIFE_INFLATION_RE = re.compile(
+    r"\b(inflation|cpi|pce|rents?|mortgages?|grocery|food prices|cost of living|unemployment|payrolls|rate cuts?|rate hikes?|interest rates?)\b",
+    re.IGNORECASE,
 )
+_RISK_OFF_RE = re.compile(r"\b(sanctions?|war|tariffs?|blockade|shipping attack|oil (prices )?(spike|surge|soar|jump)s?)\b", re.IGNORECASE)
+_EASING_RE = re.compile(r"\b(rate cuts?|easing|stimulus|unemployment (rises|jumps))\b", re.IGNORECASE)
+_TIGHTENING_RE = re.compile(r"\b(rate hikes?|hot(ter)? inflation|inflation (rises|accelerates|jumps)|cpi (rises|jumps))\b", re.IGNORECASE)
 
 
 async def _fetch_feed(
@@ -101,10 +88,10 @@ async def collect_macro_life_filter(client: httpx.AsyncClient | None = None) -> 
         energy_hits: list[tuple[str, str, str]] = []
         life_hits: list[tuple[str, str, str]] = []
         for row in rows:
-            low = row[1].lower()
-            if any(k in low for k in _ENERGY_SHIPPING_TERMS):
+            title = row[1]
+            if _ENERGY_SHIPPING_RE.search(title):
                 energy_hits.append(row)
-            if any(k in low for k in _LIFE_INFLATION_TERMS):
+            if _LIFE_INFLATION_RE.search(title):
                 life_hits.append(row)
 
         flags: list[str] = []
@@ -114,19 +101,22 @@ async def collect_macro_life_filter(client: httpx.AsyncClient | None = None) -> 
             flags.append("HOUSEHOLD_POLICY_PRESSURE")
 
         lead = (energy_hits or life_hits or rows)[0]
-        lead_low = lead[1].lower()
-        if any(w in lead_low for w in ("sanctions", "oil", "tariff", "war", "shipping")):
+        lead_title = lead[1]
+        if _RISK_OFF_RE.search(lead_title):
             direction = "risk_off"
             confidence = 84
-        elif any(w in lead_low for w in ("rate cut", "easing", "stimulus", "unemployment")):
+        elif _EASING_RE.search(lead_title):
             direction = "bullish"
             confidence = 82
-        elif any(w in lead_low for w in ("rate hike", "inflation", "cpi")):
+        elif _TIGHTENING_RE.search(lead_title):
             direction = "bearish"
             confidence = 80
+        elif energy_hits or life_hits:
+            direction = "neutral"
+            confidence = 74
         else:
             direction = "neutral"
-            confidence = 72
+            confidence = 70
 
         evidence = [r[2] for r in (energy_hits + life_hits + rows)[:4]]
         return AgentReport(

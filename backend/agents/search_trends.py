@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import re
 
 import feedparser
 import httpx
@@ -13,19 +14,14 @@ from backend.math_engine import loads_decimal_json
 GOOGLE_TRENDS_RSS: str = "https://trends.google.com/trending/rss?geo=US"
 COINGECKO_TRENDING_URL: str = "https://api.coingecko.com/api/v3/search/trending"
 
-_MACRO_FINANCE_KEYWORDS = (
-    "gold",
-    "bitcoin",
-    "btc",
-    "dollar",
-    "fed",
-    "inflation",
-    "tariff",
-    "oil",
-    "recession",
-    "crypto",
-    "ethereum",
-    "solana",
+# Whole-word matching only (prevents "fed" -> "FedEx", "gold" -> "Golden State", "oil" -> "turmoil")
+_MACRO_SEARCH_RE = re.compile(
+    r"\b(gold price|fed|federal reserve|inflation|tariffs?|oil price|recession|dollar|interest rates?)\b",
+    re.IGNORECASE,
+)
+_CRYPTO_SEARCH_RE = re.compile(
+    r"\b(bitcoin|btc|crypto|cryptocurrency|ethereum|solana|xrp|dogecoin|memecoin)\b",
+    re.IGNORECASE,
 )
 
 
@@ -76,24 +72,27 @@ async def collect_search_trends(client: httpx.AsyncClient | None = None) -> Agen
                 error="trends_unavailable",
             )
 
-        macro_hits = [
-            term for term in g_terms if any(kw in term.lower() for kw in _MACRO_FINANCE_KEYWORDS)
-        ]
+        macro_hits = [term for term in g_terms if _MACRO_SEARCH_RE.search(term)]
+        crypto_hits = [term for term in g_terms if _CRYPTO_SEARCH_RE.search(term)]
         flags: list[str] = []
-        if len(macro_hits) >= 2:
-            direction = "euphoria"
-            flags.append("SEARCH_SURGE_MACRO")
-            confidence = 60
-        elif cg_syms:
-            direction = "bullish"
+        if cg_syms:
+            # Informational only: CoinGecko always has a trending list, so it is NOT a bullish signal
             flags.append("COINGECKO_TRENDING_ACTIVE")
-            confidence = 55
+        if len(macro_hits) >= 2:
+            flags.append("SEARCH_SURGE_MACRO")
+
+        if len(crypto_hits) >= 2:
+            # Mainstream (Google) retail searching crypto = genuine retail-attention euphoria
+            direction = "euphoria"
+            flags.append("RETAIL_EUPHORIA")
+            confidence = 60
         else:
             direction = "neutral"
             confidence = 48
 
         top_summary = (
             f"Macro search hits: {', '.join(macro_hits[:3]) or 'none'} | "
+            f"Crypto search hits: {', '.join(crypto_hits[:3]) or 'none'} | "
             f"CoinGecko trending: {', '.join(cg_syms[:4]) or 'none'}"
         )
         return AgentReport(
@@ -108,6 +107,7 @@ async def collect_search_trends(client: httpx.AsyncClient | None = None) -> Agen
             metrics={
                 "google_trends_count": str(len(g_terms)),
                 "macro_search_hits": str(len(macro_hits)),
+                "crypto_search_hits": str(len(crypto_hits)),
                 "coingecko_trending": ",".join(cg_syms[:5]),
             },
             flags=flags,

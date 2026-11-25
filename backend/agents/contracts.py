@@ -20,6 +20,33 @@ def utc_now_iso() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
+CANONICAL_BIAS_ASSETS: tuple[str, ...] = ("USD", "EUR", "GBP", "XAU", "BTC", "ETH", "SOL")
+_BIAS_KEY_ALIASES: dict[str, str] = {
+    "USD": "USD", "DOLLAR": "USD", "US_DOLLAR": "USD", "DXY": "USD", "USD_INDEX": "USD",
+    "EUR": "EUR", "EURO": "EUR", "EURUSD": "EUR",
+    "GBP": "GBP", "POUND": "GBP", "STERLING": "GBP", "GBPUSD": "GBP",
+    "XAU": "XAU", "GOLD": "XAU", "XAU_OZ": "XAU", "XAUUSD": "XAU",
+    "BTC": "BTC", "BITCOIN": "BTC", "CRYPTO": "BTC", "CRYPTOCURRENCY": "BTC",
+    "ETH": "ETH", "ETHEREUM": "ETH", "ETHER": "ETH",
+    "SOL": "SOL", "SOLANA": "SOL",
+}
+
+
+def normalize_assets_bias(raw: dict[str, str] | None) -> dict[str, BiasDirection]:
+    """Map free-form LLM bias keys (e.g. `gold`, `crypto`, `oil`) onto canonical evaluator keys.
+
+    Unknown keys (e.g. `oil`) are dropped; missing canonical assets default to `neutral`, so the
+    24h evaluator, RETAIL_TRAP guard and special-topic routing always receive gradeable keys.
+    """
+    normalized: dict[str, BiasDirection] = {k: "neutral" for k in CANONICAL_BIAS_ASSETS}
+    for key, val in (raw or {}).items():
+        canon = _BIAS_KEY_ALIASES.get(str(key).strip().upper().replace(" ", "_").replace("/", ""))
+        direction = str(val).strip().lower()
+        if canon and direction in ("bullish", "bearish", "neutral"):
+            normalized[canon] = direction  # type: ignore[assignment]
+    return normalized
+
+
 class AgentReport(BaseModel):
     """Typed JSON output emitted by each of Agents 1-7."""
 

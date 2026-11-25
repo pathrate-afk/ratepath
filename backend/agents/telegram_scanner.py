@@ -26,8 +26,16 @@ _MSG_BLOCK_RE = re.compile(
 _TAG_STRIP_RE = re.compile(r"<[^>]+>")
 _HSPACE_RE = re.compile(r"[ \t]+")
 
-_HYPE_WORDS = ("just in", "breaking", "surges", "soars", "bullish", "etf inflow", "record high")
-_STRESS_WORDS = ("hack", "exploit", "halt", "depeg", "war", "sanctions", "crash", "emergency")
+# Whole-word, price-euphoria terms only. Generic wire markers like "JUST IN" / "BREAKING"
+# appear on almost every @WatcherGuru post and must NOT count as retail euphoria.
+_HYPE_RE = re.compile(
+    r"\b(surges?|soars?|skyrockets?|all[- ]time high|record high|ath|etf inflows?|parabolic|moon(ing)?)\b",
+    re.IGNORECASE,
+)
+_STRESS_RE = re.compile(
+    r"\b(hack(ed)?|exploit(ed)?|halts?|depeg(s|ged)?|war|sanctions?|crash(es|ed)?|emergency|insolven(t|cy)|bankrupt(cy)?)\b",
+    re.IGNORECASE,
+)
 
 
 def parse_telegram_preview_html(raw_html: str) -> list[str]:
@@ -81,11 +89,11 @@ async def collect_telegram_scanner(client: httpx.AsyncClient | None = None) -> A
                 error="telegram_preview_empty",
             )
 
-        hype_cnt = sum(1 for s in snippets if any(w in s.lower() for w in _HYPE_WORDS))
-        stress_cnt = sum(1 for s in snippets if any(w in s.lower() for w in _STRESS_WORDS))
+        hype_cnt = sum(1 for s in snippets if _HYPE_RE.search(s))
+        stress_cnt = sum(1 for s in snippets if _STRESS_RE.search(s))
 
         flags: list[str] = []
-        if hype_cnt >= 2 and hype_cnt > stress_cnt:
+        if hype_cnt >= 3 and hype_cnt > stress_cnt * 2:
             direction = "euphoria"
             flags.append("TELEGRAM_BREAKING_HYPE")
             confidence = 60

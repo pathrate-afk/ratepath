@@ -18,7 +18,12 @@ from urllib.parse import urlsplit
 import httpx
 
 from backend.ai_strategist import AnalyzedNewsRecord
-from backend.config import LOCAL_MEMORY_FALLBACK_PATH, Settings
+from backend.config import (
+    LIVE_FEED_TARGET_PATH,
+    LOCAL_MEMORY_FALLBACK_PATH,
+    SUPABASE_SERVER_USER_AGENT,
+    Settings,
+)
 from backend.math_engine import (
     QUANT_2DP,
     compute_return_pct,
@@ -29,17 +34,79 @@ from backend.math_engine import (
 
 NEUTRAL_DEADBAND_PCT: Decimal = Decimal("0.1500")
 EMBEDDING_DIM: int = 768
+REMOTE_LIVE_FEED_URL: str = (
+    "https://raw.githubusercontent.com/pathrate-afk/ratepath/live-data/live_feed.json"
+)
+LIVE_FEED_MAX_LOCAL_AGE_SECONDS: int = 1800
 
-# Map bias asset keys in `assets_bias_24h` to price snapshot keys
+# Map bias asset keys (and common LLM aliases) in `assets_bias_24h` to price snapshot keys
 ASSET_PRICE_KEY_MAP: dict[str, str] = {
     "USD": "USD_INDEX_PROXY",
+    "DXY": "USD_INDEX_PROXY",
+    "DOLLAR": "USD_INDEX_PROXY",
     "EUR": "EUR_USD",
+    "EURO": "EUR_USD",
     "GBP": "GBP_USD",
+    "POUND": "GBP_USD",
     "XAU": "XAU_OZ",
+    "GOLD": "XAU_OZ",
     "BTC": "BTC",
+    "BITCOIN": "BTC",
+    "CRYPTO": "BTC",
     "ETH": "ETH",
+    "ETHEREUM": "ETH",
     "SOL": "SOL",
+    "SOLANA": "SOL",
 }
+
+
+async def load_latest_live_feed(
+    feed_path: Path = LIVE_FEED_TARGET_PATH,
+    *,
+    client: httpx.AsyncClient | None = None,
+    allow_remote_live_data: bool = True,
+    max_local_age_seconds: int = LIVE_FEED_MAX_LOCAL_AGE_SECONDS,
+) -> dict[str, Any]:
+    """Load fresh `live_feed.json`, pulling from `live-data` branch if the local `main` copy is stale.
+
+    Remote fetch is ONLY attempted when `feed_path == LIVE_FEED_TARGET_PATH` and
+    `allow_remote_live_data=True`, keeping unit tests that pass custom `tmp_path` files 100% offline.
+    """
+    local_data: dict[str, Any] = {}
+    local_fresh = False
+    if feed_path.exists():
+        try:
+            local_data = loads_decimal_json(feed_path.read_text(encoding="utf-8"))
+            gen_raw = str(local_data.get("meta", {}).get("generated_at", "")).replace("Z", "+00:00")
+            if gen_raw:
+                gen_dt = datetime.fromisoformat(gen_raw).astimezone(timezone.utc)
+                age = datetime.now(timezone.utc) - gen_dt
+                age_sec = age.days * 86400 + age.seconds
+                local_fresh = age_sec <= max_local_age_seconds
+        except Exception:
+            local_data = {}
+
+    if local_fresh or not allow_remote_live_data or feed_path != LIVE_FEED_TARGET_PATH:
+        return local_data
+
+    owns_client = client is None
+    http_client = client or httpx.AsyncClient(timeout=httpx.Timeout(10))
+    try:
+        resp = await http_client.get(
+            REMOTE_LIVE_FEED_URL,
+            headers={"User-Agent": SUPABASE_SERVER_USER_AGENT},
+        )
+        if resp.status_code == 200 and resp.text.strip():
+            remote_data = loads_decimal_json(resp.text)
+            if isinstance(remote_data, dict) and remote_data.get("gold") and remote_data.get("fiat"):
+                return remote_data
+    except Exception:
+        pass
+    finally:
+        if owns_client:
+            await http_client.aclose()
+
+    return local_data
 
 
 def build_deterministic_embedding(text: str, dim: int = EMBEDDING_DIM) -> list[str]:
@@ -101,7 +168,8 @@ def grade_prediction_24h(
     misses: list[str] = []
 
     for asset, predicted_bias in assets_bias_24h.items():
-        price_key = ASSET_PRICE_KEY_MAP.get(asset, asset)
+        asset_norm = str(asset).strip().upper()
+        price_key = ASSET_PRICE_KEY_MAP.get(asset_norm, asset_norm)
         if price_key not in baseline_prices or price_key not in realized_prices:
             continue
 
@@ -193,6 +261,7 @@ class MarketMemoryStore:
     def _supabase_headers(self, *, prefer: str | None = None) -> dict[str, str]:
         headers = {
             "apikey": self.settings.supabase_key,
+            "User-Agent": SUPABASE_SERVER_USER_AGENT,
             "Content-Type": "application/json",
         }
         # Legacy JWT keys (`eyJ...`) require Bearer Authorization; new opaque `sb_*` keys work with apikey/Bearer
