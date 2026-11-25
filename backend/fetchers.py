@@ -26,6 +26,7 @@ import feedparser
 import httpx
 
 from backend.math_engine import (
+    OPTIONAL_FIAT_CODES,
     REQUIRED_FIAT_CODES,
     SanityGuardError,
     loads_decimal_json,
@@ -173,6 +174,14 @@ async def _fetch_fiat_er_api(client: httpx.AsyncClient) -> FiatFetchResult:
         if code not in rates_obj:
             raise FetcherError(f"open.er-api.com missing currency {code}.")
         extracted[code] = parse_strict_decimal(rates_obj[code], field_name=f"er_api.{code}")
+    for opt_code in OPTIONAL_FIAT_CODES:
+        if opt_code in rates_obj:
+            try:
+                extracted[opt_code] = parse_strict_decimal(
+                    rates_obj[opt_code], field_name=f"er_api.{opt_code}"
+                )
+            except SanityGuardError:
+                pass
     return FiatFetchResult(
         source="open.er-api.com",
         updated_at=utc_now_iso(),
@@ -196,6 +205,15 @@ async def _fetch_fiat_currency_cdn(
         if lower not in usd_map:
             raise FetcherError(f"{source_name} missing currency {code}.")
         extracted[code] = parse_strict_decimal(usd_map[lower], field_name=f"{source_name}.{code}")
+    for opt_code in OPTIONAL_FIAT_CODES:
+        lower = opt_code.lower()
+        if lower in usd_map:
+            try:
+                extracted[opt_code] = parse_strict_decimal(
+                    usd_map[lower], field_name=f"{source_name}.{opt_code}"
+                )
+            except SanityGuardError:
+                pass
     return FiatFetchResult(
         source=source_name,
         updated_at=utc_now_iso(),

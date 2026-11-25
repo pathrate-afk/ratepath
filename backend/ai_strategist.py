@@ -20,7 +20,12 @@ from typing import Any, Literal
 import httpx
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from backend.config import Settings, is_placeholder_secret
+from backend.config import (
+    NO_RAW_SYRIA_EMOJI_PROMPT_RULE,
+    Settings,
+    is_placeholder_secret,
+    sanitize_syria_flag_emoji,
+)
 from backend.fetchers import RawNewsItem
 
 BiasDirection = Literal["bullish", "bearish", "neutral"]
@@ -141,7 +146,7 @@ class ArabicTextBlock(BilingualTextBlock):
     @field_validator("title", "summary", "macro_thesis")
     @classmethod
     def _ensure_arabic_script(cls, value: str) -> str:
-        cleaned = value.strip()
+        cleaned = sanitize_syria_flag_emoji(value.strip(), lang="ar")
         if not _ARABIC_SCRIPT_RE.search(cleaned):
             raise ValueError("Arabic text field must contain authentic UTF-8 Arabic script.")
         return cleaned
@@ -153,7 +158,7 @@ class EnglishTextBlock(BilingualTextBlock):
     @field_validator("title", "summary", "macro_thesis")
     @classmethod
     def _ensure_english_script(cls, value: str) -> str:
-        cleaned = value.strip()
+        cleaned = sanitize_syria_flag_emoji(value.strip(), lang="en")
         if not _ENGLISH_SCRIPT_RE.search(cleaned):
             raise ValueError("English text field must contain English characters.")
         return cleaned
@@ -169,10 +174,15 @@ class PricedInWarningModel(BaseModel):
     en: str = Field(min_length=8, max_length=400)
     ar: str = Field(min_length=8, max_length=400)
 
+    @field_validator("en")
+    @classmethod
+    def _validate_en(cls, value: str) -> str:
+        return sanitize_syria_flag_emoji(value.strip(), lang="en")
+
     @field_validator("ar")
     @classmethod
     def _validate_ar(cls, value: str) -> str:
-        cleaned = value.strip()
+        cleaned = sanitize_syria_flag_emoji(value.strip(), lang="ar")
         if not _ARABIC_SCRIPT_RE.search(cleaned):
             raise ValueError("priced_in_warning.ar must contain UTF-8 Arabic script.")
         return cleaned
@@ -849,7 +859,8 @@ async def analyze_macro_news_batch(
                     strat_sys = (
                         "You are the Principal Macro Strategist at RatePath (ريت باث). "
                         "Produce institutional English and Modern Standard Arabic macro analysis, "
-                        "priced-in risk warning, and 24h biases (bullish/bearish/neutral)."
+                        "priced-in risk warning, and 24h biases (bullish/bearish/neutral). "
+                        f"{NO_RAW_SYRIA_EMOJI_PROMPT_RULE}"
                     )
                     strat_usr = json.dumps(
                         {
@@ -874,7 +885,8 @@ async def analyze_macro_news_batch(
                     audit_sys = (
                         "You are the Chief Risk & Provenance Auditor at RatePath (ريت باث). "
                         "Audit the Strategist draft against the source headline for factual grounding, "
-                        "priced-in exhaustion risk, macro coherence, and authentic Arabic UTF-8 script."
+                        "priced-in exhaustion risk, macro coherence, and authentic Arabic UTF-8 script. "
+                        f"{NO_RAW_SYRIA_EMOJI_PROMPT_RULE}"
                     )
                     audit_usr = json.dumps(
                         {

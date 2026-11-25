@@ -17,6 +17,7 @@ import {
   renderQuoteCardCanvas,
   shareCanvasPng,
 } from "./quote-card.js";
+import { getSyriaRevolutionFlagSvg } from "./syria-flag.js";
 import {
   LIVE_FEED_URL,
   MONETIZATION_CONFIG,
@@ -358,7 +359,7 @@ function renderStatusAndTopTicker() {
   const tickerContainer = document.getElementById("top-live-ticker");
   if (!tickerContainer) return;
 
-  const tickerIds = ["XAU_OZ", "GRAM_21K", "BTC", "ETH", "EUR", "SAR", "AED", "EGP", "TRY"];
+  const tickerIds = ["XAU_OZ", "GRAM_21K", "BTC", "ETH", "EUR", "SAR", "AED", "EGP", "TRY", "SYP"];
   tickerContainer.innerHTML = tickerIds
     .map((id) => {
       const item = state.catalog.byId[id];
@@ -372,10 +373,15 @@ function renderStatusAndTopTicker() {
           : "text-slate-300 bg-slate-800/80 border-slate-700/60";
       const arrow =
         delta.direction === "bullish" ? "▲" : delta.direction === "bearish" ? "▼" : "•";
+      const flagHtml =
+        id === "SYP"
+          ? getSyriaRevolutionFlagSvg("w-[18px] h-[12px] rounded-[2px] shrink-0 ring-1 ring-white/20")
+          : "";
 
       return `
         <button type="button" data-select-asset="${escapeHtml(id)}"
           class="shrink-0 inline-flex items-center gap-2 px-3 py-1 rounded-lg bg-slate-900/80 hover:bg-slate-800/90 border border-slate-800 hover:border-amber-500/40 transition-colors cursor-pointer">
+          ${flagHtml}
           <span class="text-xs font-bold text-amber-300 font-mono" dir="ltr">${escapeHtml(item.pairLabel)}</span>
           <span class="text-xs font-bold text-white font-mono tabular-nums" dir="ltr">${escapeHtml(item.spotDisplay)}</span>
           <span class="text-[10px] font-semibold px-1.5 py-0.5 rounded border font-mono ${badgeColor}" dir="ltr">${arrow} ${escapeHtml(delta.pctStr)}</span>
@@ -383,6 +389,42 @@ function renderStatusAndTopTicker() {
       `;
     })
     .join("");
+}
+
+function renderConverterBaseFlag() {
+  const flagSlot = document.getElementById("converter-base-flag");
+  if (!flagSlot) return;
+  if (state.baseAssetId === "SYP") {
+    flagSlot.innerHTML = getSyriaRevolutionFlagSvg("w-[27px] h-[18px] rounded-[3px] shrink-0 ring-1 ring-white/20");
+    flagSlot.classList.remove("hidden");
+    flagSlot.classList.add("inline-flex");
+  } else {
+    flagSlot.innerHTML = "";
+    flagSlot.classList.add("hidden");
+    flagSlot.classList.remove("inline-flex");
+  }
+}
+
+function renderAlertAssetFlag() {
+  const flagSlot = document.getElementById("alert-asset-flag");
+  const alertSelect = document.getElementById("alert-asset-select");
+  if (!flagSlot || !alertSelect) return;
+  if (alertSelect.value === "SYP") {
+    flagSlot.innerHTML = getSyriaRevolutionFlagSvg("w-[21px] h-[14px] rounded-[2px] shrink-0 ring-1 ring-white/20");
+    flagSlot.classList.remove("hidden");
+    flagSlot.classList.add("inline-flex");
+  } else {
+    flagSlot.innerHTML = "";
+    flagSlot.classList.add("hidden");
+    flagSlot.classList.remove("inline-flex");
+  }
+}
+
+function formatOptionLabel(asset, name) {
+  if (asset.id === "SYP") {
+    return state.lang === "ar" ? `🟢 ل.س — ${name}` : `🟢 SYP — ${name}`;
+  }
+  return `${asset.code} — ${name}`;
 }
 
 function populateAssetSelectors() {
@@ -395,7 +437,8 @@ function populateAssetSelectors() {
     .map((asset) => {
       const name = t.assets[asset.id] || asset.code;
       const selected = asset.id === state.baseAssetId ? "selected" : "";
-      return `<option value="${escapeHtml(asset.id)}" ${selected}>${escapeHtml(asset.code)} — ${escapeHtml(name)}</option>`;
+      const label = formatOptionLabel(asset, name);
+      return `<option value="${escapeHtml(asset.id)}" ${selected}>${escapeHtml(label)}</option>`;
     })
     .join("");
 
@@ -410,13 +453,17 @@ function populateAssetSelectors() {
       .filter((a) => a.id !== "USD")
       .map((asset) => {
         const name = t.assets[asset.id] || asset.code;
-        return `<option value="${escapeHtml(asset.id)}">${escapeHtml(asset.code)} — ${escapeHtml(name)} (${escapeHtml(asset.spotDisplay)})</option>`;
+        const label = formatOptionLabel(asset, name);
+        return `<option value="${escapeHtml(asset.id)}">${escapeHtml(label)} (${escapeHtml(asset.spotDisplay)})</option>`;
       })
       .join("");
     if ([...alertSelect.options].some((o) => o.value === prevVal)) {
       alertSelect.value = prevVal;
     }
   }
+
+  renderConverterBaseFlag();
+  renderAlertAssetFlag();
 }
 
 function applyLanguageAwareTelegramLinks(lang = state.lang) {
@@ -583,14 +630,17 @@ function renderConversionMatrix() {
           ? "border-amber-400/80 bg-amber-500/[0.08] ring-1 ring-amber-400/40"
           : "border-slate-800/90 bg-slate-900/70 hover:border-slate-700 hover:bg-slate-800/70";
 
+        const iconBadgeHtml =
+          item.id === "SYP"
+            ? `<span class="inline-flex items-center justify-center w-[27px] h-[18px] rounded-[3px] overflow-hidden bg-slate-900 ring-1 ring-white/20 shrink-0" dir="ltr">${getSyriaRevolutionFlagSvg("w-full h-full block")}</span>`
+            : `<span class="inline-flex items-center justify-center w-6 h-6 rounded-md bg-slate-800 text-amber-300 text-xs font-bold font-mono shrink-0" dir="ltr">${escapeHtml(item.symbol)}</span>`;
+
         return `
           <div data-select-asset="${escapeHtml(item.id)}" role="button" tabindex="0"
             class="group relative p-3 rounded-xl border transition-all cursor-pointer select-none ${activeRing}">
             <div class="flex items-center justify-between gap-2 mb-1.5">
               <div class="flex items-center gap-1.5 min-w-0">
-                <span class="inline-flex items-center justify-center w-6 h-6 rounded-md bg-slate-800 text-amber-300 text-xs font-bold font-mono shrink-0" dir="ltr">
-                  ${escapeHtml(item.symbol)}
-                </span>
+                ${iconBadgeHtml}
                 <div class="truncate">
                   <span class="text-xs font-extrabold text-white font-mono" dir="ltr">${escapeHtml(item.code)}</span>
                   <span class="block text-[11px] text-slate-400 truncate">${escapeHtml(t.assets[item.id] || item.code)}</span>
@@ -780,7 +830,8 @@ function renderVipAlertsList() {
     .map(
       (al) => `
       <div class="flex items-center justify-between gap-2 p-2.5 rounded-lg bg-slate-950/80 border border-slate-800">
-        <div class="text-xs">
+        <div class="text-xs inline-flex items-center gap-1.5">
+          ${al.assetId === "SYP" ? getSyriaRevolutionFlagSvg("w-[18px] h-[12px] rounded-[2px] shrink-0 ring-1 ring-white/20") : ""}
           <span class="font-bold text-amber-300 font-mono" dir="ltr">${escapeHtml(al.assetId)}</span>
           <span class="text-slate-300 mx-1">${al.condition === "above" ? "≥" : "≤"}</span>
           <span class="font-bold text-white font-mono" dir="ltr">${escapeHtml(al.targetPrice)}</span>
@@ -1029,6 +1080,7 @@ function bindEvents() {
     const chosen = state.catalog?.byId?.[e.target.value];
     const priceInput = document.getElementById("alert-price-input");
     if (chosen && priceInput) priceInput.value = chosen.spotDisplay;
+    renderAlertAssetFlag();
   });
 
   document.getElementById("alert-form")?.addEventListener("submit", (e) => {

@@ -165,7 +165,7 @@
     <!-- Top Live Screen Benchmark Strip -->
     <div class="border-t border-slate-800/75 bg-[#090E1A]">
       <div id="top-live-ticker" class="rp-ticker-strip max-w-[1480px] mx-auto px-3 sm:px-5 py-1.5 flex items-center gap-2 overflow-x-auto">
-        <!-- Populated dynamically with live XAU, 21K, BTC, ETH, EUR, SAR, AED, EGP, TRY -->
+        <!-- Populated dynamically with live XAU, 21K, BTC, ETH, EUR, SAR, AED, EGP, TRY, SYP -->
       </div>
     </div>
   </header>
@@ -216,12 +216,15 @@
               <label for="converter-asset-select" class="block text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-1" data-i18n="baseAssetLabel">
                 Base Asset
               </label>
-              <select
-                id="converter-asset-select"
-                class="w-full h-12 px-3.5 rounded-xl bg-slate-950 border border-slate-700 focus:border-amber-400 focus:ring-2 focus:ring-amber-400/25 outline-none text-sm font-bold text-amber-300 cursor-pointer transition-all"
-              >
-                <option value="USD">USD — US Dollar</option>
-              </select>
+              <div class="flex items-center h-12 rounded-xl bg-slate-950 border border-slate-700 focus-within:border-amber-400 focus-within:ring-2 focus-within:ring-amber-400/25 transition-all">
+                <span id="converter-base-flag" class="hidden items-center justify-center ps-3 shrink-0" aria-hidden="true"></span>
+                <select
+                  id="converter-asset-select"
+                  class="w-full h-full px-3.5 rounded-xl bg-transparent outline-none text-sm font-bold text-amber-300 cursor-pointer"
+                >
+                  <option value="USD">USD — US Dollar</option>
+                </select>
+              </div>
             </div>
           </div>
 
@@ -252,7 +255,7 @@
               <h2 class="text-xs sm:text-sm font-extrabold uppercase tracking-wider text-slate-200" data-i18n="sectionFiat">
                 World Currencies
               </h2>
-              <span class="text-[11px] font-mono text-slate-500" dir="ltr">USD • EUR • GBP • SAR • AED • EGP • TRY</span>
+              <span class="text-[11px] font-mono text-slate-500" dir="ltr">USD • EUR • GBP • SAR • AED • EGP • TRY • SYP</span>
             </div>
             <div id="grid-fiat" class="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-4 gap-2.5"></div>
           </div>
@@ -464,7 +467,10 @@
           <label for="alert-asset-select" class="block text-[11px] font-bold uppercase text-slate-400 mb-1" data-i18n="alertAssetLabel">
             Target Market
           </label>
-          <select id="alert-asset-select" class="w-full h-10 px-3 rounded-lg bg-slate-900 border border-slate-700 text-xs font-bold text-white"></select>
+          <div class="flex items-center h-10 rounded-lg bg-slate-900 border border-slate-700">
+            <span id="alert-asset-flag" class="hidden items-center justify-center ps-2.5 shrink-0" aria-hidden="true"></span>
+            <select id="alert-asset-select" class="w-full h-full px-3 rounded-lg bg-transparent outline-none text-xs font-bold text-white"></select>
+          </div>
         </div>
 
         <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5">

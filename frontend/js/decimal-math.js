@@ -179,6 +179,7 @@ export function buildAssetCatalog(feed) {
     makeFiatEntry("AED", "د.إ", 2, null),
     makeFiatEntry("EGP", "E£", 2, null),
     makeFiatEntry("TRY", "₺", 2, null),
+    ...(fiatRates.SYP ? [makeFiatEntry("SYP", "ل.س", 2, null)] : []),
     makeGoldEntry("XAU_OZ", "XAU", "oz"),
     makeGoldEntry("GRAM_24K", "24K", "g"),
     makeGoldEntry("GRAM_21K", "21K", "g"),

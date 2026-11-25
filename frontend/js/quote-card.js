@@ -3,6 +3,7 @@
  */
 
 import { TRANSLATIONS } from "./i18n.js";
+import { drawSyriaRevolutionFlagOnCanvas } from "./syria-flag.js";
 
 let _cachedLogoImage = null;
 function loadBrandLogoImage() {
@@ -144,12 +145,17 @@ export function renderQuoteCardCanvas(canvas, state) {
   ctx.stroke();
 
   const srcAmountFormatted = conversions[sourceAsset.id]?.formatted || state.amount || "1";
+  let heroLabelX = 84;
+  if (sourceAsset.id === "SYP") {
+    drawSyriaRevolutionFlagOnCanvas(ctx, 84, 156, 36, 24);
+    heroLabelX = 130;
+  }
   ctx.textAlign = "left";
   ctx.fillStyle = "#94A3B8";
   ctx.font = "600 16px system-ui, sans-serif";
   ctx.fillText(
     `${t.baseAssetLabel.toUpperCase()} (${t.assets[sourceAsset.id] || sourceAsset.code})`,
-    84,
+    heroLabelX,
     176
   );
 
@@ -163,16 +169,9 @@ export function renderQuoteCardCanvas(canvas, state) {
   ctx.fillText(`≈ $${usdEquivalentFormatted} USD`, width - 84, 218);
 
   // 7. 8-Card Institutional Benchmark Matrix (2 rows x 4 cols)
-  const showcaseIds = [
-    "XAU_OZ",
-    "GRAM_24K",
-    "GRAM_21K",
-    "BTC",
-    "EUR",
-    "SAR",
-    "AED",
-    "EGP",
-  ];
+  const showcaseIds = state.catalog?.byId?.SYP
+    ? ["XAU_OZ", "GRAM_24K", "GRAM_21K", "BTC", "EUR", "SAR", "TRY", "SYP"]
+    : ["XAU_OZ", "GRAM_24K", "GRAM_21K", "BTC", "EUR", "SAR", "AED", "EGP"];
   const cardW = 258;
   const cardH = 122;
   const gapX = 18;
@@ -197,10 +196,16 @@ export function renderQuoteCardCanvas(canvas, state) {
     const assetMeta = state.catalog.byId[id];
     const conv = conversions[id];
 
+    let codeX = x + 18;
+    if (id === "SYP") {
+      drawSyriaRevolutionFlagOnCanvas(ctx, x + 18, y + 17, 27, 18);
+      codeX = x + 52;
+    }
+
     ctx.textAlign = "left";
     ctx.fillStyle = "#D4AF37";
     ctx.font = "700 16px monospace";
-    ctx.fillText(assetMeta?.code || id, x + 18, y + 32);
+    ctx.fillText(assetMeta?.code || id, codeX, y + 32);
 
     ctx.textAlign = "right";
     ctx.fillStyle = "#94A3B8";

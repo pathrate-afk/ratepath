@@ -10,6 +10,7 @@ import sys
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any, Literal
 
 WORKSPACE_ROOT: Path = Path(__file__).resolve().parent.parent
 DEFAULT_ENV_PATH: Path = WORKSPACE_ROOT / ".env"
@@ -17,6 +18,30 @@ CONTRACT_SCHEMA_PATH: Path = WORKSPACE_ROOT / "shared" / "contract.schema.json"
 LIVE_FEED_TARGET_PATH: Path = WORKSPACE_ROOT / "frontend" / "public" / "live_feed.json"
 LOCAL_MEMORY_FALLBACK_PATH: Path = WORKSPACE_ROOT / "backend" / "market_memory.tmp.json"
 LOCAL_TELEGRAM_DEDUP_PATH: Path = WORKSPACE_ROOT / "backend" / "telegram_dedup.tmp.json"
+
+# Raw Unicode Regional Indicator pair (U+1F1F8 U+1F1FE) is strictly banned in text outputs
+# because un-updated Android/Windows fonts can still render the old flag.
+RAW_SYRIA_FLAG_EMOJI: str = "\U0001F1F8\U0001F1FE"
+SYRIA_SAFE_TICKER_EN: str = "\U0001F7E2 SYP"
+SYRIA_SAFE_TICKER_AR: str = "\U0001F7E2 \u0644.\u0633"
+NO_RAW_SYRIA_EMOJI_PROMPT_RULE: str = (
+    "STRICT SYMBOL POLICY: NEVER output the raw Unicode Syria flag emoji (U+1F1F8 U+1F1FE), "
+    "because un-updated devices may render the old flag. Whenever referencing Syria or the "
+    "Syrian Pound in text, strictly use '🟢 SYP' in English and '🟢 ل.س' in Arabic."
+)
+
+
+def sanitize_syria_flag_emoji(
+    text: Any,
+    lang: Literal["en", "ar"] = "en",
+) -> str:
+    """Strip any raw Unicode Syria flag emoji and replace with `🟢 SYP` (EN) or `🟢 ل.س` (AR)."""
+    raw = str(text or "")
+    if RAW_SYRIA_FLAG_EMOJI not in raw:
+        return raw
+    replacement = SYRIA_SAFE_TICKER_AR if lang == "ar" else SYRIA_SAFE_TICKER_EN
+    cleaned = raw.replace(f"{RAW_SYRIA_FLAG_EMOJI}\uFE0F", replacement)
+    return cleaned.replace(RAW_SYRIA_FLAG_EMOJI, replacement)
 
 PLACEHOLDER_TOKENS: frozenset[str] = frozenset(
     {"", "placeholder", "none", "null", "changeme", "your_api_key_here"}

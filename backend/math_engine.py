@@ -26,6 +26,7 @@ BPS_MULTIPLIER: Decimal = Decimal("10000")
 PCT_MULTIPLIER: Decimal = Decimal("100")
 
 REQUIRED_FIAT_CODES: tuple[str, ...] = ("EUR", "GBP", "TRY", "SAR", "AED", "EGP")
+OPTIONAL_FIAT_CODES: tuple[str, ...] = ("SYP",)
 INVERSE_QUOTED_FIAT: frozenset[str] = frozenset({"EUR", "GBP"})
 
 QUANT_2DP: Decimal = Decimal("0.01")
@@ -170,10 +171,15 @@ def build_fiat_rates(
     raw_units_per_usd: Mapping[str, DecimalInput],
     previous_units_per_usd: Mapping[str, DecimalInput] | None = None,
 ) -> dict[str, dict[str, str]]:
-    """Validate and compute exact Decimal USD pairs & inverse rates for required Fiat basket."""
+    """Validate and compute exact Decimal USD pairs & inverse rates for required + optional Fiat."""
     result: dict[str, dict[str, str]] = {}
 
-    for code in REQUIRED_FIAT_CODES:
+    codes_to_process: list[str] = list(REQUIRED_FIAT_CODES)
+    for opt_code in OPTIONAL_FIAT_CODES:
+        if opt_code in raw_units_per_usd:
+            codes_to_process.append(opt_code)
+
+    for code in codes_to_process:
         if code not in raw_units_per_usd:
             raise SanityGuardError(f"Missing required Fiat rate for {code}.")
 
@@ -189,7 +195,7 @@ def build_fiat_rates(
             usd_per_unit = Decimal("1") / units_per_usd
 
         units_str = format_decimal(units_per_usd, QUANT_4DP)
-        inverse_str = format_decimal(usd_per_unit, QUANT_4DP)
+        inverse_str = format_decimal(usd_per_unit, QUANT_8DP if units_per_usd >= Decimal("1000") else QUANT_4DP)
 
         if code in INVERSE_QUOTED_FIAT:
             pair_label = f"{code}/USD"

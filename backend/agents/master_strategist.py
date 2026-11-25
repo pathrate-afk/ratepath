@@ -16,7 +16,7 @@ import httpx
 
 from backend.agents.contracts import AgentReport, StrategistBrief
 from backend.ai_strategist import MultiProviderRotator, _run_llm_with_fallback
-from backend.config import Settings
+from backend.config import NO_RAW_SYRIA_EMOJI_PROMPT_RULE, Settings, sanitize_syria_flag_emoji
 from backend.evaluator import build_deterministic_embedding, normalize_supabase_rest_base
 from backend.seed_history import get_historical_macro_twins
 
@@ -264,7 +264,8 @@ async def synthesize_master_strategy(
                 "You are Agent 6 (Master Strategist) at RatePath (ريت باث). "
                 "Synthesize typed swarm reports into crisp, zero-fluff English & Modern Standard Arabic "
                 "capital-flow briefs readable in 5 seconds. Hard liquidity/macro truth (Agents 4, 5, 7) "
-                "ALWAYS overrides retail social chatter (Agents 1, 2, 3). Respect calibration lessons."
+                "ALWAYS overrides retail social chatter (Agents 1, 2, 3). Respect calibration lessons. "
+                f"{NO_RAW_SYRIA_EMOJI_PROMPT_RULE}"
             )
             usr_prompt = json.dumps(
                 {
@@ -292,7 +293,17 @@ async def synthesize_master_strategy(
                 rotator=rotator,
             )
             assert isinstance(brief_obj, StrategistBrief)
-            return brief_obj.model_copy(update={"provider_used": "live_llm_rotator"})
+            return brief_obj.model_copy(
+                update={
+                    "event_en": sanitize_syria_flag_emoji(brief_obj.event_en, lang="en"),
+                    "event_ar": sanitize_syria_flag_emoji(brief_obj.event_ar, lang="ar"),
+                    "money_flow_en": sanitize_syria_flag_emoji(brief_obj.money_flow_en, lang="en"),
+                    "money_flow_ar": sanitize_syria_flag_emoji(brief_obj.money_flow_ar, lang="ar"),
+                    "verdict_en": sanitize_syria_flag_emoji(brief_obj.verdict_en, lang="en"),
+                    "verdict_ar": sanitize_syria_flag_emoji(brief_obj.verdict_ar, lang="ar"),
+                    "provider_used": "live_llm_rotator",
+                }
+            )
         except Exception:
             pass
         finally:

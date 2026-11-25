@@ -49,7 +49,7 @@ export const TRANSLATIONS = {
     adSlotCta: "Advertise on RatePath",
     // Contextual Affiliate CTAs
     affFiatBadge: "FX TRANSFER PARTNER",
-    affFiatTitle: "Sending EUR, GBP, SAR, AED, EGP or TRY internationally?",
+    affFiatTitle: "Sending EUR, GBP, SAR, AED, EGP, TRY or SYP internationally?",
     affFiatDesc: "Cut hidden bank FX markups up to 3.8% using Wise & Remitly mid-market rails.",
     affFiatBtnPrimary: "Compare on Wise",
     affFiatBtnSecondary: "Remitly Express",
@@ -95,6 +95,7 @@ export const TRANSLATIONS = {
       AED: "UAE Dirham",
       EGP: "Egyptian Pound",
       TRY: "Turkish Lira",
+      SYP: "Syrian Pound",
       XAU_OZ: "Gold Troy Ounce",
       GRAM_24K: "Gold 24K Gram",
       GRAM_21K: "Gold 21K Gram",
@@ -148,7 +149,7 @@ export const TRANSLATIONS = {
     adSlotCta: "أعلن عبر ريت باث",
     // Contextual Affiliate CTAs
     affFiatBadge: "شريك التحويلات الدولية",
-    affFiatTitle: "هل تحوّل الدولار أو اليورو أو الريال أو الدرهم أو الجنيه دولياً؟",
+    affFiatTitle: "هل تحوّل الدولار أو اليورو أو الريال أو الدرهم أو الجنيه أو الليرة دولياً؟",
     affFiatDesc: "وفّر حتى 3.8% من هوامش البنوك المخفية عبر التحويل بالسعر الحقيقي مع Wise و Remitly.",
     affFiatBtnPrimary: "حوّل عبر Wise",
     affFiatBtnSecondary: "خدمة Remitly",
@@ -194,6 +195,7 @@ export const TRANSLATIONS = {
       AED: "الدرهم الإماراتي",
       EGP: "الجنيه المصري",
       TRY: "الليرة التركية",
+      SYP: "الليرة السورية",
       XAU_OZ: "أونصة الذهب الفوري",
       GRAM_24K: "جرام الذهب عيار 24",
       GRAM_21K: "جرام الذهب عيار 21",

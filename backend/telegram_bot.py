@@ -28,9 +28,13 @@ import httpx
 
 from backend.config import (
     LOCAL_TELEGRAM_DEDUP_PATH,
+    RAW_SYRIA_FLAG_EMOJI,
+    SYRIA_SAFE_TICKER_AR,
+    SYRIA_SAFE_TICKER_EN,
     Settings,
     enforce_utf8_runtime,
     is_placeholder_secret,
+    sanitize_syria_flag_emoji,
 )
 from backend.math_engine import parse_strict_decimal
 from backend.seed_history import get_historical_macro_twins
@@ -302,6 +306,12 @@ def build_public_channel_payload(
     """Build 5-second scannable 4-line pure-EN (`?lang=en`) or pure-AR (`?lang=ar`) flash post."""
     gold_oz = feed_payload.get("gold", {}).get("prices", {}).get("XAU_OZ", "N/A")
     btc_spot = feed_payload.get("crypto", {}).get("assets", {}).get("BTC", {}).get("spot_price", "N/A")
+    syp_entry = feed_payload.get("fiat", {}).get("rates", {}).get("SYP", {})
+    syp_rate = (
+        str(syp_entry.get("display_rate") or syp_entry.get("units_per_usd") or "").strip()
+        if isinstance(syp_entry, dict)
+        else ""
+    )
 
     en_block = news_item.get("en", {})
     ar_block = news_item.get("ar", {})
@@ -317,11 +327,15 @@ def build_public_channel_payload(
         flow_en = _compact_money_flow(biases, "en")
         verdict_en = _compact_verdict(pw, "en")
         twin_en = str(twin.get("headline_en", "Historical macro precedent"))[:110]
-        text = (
-            f"📌 <b>Event:</b> {_esc(en_block.get('title'))}\n"
-            f"💰 <b>Money Flow:</b> {_esc(flow_en)} · <code>XAU ${_esc(gold_oz)}</code> · <code>BTC ${_esc(btc_spot)}</code>\n"
-            f"🕰 <b>Historical Twin:</b> {_esc(twin_en)}\n"
-            f"⚠️ <b>Verdict:</b> {_esc(verdict_en)} (<a href=\"{_esc(src_url)}\">{_esc(src_name)}</a>)"
+        syp_chunk_en = f" · <code>{SYRIA_SAFE_TICKER_EN} {_esc(syp_rate)}</code>" if syp_rate else ""
+        text = sanitize_syria_flag_emoji(
+            (
+                f"📌 <b>Event:</b> {_esc(en_block.get('title'))}\n"
+                f"💰 <b>Money Flow:</b> {_esc(flow_en)} · <code>XAU ${_esc(gold_oz)}</code> · <code>BTC ${_esc(btc_spot)}</code>{syp_chunk_en}\n"
+                f"🕰 <b>Historical Twin:</b> {_esc(twin_en)}\n"
+                f"⚠️ <b>Verdict:</b> {_esc(verdict_en)} (<a href=\"{_esc(src_url)}\">{_esc(src_name)}</a>)"
+            ),
+            lang="en",
         )
         keyboard = [
             [{"text": "📊 Open RatePath", "web_app": {"url": launch_url}}],
@@ -332,11 +346,15 @@ def build_public_channel_payload(
         flow_ar = _compact_money_flow(biases, "ar")
         verdict_ar = _compact_verdict(pw, "ar")
         twin_ar = str(twin.get("headline_ar", "سوابق تاريخية للأسواق"))[:110]
-        text = (
-            f"📌 <b>الحدث:</b> {_esc(ar_block.get('title'))}\n"
-            f"💰 <b>حركة السيولة:</b> {_esc(flow_ar)} · <code>الذهب ${_esc(gold_oz)}</code> · <code>بيتكوين ${_esc(btc_spot)}</code>\n"
-            f"🕰 <b>التوأم التاريخي:</b> {_esc(twin_ar)}\n"
-            f"⚠️ <b>الخلاصة:</b> {_esc(verdict_ar)} (<a href=\"{_esc(src_url)}\">{_esc(src_name_ar)}</a>)"
+        syp_chunk_ar = f" · <code>{SYRIA_SAFE_TICKER_AR} {_esc(syp_rate)}</code>" if syp_rate else ""
+        text = sanitize_syria_flag_emoji(
+            (
+                f"📌 <b>الحدث:</b> {_esc(ar_block.get('title'))}\n"
+                f"💰 <b>حركة السيولة:</b> {_esc(flow_ar)} · <code>الذهب ${_esc(gold_oz)}</code> · <code>بيتكوين ${_esc(btc_spot)}</code>{syp_chunk_ar}\n"
+                f"🕰 <b>التوأم التاريخي:</b> {_esc(twin_ar)}\n"
+                f"⚠️ <b>الخلاصة:</b> {_esc(verdict_ar)} (<a href=\"{_esc(src_url)}\">{_esc(src_name_ar)}</a>)"
+            ),
+            lang="ar",
         )
         keyboard = [
             [{"text": "📊 افتح ريت باث", "web_app": {"url": launch_url}}],
@@ -345,11 +363,15 @@ def build_public_channel_payload(
     else:
         flow_en = _compact_money_flow(biases, "en")
         verdict_en = _compact_verdict(pw, "en")
-        text = (
-            f"📌 <b>Event:</b> {_esc(en_block.get('title'))} | {_esc(ar_block.get('title'))}\n"
-            f"💰 <b>Money Flow:</b> {_esc(flow_en)} · <code>XAU ${_esc(gold_oz)}</code> · <code>BTC ${_esc(btc_spot)}</code>\n"
-            f"🕰 <b>Historical Twin:</b> {_esc(twin.get('headline_en'))}\n"
-            f"⚠️ <b>Verdict:</b> {_esc(verdict_en)} (<a href=\"{_esc(src_url)}\">{_esc(src_name)}</a>)"
+        syp_chunk_en = f" · <code>{SYRIA_SAFE_TICKER_EN} {_esc(syp_rate)}</code>" if syp_rate else ""
+        text = sanitize_syria_flag_emoji(
+            (
+                f"📌 <b>Event:</b> {_esc(en_block.get('title'))} | {_esc(ar_block.get('title'))}\n"
+                f"💰 <b>Money Flow:</b> {_esc(flow_en)} · <code>XAU ${_esc(gold_oz)}</code> · <code>BTC ${_esc(btc_spot)}</code>{syp_chunk_en}\n"
+                f"🕰 <b>Historical Twin:</b> {_esc(twin.get('headline_en'))}\n"
+                f"⚠️ <b>Verdict:</b> {_esc(verdict_en)} (<a href=\"{_esc(src_url)}\">{_esc(src_name)}</a>)"
+            ),
+            lang="en",
         )
         keyboard = [
             [{"text": "📊 Open RatePath | ريت باث", "web_app": {"url": mini_app_url}}],
@@ -437,7 +459,7 @@ def build_vip_channel_payload(
 
     return {
         "chat_id": chat_id,
-        "text": text,
+        "text": sanitize_syria_flag_emoji(text, lang="ar" if lang == "ar" else "en"),
         "parse_mode": "HTML",
         "disable_web_page_preview": True,
         "reply_markup": {"inline_keyboard": keyboard},
@@ -451,11 +473,14 @@ def build_admin_watchdog_payload(
     admin_chat_id: str,
 ) -> dict[str, Any]:
     """Build silent (`disable_notification=True`) operational watchdog message for ADMIN_CHAT_ID."""
-    text = (
-        f"🛠️ <b>[RatePath Watchdog | مراقب النظام]</b>\n"
-        f"<b>Event:</b> {_esc(alert_title)}\n"
-        f"<b>Timestamp:</b> <code>{_utc_now_iso()}</code>\n"
-        f"<b>Details:</b> <code>{_esc(details[:900])}</code>"
+    text = sanitize_syria_flag_emoji(
+        (
+            f"🛠️ <b>[RatePath Watchdog | مراقب النظام]</b>\n"
+            f"<b>Event:</b> {_esc(alert_title)}\n"
+            f"<b>Timestamp:</b> <code>{_utc_now_iso()}</code>\n"
+            f"<b>Details:</b> <code>{_esc(details[:900])}</code>"
+        ),
+        lang="en",
     )
     return {
         "chat_id": admin_chat_id,
@@ -477,15 +502,22 @@ async def _send_telegram_payload(
     payload: dict[str, Any],
 ) -> dict[str, Any]:
     """POST `sendMessage` via Telegram Bot API with channel `web_app` -> `url` fallback."""
+    safe_payload = dict(payload)
+    if isinstance(safe_payload.get("text"), str) and RAW_SYRIA_FLAG_EMOJI in safe_payload["text"]:
+        # Belt-and-suspenders guard: never emit raw U+1F1F8 U+1F1FE over Telegram API
+        has_arabic = any("\u0600" <= ch <= "\u06FF" for ch in safe_payload["text"])
+        safe_payload["text"] = sanitize_syria_flag_emoji(
+            safe_payload["text"], lang="ar" if has_arabic else "en"
+        )
     api_url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
     resp = await client.post(
         api_url,
         headers={"Content-Type": "application/json"},
-        content=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
+        content=json.dumps(safe_payload, ensure_ascii=False).encode("utf-8"),
     )
 
     if resp.status_code == 400 and "BUTTON_TYPE_INVALID" in resp.text:
-        fallback_payload = json.loads(json.dumps(payload, ensure_ascii=False))
+        fallback_payload = json.loads(json.dumps(safe_payload, ensure_ascii=False))
         keyboard = fallback_payload.get("reply_markup", {}).get("inline_keyboard", [])
         for row in keyboard:
             for btn in row:

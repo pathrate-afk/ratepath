@@ -31,7 +31,13 @@ from backend.agents.search_trends import collect_search_trends
 from backend.agents.social_pulse import collect_social_pulse
 from backend.agents.telegram_scanner import collect_telegram_scanner
 from backend.ai_strategist import MultiProviderRotator
-from backend.config import LIVE_FEED_TARGET_PATH, WORKSPACE_ROOT, Settings, enforce_utf8_runtime
+from backend.config import (
+    LIVE_FEED_TARGET_PATH,
+    WORKSPACE_ROOT,
+    Settings,
+    enforce_utf8_runtime,
+    sanitize_syria_flag_emoji,
+)
 from backend.fetchers import create_http_client, fetch_gold_spot
 from backend.math_engine import loads_decimal_json
 from backend.seed_history import get_historical_macro_twins
@@ -143,20 +149,29 @@ def audit_strategist_brief(
     if hierarchy["hard_healthy_count"] == 0:
         return False, 30, brief, "no_hard_truth_confirmation"
 
-    calibrated_brief = brief
+    calibrated_brief = brief.model_copy(
+        update={
+            "event_en": sanitize_syria_flag_emoji(brief.event_en, lang="en"),
+            "event_ar": sanitize_syria_flag_emoji(brief.event_ar, lang="ar"),
+            "money_flow_en": sanitize_syria_flag_emoji(brief.money_flow_en, lang="en"),
+            "money_flow_ar": sanitize_syria_flag_emoji(brief.money_flow_ar, lang="ar"),
+            "verdict_en": sanitize_syria_flag_emoji(brief.verdict_en, lang="en"),
+            "verdict_ar": sanitize_syria_flag_emoji(brief.verdict_ar, lang="ar"),
+        }
+    )
     # 4. Enforce RETAIL_TRAP protection: crowd euphoria cannot produce unchecked crypto bullishness
     if hierarchy["retail_trap_flagged"]:
-        adjusted_biases = dict(brief.assets_bias_24h)
+        adjusted_biases = dict(calibrated_brief.assets_bias_24h)
         for sym in ("BTC", "ETH", "SOL"):
             if adjusted_biases.get(sym) == "bullish":
                 adjusted_biases[sym] = "bearish"
-        verdict_en = brief.verdict_en
+        verdict_en = calibrated_brief.verdict_en
         if "RETAIL_TRAP" not in verdict_en:
             verdict_en = f"RETAIL_TRAP: {verdict_en}"[:260]
-        verdict_ar = brief.verdict_ar
+        verdict_ar = calibrated_brief.verdict_ar
         if "فخ" not in verdict_ar:
             verdict_ar = f"تنبيه فخ أفراد: {verdict_ar}"[:260]
-        calibrated_brief = brief.model_copy(
+        calibrated_brief = calibrated_brief.model_copy(
             update={
                 "assets_bias_24h": adjusted_biases,
                 "verdict_en": verdict_en,
@@ -418,6 +433,7 @@ async def run_lane2_swarm(
                 "auditor_verified": decision.auditor_approved,
             }
             payload_for_tg = {
+                "fiat": feed_snapshot.get("fiat", {}),
                 "gold": feed_snapshot.get("gold", {"prices": {"XAU_OZ": "N/A"}}),
                 "crypto": feed_snapshot.get("crypto", {"assets": {"BTC": {"spot_price": "N/A"}}}),
                 "news": [swarm_news_item],

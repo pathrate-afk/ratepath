@@ -387,6 +387,9 @@
             },
             "EGP": {
               "$ref": "#/$defs/fiat_pair_entry"
+            },
+            "SYP": {
+              "$ref": "#/$defs/fiat_pair_entry"
             }
           }
         }

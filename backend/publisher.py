@@ -221,6 +221,8 @@ async def execute_live_cycle(
             "USD_TRY": fiat_rates_table["TRY"]["units_per_usd"],
             "USD_EGP": fiat_rates_table["EGP"]["units_per_usd"],
         }
+        if "SYP" in fiat_rates_table:
+            market_context["USD_SYP"] = fiat_rates_table["SYP"]["units_per_usd"]
 
         ai_settings = (
             resolved_settings

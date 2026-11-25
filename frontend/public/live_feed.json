@@ -3,13 +3,13 @@
     "platform": "RatePath",
     "platform_ar": "ريت باث",
     "schema_version": "1.0.0",
-    "generated_at": "2026-11-25T17:40:22Z",
+    "generated_at": "2026-11-25T20:37:26Z",
     "ai_mode": "deterministic_fallback",
     "status": "healthy"
   },
   "fiat": {
     "base": "USD",
-    "updated_at": "2026-11-25T17:40:17Z",
+    "updated_at": "2026-11-25T20:37:20Z",
     "source": "open.er-api.com",
     "rates": {
       "EUR": {
@@ -47,68 +47,74 @@
         "usd_per_unit": "0.0184",
         "pair_label": "USD/EGP",
         "display_rate": "54.2259"
+      },
+      "SYP": {
+        "units_per_usd": "121.5337",
+        "usd_per_unit": "0.0082",
+        "pair_label": "USD/SYP",
+        "display_rate": "121.5337"
       }
     }
   },
   "gold": {
     "currency": "USD",
     "troy_ounce_grams": "31.1034768",
-    "updated_at": "2026-11-25T17:40:18Z",
+    "updated_at": "2026-11-25T20:37:21Z",
     "source": "swissquote_xau_bbo",
-    "screen_vs_real_spread_pct": "0.04",
+    "screen_vs_real_spread_pct": "0.08",
     "prices": {
-      "XAU_OZ": "3507.38",
-      "GRAM_24K": "112.76",
-      "GRAM_21K": "98.67",
-      "GRAM_18K": "84.57"
+      "XAU_OZ": "3569.90",
+      "GRAM_24K": "114.77",
+      "GRAM_21K": "100.43",
+      "GRAM_18K": "86.08"
     }
   },
   "crypto": {
     "quote_currency": "USD",
-    "updated_at": "2026-11-25T17:40:18Z",
+    "updated_at": "2026-11-25T20:37:22Z",
     "assets": {
       "BTC": {
         "symbol": "BTC",
-        "spot_price": "59577.58",
+        "spot_price": "59971.43",
         "spot_source": "binance_vision",
         "funding": {
           "primary_exchange": "binance",
-          "primary_rate": "0.00007254",
+          "primary_rate": "0.00010000",
           "secondary_exchange": "bybit",
-          "secondary_rate": "0.00010000",
-          "net_spread": "-0.00002746",
-          "spread_bps": "0.27",
-          "annualized_spread_pct": "3.01",
-          "arbitrage_signal": "short_bybit_long_binance"
+          "secondary_rate": "0.00008203",
+          "net_spread": "0.00001797",
+          "spread_bps": "0.18",
+          "annualized_spread_pct": "1.97",
+          "arbitrage_signal": "short_binance_long_bybit"
         }
       },
       "ETH": {
         "symbol": "ETH",
-        "spot_price": "1671.87",
+        "spot_price": "1683.38",
         "spot_source": "binance_vision",
         "funding": {
           "primary_exchange": "binance",
-          "primary_rate": "0.00004390",
+          "primary_rate": "0.00006350",
           "secondary_exchange": "bybit",
           "secondary_rate": "0.00010000",
-          "net_spread": "-0.00005610",
-          "spread_bps": "0.56",
-          "annualized_spread_pct": "6.14",
+          "net_spread": "-0.00003650",
+          "spread_bps": "0.37",
+          "annualized_spread_pct": "4.00",
           "arbitrage_signal": "short_bybit_long_binance"
         }
       },
       "SOL": {
         "symbol": "SOL",
-        "spot_price": "69.04",
+        "spot_price": "70.28",
         "spot_source": "binance_vision",
         "funding": {
           "primary_exchange": "binance",
-          "primary_rate": "-0.00001581",
+          "primary_rate": "0.00000213",
           "secondary_exchange": "bybit",
           "secondary_rate": "0.00010000",
-          "net_spread": "-0.00011581",
-          "spread_bps": "1.16",
-          "annualized_spread_pct": "12.68",
+          "net_spread": "-0.00009787",
+          "spread_bps": "0.98",
+          "annualized_spread_pct": "10.72",
           "arbitrage_signal": "short_bybit_long_binance"
         }
       }
@@ -127,7 +133,7 @@
       },
       "ar": {
         "title": "ريت باث | توازن واستقرار عبر فئات الأصول الكلية — قراءة في تقرير سي إن بي سي (CNBC)",
-        "summary": "رصدت منصة ريت باث تطوراً اقتصادياً من سي إن بي سي (CNBC) بعنوان: «Fed’s preferred inflation gauge accelerated to 3.8% in October, raising the 2027 stakes for the central bank». يأتي هذا الحدث بينما يتداول الذهب الفوري قرب 3507.38 دولار للأونصة والبيتكوين عند 59577.58 دولار، مع تقييم انعكاساته المباشرة على السيولة خلال 24 ساعة.",
+        "summary": "رصدت منصة ريت باث تطوراً اقتصادياً من سي إن بي سي (CNBC) بعنوان: «Fed’s preferred inflation gauge accelerated to 3.8% in October, raising the 2027 stakes for the central bank». يأتي هذا الحدث بينما يتداول الذهب الفوري قرب 3569.90 دولار للأونصة والبيتكوين عند 59971.43 دولار، مع تقييم انعكاساته المباشرة على السيولة خلال 24 ساعة.",
         "macro_thesis": "تُشير التطورات الاقتصادية الكلية من سي إن بي سي (CNBC) إلى تمركز مؤسسي متوازن خلال الـ 24 ساعة القادمة بانتظار بيانات التضخم وعوائد السندات."
       },
       "priced_in_warning": {
@@ -149,18 +155,18 @@
       "auditor_verified": true
     },
     {
-      "id": "rp-bd1df04b4bb78b9e",
-      "published_at": "2026-11-25T17:31:00Z",
+      "id": "rp-076627da97aeeec5",
+      "published_at": "2026-11-25T19:43:00Z",
       "source_name": "MarketWatch",
-      "source_url": "https://www.marketwatch.com/story/inflation-gets-worse-now-the-fed-no-choice-but-to-raise-u-s-interest-rates-8b0c2c1f?mod=mw_rss_topstories",
+      "source_url": "https://www.marketwatch.com/story/nvidia-is-heading-for-its-first-death-cross-since-march-2025-as-stock-continues-to-struggle-a611b99c?mod=mw_rss_topstories",
       "en": {
-        "title": "Inflation gets worse. Now the Fed has no choice but to raise U.S. interest rates.",
-        "summary": "The measure of inflation used by the Federal Reserve to influence U.S. interest rates rose again in October at an accelerated rate, virtually assuring the central bank will increase borrowing costs next month.",
+        "title": "Nvidia is heading for its first ‘death cross’ since March 2025 as stock continues to struggle",
+        "summary": "This tape has not been kind to Nvidia.",
         "macro_thesis": "[Balanced Cross-Asset Consolidation] Macro headline flow from MarketWatch indicates range-bound institutional positioning over the next 24 hours pending fresh sovereign yield or inflation prints."
       },
       "ar": {
         "title": "ريت باث | توازن واستقرار عبر فئات الأصول الكلية — قراءة في تقرير ماركت ووتش (MarketWatch)",
-        "summary": "رصدت منصة ريت باث تطوراً اقتصادياً من ماركت ووتش (MarketWatch) بعنوان: «Inflation gets worse. Now the Fed has no choice but to raise U.S. interest rates.». يأتي هذا الحدث بينما يتداول الذهب الفوري قرب 3507.38 دولار للأونصة والبيتكوين عند 59577.58 دولار، مع تقييم انعكاساته المباشرة على السيولة خلال 24 ساعة.",
+        "summary": "رصدت منصة ريت باث تطوراً اقتصادياً من ماركت ووتش (MarketWatch) بعنوان: «Nvidia is heading for its first ‘death cross’ since March 2025 as stock continues to struggle». يأتي هذا الحدث بينما يتداول الذهب الفوري قرب 3569.90 دولار للأونصة والبيتكوين عند 59971.43 دولار، مع تقييم انعكاساته المباشرة على السيولة خلال 24 ساعة.",
         "macro_thesis": "تُشير التطورات الاقتصادية الكلية من ماركت ووتش (MarketWatch) إلى تمركز مؤسسي متوازن خلال الـ 24 ساعة القادمة بانتظار بيانات التضخم وعوائد السندات."
       },
       "priced_in_warning": {
@@ -182,19 +188,19 @@
       "auditor_verified": true
     },
     {
-      "id": "rp-598db0d3d6ce6bd3",
-      "published_at": "2026-11-25T17:01:28Z",
+      "id": "rp-c97a826ce3fc19a9",
+      "published_at": "2026-11-25T20:30:23Z",
       "source_name": "Investing.com",
-      "source_url": "https://www.investing.com/news/economy-news/nasdaq-futures-slide-over-2-on-fresh-us-tariff-concerns-inflation-data-in-focus-5050138",
+      "source_url": "https://www.investing.com/news/economy-news/dollar-takes-breather-ahead-of-us-data-on-fed-path-aussie-jumps-on-cpi-5049486",
       "en": {
-        "title": "Nasdaq sinks about 4% as AI rout, fresh Trump tariffs spook Wall St",
-        "summary": "Nasdaq sinks about 4% as AI rout, fresh Trump tariffs spook Wall St",
-        "macro_thesis": "[Hawkish USD & Real-Yield Tightening Impulse] RatePath Strategist assesses upward pressure on US front-end yields following Investing.com coverage, favoring USD liquidity over G10 peers while constraining non-yielding precious metals unless safe-haven hedging dominates."
+        "title": "Yen, Swiss franc gain as dollar slips in volatile AI-driven session",
+        "summary": "Yen, Swiss franc gain as dollar slips in volatile AI-driven session",
+        "macro_thesis": "[Dovish Liquidity Easing & Real-Rate Compression] Softer policy rate expectations highlighted by Investing.com compress real US Treasury yields, structurally supporting spot Gold (XAU) and high-beta digital assets."
       },
       "ar": {
-        "title": "ريت باث | زخم تشددي للدولار الأمريكي وارتفاع العوائد الحقيقية — قراءة في تقرير إنفستينج (Investing.com)",
-        "summary": "رصدت منصة ريت باث تطوراً اقتصادياً من إنفستينج (Investing.com) بعنوان: «Nasdaq sinks about 4% as AI rout, fresh Trump tariffs spook Wall St». يأتي هذا الحدث بينما يتداول الذهب الفوري قرب 3507.38 دولار للأونصة والبيتكوين عند 59577.58 دولار، مع تقييم انعكاساته المباشرة على السيولة خلال 24 ساعة.",
-        "macro_thesis": "يرصد محلل ريت باث ضغوطاً صعودية على عوائد السندات الأمريكية قصيرة الأجل استناداً إلى تغطية إنفستينج (Investing.com)، مما يدعم قوة السيولة الدولارية مقابل العملات الرئيسية ويحد من مكاسب الأصول غير المدرة للعائد."
+        "title": "ريت باث | تيسير السيولة النقدية وتراجع العوائد الحقيقية — قراءة في تقرير إنفستينج (Investing.com)",
+        "summary": "رصدت منصة ريت باث تطوراً اقتصادياً من إنفستينج (Investing.com) بعنوان: «Yen, Swiss franc gain as dollar slips in volatile AI-driven session». يأتي هذا الحدث بينما يتداول الذهب الفوري قرب 3569.90 دولار للأونصة والبيتكوين عند 59971.43 دولار، مع تقييم انعكاساته المباشرة على السيولة خلال 24 ساعة.",
+        "macro_thesis": "تشير معطيات إنفستينج (Investing.com) حول مسار التيسير النقدي إلى انحسار العوائد الحقيقية للسندات، مما يمنح دعماً هيكلياً للذهب الفوري والأصول الرقمية."
       },
       "priced_in_warning": {
         "active": false,
@@ -203,30 +209,30 @@
         "ar": "زخم سعري متجدد: لا تظهر مؤشرات استنفاد أو تسعير مسبق حاد في دفاتر الأوامر خلال نافذة الـ 24 ساعة."
       },
       "assets_bias_24h": {
-        "USD": "bullish",
-        "EUR": "bearish",
-        "GBP": "bearish",
-        "XAU": "bearish",
-        "BTC": "bearish",
-        "ETH": "bearish",
-        "SOL": "bearish"
+        "USD": "bearish",
+        "EUR": "bullish",
+        "GBP": "bullish",
+        "XAU": "bullish",
+        "BTC": "bullish",
+        "ETH": "bullish",
+        "SOL": "bullish"
       },
-      "confidence_score": 76,
+      "confidence_score": 78,
       "auditor_verified": true
     },
     {
-      "id": "rp-59001fee6e497a36",
-      "published_at": "2026-11-24T19:00:00Z",
+      "id": "rp-da11858d17345fd7",
+      "published_at": "2026-11-25T20:00:00Z",
       "source_name": "Federal Reserve",
-      "source_url": "https://www.federalreserve.gov/newsevents/pressreleases/monetary20261124a.htm",
+      "source_url": "https://www.federalreserve.gov/newsevents/pressreleases/bcreg20261125b.htm",
       "en": {
-        "title": "Minutes of the Board's discount rate meetings on October 19 and October 28, 2026",
-        "summary": "Minutes of the Board's discount rate meetings on October 19 and October 28, 2026",
+        "title": "Agencies announce dollar thresholds for applicability of truth in lending and consumer leasing rules for consumer credit and lease transactions",
+        "summary": "Agencies announce dollar thresholds for applicability of truth in lending and consumer leasing rules for consumer credit and lease transactions",
         "macro_thesis": "[Balanced Cross-Asset Consolidation] Macro headline flow from Federal Reserve indicates range-bound institutional positioning over the next 24 hours pending fresh sovereign yield or inflation prints."
       },
       "ar": {
         "title": "ريت باث | توازن واستقرار عبر فئات الأصول الكلية — قراءة في تقرير الاحتياطي الفيدرالي الأمريكي",
-        "summary": "رصدت منصة ريت باث تطوراً اقتصادياً من الاحتياطي الفيدرالي الأمريكي بعنوان: «Minutes of the Board's discount rate meetings on October 19 and October 28, 2026». يأتي هذا الحدث بينما يتداول الذهب الفوري قرب 3507.38 دولار للأونصة والبيتكوين عند 59577.58 دولار، مع تقييم انعكاساته المباشرة على السيولة خلال 24 ساعة.",
+        "summary": "رصدت منصة ريت باث تطوراً اقتصادياً من الاحتياطي الفيدرالي الأمريكي بعنوان: «Agencies announce dollar thresholds for applicability of truth in lending and consumer leasing rules for consumer credit and lease transactions». يأتي هذا الحدث بينما يتداول الذهب الفوري قرب 3569.90 دولار للأونصة والبيتكوين عند 59971.43 دولار، مع تقييم انعكاساته المباشرة على السيولة خلال 24 ساعة.",
         "macro_thesis": "تُشير التطورات الاقتصادية الكلية من الاحتياطي الفيدرالي الأمريكي إلى تمركز مؤسسي متوازن خلال الـ 24 ساعة القادمة بانتظار بيانات التضخم وعوائد السندات."
       },
       "priced_in_warning": {
@@ -259,7 +265,7 @@
       },
       "ar": {
         "title": "ريت باث | تدفقات الملاذات الآمنة والتحوط من التقلبات الجيوسياسية — قراءة في تقرير سي إن بي سي (CNBC)",
-        "summary": "رصدت منصة ريت باث تطوراً اقتصادياً من سي إن بي سي (CNBC) بعنوان: «Even the price of toys is on the rise. How Americans are scaling back holiday plans». يأتي هذا الحدث بينما يتداول الذهب الفوري قرب 3507.38 دولار للأونصة والبيتكوين عند 59577.58 دولار، مع تقييم انعكاساته المباشرة على السيولة خلال 24 ساعة.",
+        "summary": "رصدت منصة ريت باث تطوراً اقتصادياً من سي إن بي سي (CNBC) بعنوان: «Even the price of toys is on the rise. How Americans are scaling back holiday plans». يأتي هذا الحدث بينما يتداول الذهب الفوري قرب 3569.90 دولار للأونصة والبيتكوين عند 59971.43 دولار، مع تقييم انعكاساته المباشرة على السيولة خلال 24 ساعة.",
         "macro_thesis": "تعزز محفزات التحوط من المخاطر الواردة عبر سي إن بي سي (CNBC) التمركز المؤسسي المتزامن في الذهب الفوري والسيولة النقدية بالدولار الأمريكي."
       },
       "priced_in_warning": {
