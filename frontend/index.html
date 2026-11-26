@@ -127,6 +127,13 @@
           <span id="auth-sync-btn-label" class="hidden sm:inline" data-i18n="btnEmailSync">Sync</span>
         </button>
 
+        <!-- Personal AI Tracker Bot Quick Trigger -->
+        <button id="btn-open-personal-bot" type="button"
+          class="hidden md:inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-bold bg-amber-400/15 hover:bg-amber-400/25 text-amber-300 border border-amber-400/35 transition-colors">
+          <span aria-hidden="true">🤖</span>
+          <span data-i18n="btnPersonalBotNav">Personal Bot</span>
+        </button>
+
         <!-- VIP Telegram Price Alert Trigger -->
         <button id="btn-open-vip-alerts" type="button"
           class="hidden sm:inline-flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-lg text-xs font-bold bg-sky-500/15 hover:bg-sky-500/25 text-sky-300 border border-sky-500/35 transition-colors">
@@ -327,11 +334,154 @@
             </div>
             <div id="aads-live-unit" class="hidden justify-center overflow-hidden"></div>
           </aside>
+
+          <!-- Personal AI Tracker Bot Hub (Currencies, Metals, Crypto, Global Stocks & Company News) -->
+          <section id="personal-bot-hub" class="p-4 sm:p-5 rounded-2xl bg-slate-900/55 border border-amber-400/30 shadow-xl shadow-black/25 space-y-4">
+            <div class="flex flex-wrap items-start justify-between gap-2">
+              <div>
+                <div class="flex items-center gap-2 flex-wrap">
+                  <h2 class="text-sm sm:text-base font-extrabold text-white tracking-tight" data-i18n="pbotTitle">
+                    🤖 Personal AI Tracker Bot
+                  </h2>
+                  <span id="pbot-tier-badge" class="px-2 py-0.5 rounded-full text-[10px] font-mono font-bold bg-amber-400/15 text-amber-300 border border-amber-400/35">
+                    Free (0/3 assets)
+                  </span>
+                </div>
+                <p class="text-xs text-slate-400 mt-0.5" data-i18n="pbotSubtitle">
+                  Track your custom currencies, gold, crypto, global stocks &amp; company news with private Telegram alerts
+                </p>
+              </div>
+              <button id="btn-pbot-save-now" type="button"
+                class="px-3 py-1.5 rounded-lg text-xs font-extrabold bg-emerald-400 hover:bg-emerald-300 text-slate-950 transition-colors"
+                data-i18n="pbotSaveBtn">
+                Save Watchlist
+              </button>
+            </div>
+
+            <!-- Live Account & Telegram Pairing Status -->
+            <div class="p-3 rounded-xl bg-slate-950/75 border border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+              <p id="pbot-account-status" class="text-xs text-slate-300 leading-relaxed"></p>
+              <div class="flex items-center gap-2 shrink-0">
+                <button id="btn-pbot-signin" type="button"
+                  class="px-3 py-1.5 rounded-lg text-xs font-extrabold bg-amber-400 hover:bg-amber-300 text-slate-950 transition-colors"
+                  data-i18n="pbotSignInBtn">
+                  Sign In by Email to Link Telegram
+                </button>
+                <a id="btn-pbot-link-telegram" href="https://t.me/RatePathTerminalBot" target="_blank" rel="noopener noreferrer"
+                  class="hidden px-3 py-1.5 rounded-lg text-xs font-extrabold bg-sky-500 hover:bg-sky-400 text-slate-950 transition-colors">
+                  🔗 Link My Telegram Bot ↗
+                </a>
+              </div>
+            </div>
+
+            <!-- Universal Search: Stocks, Companies, Currencies, Metals & Crypto -->
+            <div class="space-y-2">
+              <input id="pbot-search-input" type="search" autocomplete="off"
+                placeholder="Search stocks, companies, currencies or crypto: AAPL, TSLA, NVDA, 2222.SR, RUB, PEPE..."
+                class="w-full h-11 px-3.5 rounded-xl bg-slate-950 border border-slate-700 focus:border-amber-400 focus:ring-2 focus:ring-amber-400/25 outline-none text-xs sm:text-sm text-white placeholder:text-slate-500" />
+              <div class="flex flex-wrap items-center gap-1.5 text-[11px]" dir="ltr">
+                <button type="button" data-pbot-quick="AAPL" class="px-2 py-0.5 rounded-md bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 font-mono">AAPL</button>
+                <button type="button" data-pbot-quick="NVDA" class="px-2 py-0.5 rounded-md bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 font-mono">NVDA</button>
+                <button type="button" data-pbot-quick="TSLA" class="px-2 py-0.5 rounded-md bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 font-mono">TSLA</button>
+                <button type="button" data-pbot-quick="2222.SR" class="px-2 py-0.5 rounded-md bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 font-mono">Aramco</button>
+                <button type="button" data-pbot-quick="SPY" class="px-2 py-0.5 rounded-md bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 font-mono">S&amp;P 500</button>
+                <button type="button" data-pbot-quick="BTC" class="px-2 py-0.5 rounded-md bg-slate-800 hover:bg-slate-700 text-amber-300 border border-slate-700 font-mono">BTC</button>
+                <button type="button" data-pbot-quick="RUB" class="px-2 py-0.5 rounded-md bg-slate-800 hover:bg-slate-700 text-emerald-300 border border-slate-700 font-mono">RUB</button>
+              </div>
+              <div id="pbot-search-results" class="hidden space-y-1.5 max-h-60 overflow-y-auto"></div>
+              <div id="pbot-intel-preview" class="hidden"></div>
+            </div>
+
+            <!-- Saved Personal Watchlist -->
+            <div id="pbot-watchlist-container" class="space-y-2 max-h-72 overflow-y-auto"></div>
+
+            <!-- Direct USDT Subscription for Rentable Personal Tracker Bot -->
+            <form id="pbot-pro-checkout-form" class="p-3.5 rounded-xl bg-slate-950/80 border border-amber-400/35 space-y-2.5">
+              <div class="flex items-center justify-between gap-2 flex-wrap">
+                <span class="text-xs font-extrabold text-amber-300" data-i18n="pbotCheckoutHeading">
+                  🤖 Rent Your Personal AI Tracker Bot (USDT)
+                </span>
+                <span class="px-2 py-0.5 rounded-full text-[10px] font-mono font-bold bg-emerald-500/15 text-emerald-300 border border-emerald-500/30">
+                  USDT Direct
+                </span>
+              </div>
+              <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                <select id="pbot-plan-select" aria-label="Subscription Tier"
+                  class="h-10 px-3 rounded-lg bg-slate-900 border border-slate-700 text-xs font-bold text-amber-200">
+                  <option value="monthly_personal_bot">🤖 Personal Bot Pro + VIP — $19/mo (50 Assets + Stocks &amp; News)</option>
+                  <option value="monthly_business_vip">💎 Business VIP + Bot — $10/mo (10 Assets + VIP Channel)</option>
+                </select>
+                <select id="pbot-usdt-network" aria-label="USDT Network"
+                  class="h-10 px-3 rounded-lg bg-slate-900 border border-slate-700 text-xs font-semibold text-slate-200">
+                  <option value="usdttrc20">USDT (TRC-20 • TRON)</option>
+                  <option value="usdtbsc">USDT (BEP-20 • BSC)</option>
+                  <option value="usdtton">USDT (TON • Telegram)</option>
+                  <option value="usdtsol">USDT (Solana)</option>
+                  <option value="usdtarb">USDT (Arbitrum)</option>
+                </select>
+              </div>
+              <p class="text-[11px] text-slate-400 leading-relaxed" data-i18n="pbotLegalNotice">
+                ⚖️ Transparent Notice: You are subscribing to a data-monitoring &amp; alert software service only. We do not guarantee profits or market direction — markets move by changing numbers and nobody knows the future.
+              </p>
+              <button id="btn-pbot-usdt-checkout" type="submit"
+                class="w-full py-2.5 px-3 rounded-xl text-xs font-extrabold bg-gradient-to-r from-amber-400 to-yellow-300 hover:from-amber-300 hover:to-yellow-200 text-slate-950 transition-colors"
+                data-i18n="pbotCheckoutBtn">
+                Activate Personal Bot Subscription (USDT)
+              </button>
+            </form>
+          </section>
+
+          <!-- Geo-Compliant Trading Bots & Smart Alerts Affiliate Shelf -->
+          <section id="bots-affiliate-shelf" class="hidden p-4 sm:p-5 rounded-2xl bg-slate-900/50 border border-slate-800/90 space-y-3">
+            <div>
+              <h2 class="text-sm sm:text-base font-extrabold text-white" data-i18n="botsAffTitle">
+                Automated Trading &amp; Smart Alert Bots (Geo-Compliant Partners)
+              </h2>
+              <p class="text-xs text-slate-400 mt-0.5" data-i18n="botsAffSubtitle">
+                External platforms filtered automatically for your country — execute Grid/DCA bots or pro chart alerts
+              </p>
+            </div>
+            <div id="bots-affiliate-grid" class="grid grid-cols-1 sm:grid-cols-2 gap-2.5"></div>
+            <p class="text-[10px] text-slate-400 leading-relaxed border-t border-slate-800 pt-2" data-i18n="botsAffDisclosure">
+              Affiliate Disclosure: External third-party partner links. RatePath may earn a referral commission at no extra cost to you. Informational links only, not financial advice.
+            </p>
+          </section>
         </section>
       </div>
 
-      <!-- RIGHT COLUMN (5/12): PERPETUAL FUNDING SPREADS & VERIFIED MACRO NEWS -->
+      <!-- RIGHT COLUMN (5/12): QUANT RADAR, PERPETUAL FUNDING SPREADS & VERIFIED MACRO NEWS -->
       <div id="pane-right" class="lg:col-span-5 space-y-5">
+
+        <!-- Live Quantitative + Derivatives + Macro Signal Radar & Real 30d Track Record -->
+        <section id="quant-radar-panel" class="p-4 sm:p-5 rounded-2xl bg-slate-900/55 border border-emerald-500/30 space-y-3 shadow-lg shadow-black/20">
+          <div class="flex flex-wrap items-start justify-between gap-2">
+            <div>
+              <h2 class="text-sm sm:text-base font-extrabold text-white" data-i18n="quantRadarTitle">
+                Quant &amp; Macro Signal Radar
+              </h2>
+              <p class="text-xs text-slate-400 mt-0.5" data-i18n="quantRadarSubtitle">
+                EMA/RSI + Funding + DXY numerical model (selective abstention)
+              </p>
+            </div>
+            <button id="btn-refresh-quant" type="button"
+              class="px-2.5 py-1 rounded-lg text-[11px] font-bold bg-slate-800 hover:bg-slate-700 text-emerald-300 border border-slate-700 transition-colors">
+              ↻
+            </button>
+          </div>
+
+          <div class="flex flex-wrap items-center justify-between gap-2">
+            <span id="quant-track-record-badge" class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold bg-slate-800 text-slate-300 border border-slate-700">
+              Live Grading: Collecting samples
+            </span>
+            <div id="quant-macro-bar" class="flex flex-wrap items-center gap-1.5"></div>
+          </div>
+
+          <div id="quant-radar-body" class="space-y-2"></div>
+
+          <p class="text-[10px] text-amber-200/90 bg-amber-500/10 border border-amber-400/25 rounded-xl p-2.5 leading-relaxed" data-i18n="quantLegalNotice">
+            ⚖️ Informational data &amp; statistical analytics only — we provide live tools and numbers, NOT investment advice or guaranteed rises/falls. Markets change constantly and no one knows the future.
+          </p>
+        </section>
 
         <!-- Cross-Exchange Perpetual Funding Arbitrage Panel -->
         <section id="funding-panel" class="p-4 sm:p-5 rounded-2xl bg-slate-900/55 border border-slate-800/90 space-y-3">
@@ -387,7 +537,7 @@
   <footer class="max-w-[1480px] mx-auto px-3 sm:px-5 py-6 border-t border-slate-800 text-[11px] text-slate-400">
     <div class="flex flex-col sm:flex-row items-center justify-between gap-3 text-center sm:text-start">
       <p class="leading-relaxed" data-i18n="footerDisclaimer">
-        RatePath (ريت باث) — Live market rates &amp; macro briefings are for informational purposes only and do not constitute financial advice.
+        RatePath (ريت باث) — Informational data, monitoring tools &amp; statistical analysis ONLY. We do not provide financial advice or guarantee any asset will rise or fall; markets move by changing numbers and no one knows the future. Some partner links are affiliate referrals.
       </p>
       <div class="flex flex-wrap items-center justify-center gap-3 shrink-0 font-semibold">
         <a href="https://t.me/RatePathLive" target="_blank" rel="noopener noreferrer" class="text-slate-300 hover:text-white transition-colors">@RatePathLive</a>
@@ -556,8 +706,13 @@
             </span>
           </div>
           <p class="text-[11px] text-slate-400 leading-relaxed" data-i18n="vipPerksSummary">
-            24h Asset Direction Matrix, 100-Year Historical Twins, Priced-In Trap Warnings, 8h Funding Carry &amp; 24/7 AI Coin Bot.
+            24h Quant Direction Matrix, Live Macro Catalysts, 8h Funding Carry, 24/7 AI Coin/Stock Bot &amp; Private Alerts. Informational data service only.
           </p>
+          <select id="vip-plan-tier" aria-label="VIP Plan Tier"
+            class="w-full h-10 px-3 rounded-lg bg-slate-900 border border-slate-700 text-xs font-bold text-amber-200">
+            <option value="monthly_business_vip">💎 Business VIP Channel + Bot (10 Assets) — $10/mo (USDT)</option>
+            <option value="monthly_personal_bot">🤖 Personal Bot Pro (50 Assets + Stocks &amp; News) + VIP — $19/mo (USDT)</option>
+          </select>
           <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
             <select id="vip-usdt-network" aria-label="USDT Network"
               class="h-10 px-3 rounded-lg bg-slate-900 border border-slate-700 text-xs font-semibold text-slate-200">

@@ -1,5 +1,5 @@
 /* RatePath (ريت باث) Offline-First Service Worker (Bypassed on localhost & /api/) */
-const CACHE_VERSION = "ratepath-pwa-v11";
+const CACHE_VERSION = "ratepath-pwa-v12";
 const FEED_CACHE_NAME = "ratepath-live-feed-v3";
 
 const IS_LOCALHOST =
@@ -21,6 +21,7 @@ const APP_SHELL_ASSETS = [
   "./js/workspace.js",
   "./js/auth_sync.js",
   "./js/affiliates.js",
+  "./js/quant_and_bot.js",
   "./js/i18n.js",
   "./js/quote-card.js",
   "./js/app.js",

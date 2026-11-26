@@ -44,6 +44,7 @@ import {
   detectVisitorCountry,
   selectGeoCompliantPartners,
 } from "./affiliates.js";
+import { createQuantAndBotController } from "./quant_and_bot.js";
 import {
   AFFILIATES_ENABLED,
   CATALOG_FEED_URL,
@@ -1232,6 +1233,7 @@ function evaluateLocalPriceAlerts() {
 
 function applyMobileTabVisibility() {
   const isDesktop = window.matchMedia("(min-width: 1024px)").matches;
+  const quantPanel = document.getElementById("quant-radar-panel");
   const sections = {
     converter: document.getElementById("converter-panel"),
     rates: document.getElementById("rates-panel"),
@@ -1241,6 +1243,7 @@ function applyMobileTabVisibility() {
 
   if (isDesktop) {
     Object.values(sections).forEach((el) => el?.classList.remove("hidden"));
+    quantPanel?.classList.remove("hidden");
   } else {
     Object.entries(sections).forEach(([key, el]) => {
       if (!el) return;
@@ -1251,6 +1254,8 @@ function applyMobileTabVisibility() {
         el.classList.toggle("hidden", key !== state.mobileTab);
       }
     });
+    // Show Quant & Macro Signal Radar together with the Macro/News tab on mobile
+    quantPanel?.classList.toggle("hidden", state.mobileTab !== "news");
   }
 
   document.querySelectorAll(".mobile-nav-btn").forEach((btn) => {
@@ -1571,6 +1576,7 @@ async function initCloudAndTelegramSync() {
     }
     rebuildCatalogFromState();
     recomputeAndRenderAll();
+    quantBotController.syncPersonalBotProfile();
   }
   renderAuthSyncState();
 }
@@ -1666,6 +1672,12 @@ function bindWorkspaceDragAndDrop() {
 // 7. Master Render & Event Wiring
 // ---------------------------------------------------------------------------
 
+const quantBotController = createQuantAndBotController({
+  getState: () => state,
+  showToast,
+  openAuthModal: () => openAuthSyncModal(),
+});
+
 function recomputeAndRenderAll() {
   applyLanguageAttributes();
   applyLanguageAwareTelegramLinks(state.lang);
@@ -1677,6 +1689,11 @@ function recomputeAndRenderAll() {
   renderVerifiedNews();
   renderVipAlertsList();
   renderAuthSyncState();
+  quantBotController.renderAll();
+  const pbotSearch = document.getElementById("pbot-search-input");
+  if (pbotSearch) {
+    pbotSearch.placeholder = TRANSLATIONS[state.lang]?.pbotSearchPlaceholder || pbotSearch.placeholder;
+  }
   updateSeoJsonLd(state.feed, state.lang);
   applyMobileTabVisibility();
 
@@ -1953,6 +1970,7 @@ function bindEvents() {
       await upsertCloudLayout(res.session, state.workspace);
       rebuildCatalogFromState();
       recomputeAndRenderAll();
+      quantBotController.syncPersonalBotProfile();
       showToast(
         state.lang === "ar"
           ? "تمت مزامنة واجهتك الخاصة بنجاح!"
@@ -1986,6 +2004,7 @@ function bindEvents() {
     state.authSession = null;
     state.pendingOtpEmail = "";
     renderAuthSyncState();
+    quantBotController.syncPersonalBotProfile();
     showToast(state.lang === "ar" ? "تم تسجيل الخروج (الحفظ المحلي مستمر)" : "Signed out (browser auto-save remains active)");
   });
 
@@ -2088,6 +2107,7 @@ function bindEvents() {
   document.getElementById("vip-usdt-checkout-form")?.addEventListener("submit", async (e) => {
     e.preventDefault();
     const btn = document.getElementById("btn-vip-usdt-checkout");
+    const planTier = document.getElementById("vip-plan-tier")?.value || "monthly_business_vip";
     const payCurrency = document.getElementById("vip-usdt-network")?.value || "usdttrc20";
     const tgUserId = (document.getElementById("vip-tg-user-id")?.value || "").trim();
     const vipCfg = MONETIZATION_CONFIG?.vipPayments || {};
@@ -2100,6 +2120,7 @@ function bindEvents() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          plan_tier: planTier,
           lang: state.lang,
           pay_currency: payCurrency,
           telegram_user_id: tgUserId || null,
@@ -2180,8 +2201,9 @@ document.addEventListener("DOMContentLoaded", async () => {
   applyMonetizationConfigDom();
   applyLanguageAttributes();
   bindEvents();
+  quantBotController.init();
 
-  // Handle return state from NOWPayments $10 USDT checkout
+  // Handle return state from NOWPayments $10/$19 USDT checkout
   try {
     const vipStatus = new URLSearchParams(window.location.search).get("vip_checkout");
     if (vipStatus === "success") {
@@ -2202,6 +2224,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   const geoPromise = detectVisitorCountry().then((cc) => {
     state.visitorCountry = cc;
     renderContextualAffiliateCta();
+    quantBotController.renderBotsAffiliateShelf();
   });
   await fetchLiveFeed();
   await Promise.allSettled([geoPromise, initCloudAndTelegramSync()]);

@@ -257,3 +257,52 @@ CREATE POLICY "Allow service_role full access to vip_subscriptions"
     TO service_role
     USING (true)
     WITH CHECK (true);
+
+-- 10. Personal AI Tracker Bot Profiles & Custom Watchlist (`public.user_tracker_profiles`)
+CREATE TABLE IF NOT EXISTS public.user_tracker_profiles (
+    user_id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
+    email TEXT DEFAULT NULL,
+    telegram_chat_id TEXT DEFAULT NULL,
+    link_token TEXT UNIQUE DEFAULT NULL,
+    lang TEXT NOT NULL DEFAULT 'ar' CHECK (lang IN ('en', 'ar')),
+    plan_tier TEXT NOT NULL DEFAULT 'free' CHECK (
+        plan_tier IN ('free', 'monthly_business_vip', 'monthly_personal_bot')
+    ),
+    watchlist JSONB NOT NULL DEFAULT '[]'::jsonb,
+    daily_digest_enabled BOOLEAN NOT NULL DEFAULT true,
+    digest_hour_utc SMALLINT NOT NULL DEFAULT 7 CHECK (digest_hour_utc >= 0 AND digest_hour_utc <= 23),
+    last_digest_date DATE DEFAULT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_user_tracker_telegram_chat
+    ON public.user_tracker_profiles (telegram_chat_id)
+    WHERE telegram_chat_id IS NOT NULL;
+
+CREATE INDEX IF NOT EXISTS idx_user_tracker_email
+    ON public.user_tracker_profiles (email)
+    WHERE email IS NOT NULL;
+
+DROP TRIGGER IF EXISTS trg_user_tracker_profiles_updated_at ON public.user_tracker_profiles;
+CREATE TRIGGER trg_user_tracker_profiles_updated_at
+BEFORE UPDATE ON public.user_tracker_profiles
+FOR EACH ROW
+EXECUTE FUNCTION public.set_market_memory_updated_at();
+
+ALTER TABLE public.user_tracker_profiles ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Users can read own tracker profile" ON public.user_tracker_profiles;
+CREATE POLICY "Users can read own tracker profile"
+    ON public.user_tracker_profiles
+    FOR SELECT
+    TO authenticated
+    USING (auth.uid() = user_id);
+
+DROP POLICY IF EXISTS "Allow service_role full access to user_tracker_profiles" ON public.user_tracker_profiles;
+CREATE POLICY "Allow service_role full access to user_tracker_profiles"
+    ON public.user_tracker_profiles
+    FOR ALL
+    TO service_role
+    USING (true)
+    WITH CHECK (true);

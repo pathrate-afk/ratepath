@@ -255,6 +255,16 @@ def _deterministic_swarm_synthesis(
     macro = by_id.get("agent_4_macro_life_filter")
     solvency = by_id.get("agent_5_crypto_solvency")
     guardian = by_id.get("agent_7_price_guardian")
+    quant = by_id.get("agent_8_quant_macro")
+
+    quant_biases: dict[str, str] = {}
+    if quant and quant.healthy and quant.metrics.get("quant_biases_json"):
+        try:
+            parsed_q = json.loads(quant.metrics["quant_biases_json"])
+            if isinstance(parsed_q, dict):
+                quant_biases = normalize_assets_bias(parsed_q)
+        except Exception:
+            quant_biases = {}
 
     lead_twin = twins[0] if twins else get_historical_macro_twins()[0]
     twin_key = str(lead_twin.get("event_key", "hist-2008-gfc-lehman-liquidity"))
@@ -349,26 +359,48 @@ def _deterministic_swarm_synthesis(
         if macro and macro.healthy
         else (reports[0].headline if reports else "Global markets consolidating")
     )
+    default_biases = quant_biases or {
+        "USD": "neutral",
+        "EUR": "neutral",
+        "GBP": "neutral",
+        "XAU": "neutral",
+        "BTC": "neutral",
+        "ETH": "neutral",
+        "SOL": "neutral",
+    }
+    has_quant_edge = any(v in ("bullish", "bearish") for v in default_biases.values())
     return StrategistBrief(
         event_en=lead_headline[:240],
-        event_ar="استقرار نسبي في الأسواق العالمية مع ترقّب المحفزات الكلية القادمة",
-        money_flow_en="Balanced capital rotation across USD, Gold, and top Crypto liquidity.",
-        money_flow_ar="توزيع متوازن للسيولة بين الدولار والذهب وأكبر العملات الرقمية.",
-        verdict_en="Low-edge noise regime — hold fire until hard liquidity divergence appears.",
-        verdict_ar="حركة هادئة بدون محفز قوي — التريث أفضل حتى ظهور تدفق سيولة واضح.",
+        event_ar=(
+            "إشارة كمية رقمية واضحة في اتجاهات الذهب والعملات والكريبتو (تحليل بيانات)"
+            if has_quant_edge
+            else "استقرار نسبي في الأسواق العالمية مع ترقّب المحفزات الكلية القادمة"
+        ),
+        money_flow_en=(
+            "Quantitative EMA/RSI, funding & DXY indicators show directional divergence across major assets."
+            if has_quant_edge
+            else "Balanced capital rotation across USD, Gold, and top Crypto liquidity."
+        ),
+        money_flow_ar=(
+            "مؤشرات الاتجاه الكمي (EMA/RSI) والتمويل ومؤشر الدولار تُظهر تبايناً رقمياً بين الأصول الرئيسية."
+            if has_quant_edge
+            else "توزيع متوازن للسيولة بين الدولار والذهب وأكبر العملات الرقمية."
+        ),
+        verdict_en=(
+            "Probabilistic data bias active — review levels carefully; market numbers can change rapidly."
+            if has_quant_edge
+            else "Low-edge noise regime — neutral stance until hard numerical confirmation appears."
+        ),
+        verdict_ar=(
+            "قراءة احتمالية مبنية على الأرقام الحالية فقط وليست ضماناً — راقب تغير السيولة والمستويات."
+            if has_quant_edge
+            else "حركة هادئة بدون محفز رقمي قوي — الحياد أفضل حتى ظهور تأكيد واضح في البيانات."
+        ),
         matched_twin_key=twin_key,
         stage="consolidation",
-        priced_in_active=True,
-        assets_bias_24h={
-            "USD": "neutral",
-            "EUR": "neutral",
-            "GBP": "neutral",
-            "XAU": "neutral",
-            "BTC": "neutral",
-            "ETH": "neutral",
-            "SOL": "neutral",
-        },
-        raw_conviction=62,
+        priced_in_active=not has_quant_edge,
+        assets_bias_24h=default_biases,
+        raw_conviction=78 if has_quant_edge else 62,
         provider_used="deterministic_swarm",
     )
 
@@ -400,7 +432,9 @@ async def synthesize_master_strategy(
                 "Fields: `event_en`/`event_ar` = clear engaging headline; `money_flow_en`/`money_flow_ar` = "
                 "2 crisp beginner-friendly sentences explaining what happened; `verdict_en`/`verdict_ar` = "
                 "1-2 plain sentences explaining what goes up/down and why. "
-                "Hard liquidity/macro truth (Agents 4, 5, 7) ALWAYS overrides retail social chatter (Agents 1, 2, 3). "
+                "Hard liquidity/macro/quant truth (Agents 4, 5, 7, 8 including EMA/RSI/Funding/DXY) ALWAYS overrides retail social chatter (Agents 1, 2, 3). "
+                "Use selective abstention: output 'neutral' for any asset whose signals conflict or lack numerical conviction. "
+                "LEGAL & ETHICAL RULE: Frame all insights strictly as informational data & probability analysis of changing numbers — NEVER promise guaranteed price moves, NEVER give financial advice, and NEVER mention '100-year memory'. "
                 "Only mention retail hype or a 'retail trap' when retail_trap_warning is true. "
                 "`assets_bias_24h` MUST use exactly these keys: USD, EUR, GBP, XAU, BTC, ETH, SOL "
                 "(values: bullish/bearish/neutral). `matched_twin_key` MUST be one of the provided "

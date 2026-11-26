@@ -33,6 +33,7 @@ from backend.agents.crypto_solvency import collect_crypto_solvency
 from backend.agents.macro_life_filter import collect_macro_life_filter
 from backend.agents.master_strategist import synthesize_master_strategy
 from backend.agents.price_guardian import verify_gold_with_price_guardian
+from backend.agents.quant_macro_signals import collect_quant_macro_signals
 from backend.agents.search_trends import collect_search_trends
 from backend.agents.social_pulse import collect_social_pulse
 from backend.agents.telegram_scanner import collect_telegram_scanner
@@ -83,6 +84,7 @@ DEFAULT_TRUST_WEIGHTS: dict[str, int] = {
     "agent_4_macro_life_filter": 90,
     "agent_5_crypto_solvency": 95,
     "agent_7_price_guardian": 100,
+    "agent_8_quant_macro": 95,
 }
 
 _ARABIC_RE = re.compile(r"[\u0600-\u06FF]")
@@ -594,6 +596,7 @@ async def run_lane2_swarm(
                 collect_macro_life_filter(client),
                 collect_crypto_solvency(client),
                 _agent7_check(),
+                collect_quant_macro_signals(client),
             )
         )
 

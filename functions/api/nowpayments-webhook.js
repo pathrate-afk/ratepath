@@ -154,6 +154,11 @@ export async function processNowPaymentsIpn(ipnPayload, env, fetchImpl = fetch) 
 
   const botToken = String(env?.TELEGRAM_BOT_TOKEN || "").trim();
   const lang = existingRow?.lang === "en" ? "en" : "ar";
+  const resolvedTier =
+    existingRow?.plan_tier ||
+    (orderId.startsWith("RPBOT-") || priceAmount >= 19
+      ? "monthly_personal_bot"
+      : "monthly_business_vip");
 
   if (isPaid) {
     expiresAt = new Date(Date.now() + SUBSCRIPTION_DAYS * 86400 * 1000).toISOString();
@@ -188,11 +193,35 @@ export async function processNowPaymentsIpn(ipnPayload, env, fetchImpl = fetch) 
           body: JSON.stringify({
             order_id: orderId,
             amount_usd: Number.isFinite(priceAmount) ? priceAmount : 10,
-            plan_tier: "monthly_business_vip",
+            plan_tier: resolvedTier,
             lang,
             ...patchBody,
           }),
         });
+      }
+
+      // Sync active paid tier into user_tracker_profiles when paid
+      if (isPaid) {
+        if (existingRow?.user_email) {
+          await fetchImpl(
+            `${restBase}/user_tracker_profiles?email=eq.${encodeURIComponent(existingRow.user_email)}`,
+            {
+              method: "PATCH",
+              headers: { ...supaHeaders, Prefer: "return=minimal" },
+              body: JSON.stringify({ plan_tier: resolvedTier }),
+            }
+          ).catch(() => {});
+        }
+        if (existingRow?.telegram_user_id) {
+          await fetchImpl(
+            `${restBase}/user_tracker_profiles?telegram_chat_id=eq.${encodeURIComponent(existingRow.telegram_user_id)}`,
+            {
+              method: "PATCH",
+              headers: { ...supaHeaders, Prefer: "return=minimal" },
+              body: JSON.stringify({ plan_tier: resolvedTier }),
+            }
+          ).catch(() => {});
+        }
       }
     } catch {
       // Logged best-effort
@@ -201,18 +230,20 @@ export async function processNowPaymentsIpn(ipnPayload, env, fetchImpl = fetch) 
 
   if (isPaid && botToken) {
     const tgUserId = existingRow?.telegram_user_id;
+    const isPersonalBot = resolvedTier === "monthly_personal_bot";
     if (tgUserId && inviteLink) {
       const userMsg =
         lang === "ar"
-          ? `✅ <b>تم تفعيل اشتراكك في قناة ريت باث لرجال الأعمال VIP (10$ USDT)!</b>\n\n🔑 رابط الدخول الخاص بك (للاستخدام مرة واحدة خلال 24 ساعة):\n${inviteLink}\n\n🤖 كما أصبح بإمكانك الآن سؤال البوت @RatePathTerminalBot مباشرة عن أي عملة أو ذهب على مدار الساعة.`
-          : `✅ <b>Your RatePath Business VIP Subscription ($10 USDT) is Active!</b>\n\n🔑 Your private single-use invite link (valid 24h):\n${inviteLink}\n\n🤖 You now also have 24/7 on-demand AI coin & gold briefings inside @RatePathTerminalBot.`;
+          ? `✅ <b>تم تفعيل اشتراكك في ${isPersonalBot ? "البوت الشخصي الذكي Pro + قناة VIP (19$ USDT)" : "قناة ريت باث لرجال الأعمال VIP (10$ USDT)"}!</b>\n\n🔑 رابط الدخول الخاص بك (للاستخدام مرة واحدة خلال 24 ساعة):\n${inviteLink}\n\n🤖 يمكنك الآن إدارة قائمتك الخاصة للعملات والذهب والأسهم من https://ratepathlive.com أو كتابة /watchlist هنا.\n\nℹ️ <i>تنويه: الخدمة معلوماتية وتقنية لمتابعة الأرقام والأخبار فقط وليست توصية استثمارية.</i>`
+          : `✅ <b>Your RatePath ${isPersonalBot ? "Personal AI Tracker Bot Pro + VIP ($19 USDT)" : "Business VIP ($10 USDT)"} Subscription is Active!</b>\n\n🔑 Your private single-use invite link (valid 24h):\n${inviteLink}\n\n🤖 Manage your custom currencies, metals &amp; stocks watchlist at https://ratepathlive.com or send /watchlist here.\n\nℹ️ <i>Informational market monitoring service only — not investment advice.</i>`;
       await sendTelegramMessage(tgUserId, userMsg, botToken, fetchImpl);
     }
 
     const adminId = String(env?.ADMIN_CHAT_ID || "").trim();
     if (adminId && adminId.toLowerCase() !== "placeholder") {
       const adminMsg =
-        `💰 <b>New RatePath VIP USDT Payment Confirmed!</b>\n` +
+        `💰 <b>New RatePath USDT Payment Confirmed!</b>\n` +
+        `• Plan: <code>${resolvedTier}</code>\n` +
         `• Order: <code>${orderId}</code>\n` +
         `• Amount: <code>$${priceAmount} USD</code> (${String(ipnPayload?.pay_currency || "USDT").toUpperCase()})\n` +
         `• Lang: <code>${lang.toUpperCase()}</code>\n` +

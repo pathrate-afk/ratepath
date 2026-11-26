@@ -29,6 +29,7 @@ from backend.config import (
 )
 from backend.evaluator import MarketMemoryStore, extract_price_snapshot
 from backend.math_engine import parse_strict_decimal
+from backend.personal_bot_worker import process_personal_tracker_alerts
 from backend.publisher import execute_live_cycle
 from backend.rates_bulletin import maybe_broadcast_rates_bulletin
 from backend.sources.coinmarketcap import generate_and_publish_catalog_feed
@@ -244,6 +245,18 @@ async def run_single_cycle(
         else:
             bulletin_summary = {"status": "skipped_mock_cycle", "sent": 0, "movers": []}
 
+        # 2b. Personal AI Tracker Bot Watchlist Alerts & Custom Digests (when live Supabase + TG active)
+        if cycle_executor is None:
+            personal_bot_summary = await process_personal_tracker_alerts(
+                feed_payload,
+                catalog_payload,
+                settings=cfg,
+                client=http_client,
+                now_utc=now_dt,
+            )
+        else:
+            personal_bot_summary = {"status": "skipped_mock_cycle", "profiles_checked": 0, "alerts_sent": 0, "digests_sent": 0}
+
         # 3. Hourly 24h Self-Evaluation Gate via Upstash `ratepath:last_eval_ts`
         last_ts, gate_backend = await gate.get_last_eval_ts(client=http_client)
         eval_due = is_hourly_evaluation_due(
@@ -279,6 +292,7 @@ async def run_single_cycle(
             "catalog_syp_source": catalog_meta.get("syp_source", ""),
             "catalog_cmc_source": catalog_meta.get("cmc_source", ""),
             "rates_bulletin": bulletin_summary,
+            "personal_bot": personal_bot_summary,
             "news_broadcast_disabled_in_worker": True,
             "evaluator_ran": eval_due,
             "graded_count": graded_count,

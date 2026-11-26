@@ -11,6 +11,20 @@
  * - `PUBLIC_SITE_URL` (e.g. https://yourdomain.com)
  */
 
+const PLAN_PRICING = Object.freeze({
+  monthly_business_vip: {
+    priceUsd: 10,
+    orderPrefix: "RPVIP",
+    descAr: "اشتراك خدمة ريت باث المعلوماتية لرجال الأعمال VIP (30 يوماً — USDT)",
+    descEn: "RatePath Business VIP Informational Service (30 Days — USDT)",
+  },
+  monthly_personal_bot: {
+    priceUsd: 19,
+    orderPrefix: "RPBOT",
+    descAr: "اشتراك خدمة البوت الشخصي الذكي للعملات والأسهم وأخبار الشركات (30 يوماً — USDT)",
+    descEn: "RatePath Personal AI Tracker Bot Pro — Currencies, Stocks & News Alerts (30 Days — USDT)",
+  },
+});
 const VIP_MONTHLY_PRICE_USD = 10;
 const ALLOWED_USDT_NETWORKS = new Set([
   "usdttrc20", // USDT TRC-20 (TRON — default, widest MENA/global usage)
@@ -41,9 +55,17 @@ export function normalizePayCurrency(raw) {
   return ALLOWED_USDT_NETWORKS.has(cleaned) ? cleaned : "usdttrc20";
 }
 
-export function generateOrderId() {
+export function generateOrderId(prefix = "RPVIP") {
   const rand = crypto.randomUUID().replace(/-/g, "").slice(0, 12).toUpperCase();
-  return `RPVIP-${Date.now().toString(36).toUpperCase()}-${rand}`;
+  return `${prefix}-${Date.now().toString(36).toUpperCase()}-${rand}`;
+}
+
+export function normalizePlanTier(raw) {
+  const s = String(raw || "monthly_business_vip").trim().toLowerCase();
+  if (s === "monthly_personal_bot" || s === "personal_bot" || s === "pro_bot") {
+    return "monthly_personal_bot";
+  }
+  return "monthly_business_vip";
 }
 
 export async function createVipCheckoutSession(body, env, fetchImpl = fetch) {
@@ -60,6 +82,9 @@ export async function createVipCheckoutSession(body, env, fetchImpl = fetch) {
   }
 
   const lang = String(body?.lang || "ar").toLowerCase() === "en" ? "en" : "ar";
+  const planTier = normalizePlanTier(body?.plan_tier);
+  const planSpec = PLAN_PRICING[planTier] || PLAN_PRICING.monthly_business_vip;
+  const priceUsd = planSpec.priceUsd;
   const payCurrency = normalizePayCurrency(body?.pay_currency);
   const rawEmail = String(body?.email || "").trim().toLowerCase();
   const userEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(rawEmail) ? rawEmail : null;
@@ -69,19 +94,16 @@ export async function createVipCheckoutSession(body, env, fetchImpl = fetch) {
   const siteBase = String(env?.PUBLIC_SITE_URL || "https://ratepathlive.com")
     .trim()
     .replace(/\/+$/, "");
-  const orderId = generateOrderId();
+  const orderId = generateOrderId(planSpec.orderPrefix);
 
   const invoiceReq = {
-    price_amount: VIP_MONTHLY_PRICE_USD,
+    price_amount: priceUsd,
     price_currency: "usd",
     pay_currency: payCurrency,
     order_id: orderId,
-    order_description:
-      lang === "ar"
-        ? "اشتراك قناة ريت باث لرجال الأعمال VIP (30 يوماً — USDT)"
-        : "RatePath Business VIP Channel Subscription (30 Days — USDT)",
+    order_description: lang === "ar" ? planSpec.descAr : planSpec.descEn,
     ipn_callback_url: `${siteBase}/api/nowpayments-webhook`,
-    success_url: `${siteBase}/?lang=${lang}&vip_checkout=success&order=${encodeURIComponent(orderId)}`,
+    success_url: `${siteBase}/?lang=${lang}&vip_checkout=success&plan=${encodeURIComponent(planTier)}&order=${encodeURIComponent(orderId)}`,
     cancel_url: `${siteBase}/?lang=${lang}&vip_checkout=cancelled`,
     is_fixed_rate: true,
     is_fee_paid_by_user: true,
@@ -146,9 +168,9 @@ export async function createVipCheckoutSession(body, env, fetchImpl = fetch) {
             payment_id: paymentId,
             user_email: userEmail,
             telegram_user_id: telegramUserId,
-            plan_tier: "monthly_business_vip",
+            plan_tier: planTier,
             lang,
-            amount_usd: VIP_MONTHLY_PRICE_USD,
+            amount_usd: priceUsd,
             payment_status: "waiting",
           }),
         })
@@ -164,7 +186,8 @@ export async function createVipCheckoutSession(body, env, fetchImpl = fetch) {
       ok: true,
       order_id: orderId,
       invoice_url: invoiceUrl,
-      amount_usd: VIP_MONTHLY_PRICE_USD,
+      plan_tier: planTier,
+      amount_usd: priceUsd,
       pay_currency: payCurrency,
     },
   };

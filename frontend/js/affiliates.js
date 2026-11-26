@@ -28,7 +28,7 @@ export const PARTNER_GEO_RULES = Object.freeze({
   bybit: {
     id: "bybit",
     name: "Bybit",
-    categories: ["crypto", "gold"],
+    categories: ["crypto", "gold", "bots"],
     payout: "USDT",
     blocked: new Set(["US", "GB", "CA", "FR", "NL", "BE", "SG", "HK", "CN", ...SANCTIONED_RESTRICTED]),
     priority: 100,
@@ -36,11 +36,15 @@ export const PARTNER_GEO_RULES = Object.freeze({
     badgeAr: "تداول كريبتو وذهب",
     ctaEn: "Trade on Bybit",
     ctaAr: "تداول عبر Bybit",
+    botBadgeEn: "Grid & DCA Trading Bots",
+    botBadgeAr: "بوتات التداول الآلي Grid و DCA",
+    botCtaEn: "Explore Bybit Bots",
+    botCtaAr: "بوتات Bybit الآلية",
   },
   okx: {
     id: "okx",
     name: "OKX",
-    categories: ["crypto", "gold"],
+    categories: ["crypto", "gold", "bots"],
     payout: "USDT",
     blocked: new Set(["US", "CA", "GB", "MY", "IN", ...SANCTIONED_RESTRICTED]),
     priority: 95,
@@ -48,11 +52,15 @@ export const PARTNER_GEO_RULES = Object.freeze({
     badgeAr: "منصة مرخّصة (دبي/عالمي)",
     ctaEn: "Trade on OKX",
     ctaAr: "افتح حساب OKX",
+    botBadgeEn: "Signal & Grid Bots",
+    botBadgeAr: "بوتات الإشارات والتداول",
+    botCtaEn: "OKX Trading Bots",
+    botCtaAr: "بوتات OKX",
   },
   bitget: {
     id: "bitget",
     name: "Bitget",
-    categories: ["crypto", "gold"],
+    categories: ["crypto", "gold", "bots"],
     payout: "USDT",
     blocked: new Set(["US", "CA", "GB", "SG", "HK", ...SANCTIONED_RESTRICTED]),
     priority: 90,
@@ -60,6 +68,10 @@ export const PARTNER_GEO_RULES = Object.freeze({
     badgeAr: "تداول ونسخ صفقات",
     ctaEn: "Join Bitget",
     ctaAr: "تداول في Bitget",
+    botBadgeEn: "AI Grid & Copy Bots",
+    botBadgeAr: "بوتات الذكاء الاصطناعي ونسخ الصفقات",
+    botCtaEn: "Explore Bitget Bots",
+    botCtaAr: "بوتات Bitget الذكية",
   },
   binance: {
     id: "binance",
@@ -101,7 +113,7 @@ export const PARTNER_GEO_RULES = Object.freeze({
   exness: {
     id: "exness",
     name: "Exness",
-    categories: ["gold", "fiat"],
+    categories: ["gold", "fiat", "bots"],
     payout: "USDT",
     blocked: new Set(["US", "CA", "GB", "AU", "JP", ...EU_EEA_COUNTRIES, ...SANCTIONED_RESTRICTED]),
     priority: 98,
@@ -109,12 +121,16 @@ export const PARTNER_GEO_RULES = Object.freeze({
     badgeAr: "تداول الذهب XAU والعملات",
     ctaEn: "Trade Gold on Exness",
     ctaAr: "تداول الذهب في Exness",
+    botBadgeEn: "MT5 Automated Gold & FX Strategies",
+    botBadgeAr: "منصة MT5 الآلية للذهب والعملات",
+    botCtaEn: "Exness MT5 Desk",
+    botCtaAr: "منصة Exness الآلية",
   },
-  // --- Global Charts & Hardware Wallet (Works almost everywhere, including US/EU/MENA/SY) ---
+  // --- Global Charts & Smart Alerts (Works almost everywhere, including US/EU/MENA/SY) ---
   tradingview: {
     id: "tradingview",
     name: "TradingView",
-    categories: ["gold", "crypto", "fiat"],
+    categories: ["gold", "crypto", "fiat", "bots"],
     payout: "USD/Crypto",
     blocked: new Set(["KP", "IR"]),
     priority: 75,
@@ -122,6 +138,59 @@ export const PARTNER_GEO_RULES = Object.freeze({
     badgeAr: "الرسوم البيانية الاحترافية",
     ctaEn: "Charts on TradingView",
     ctaAr: "تحليلات TradingView",
+    botBadgeEn: "Stocks, Gold, FX & Crypto Smart Alerts",
+    botBadgeAr: "تنبيهات ذكية للأسهم والذهب والعملات",
+    botCtaEn: "TradingView Alerts",
+    botCtaAr: "تنبيهات TradingView",
+  },
+  // --- Dedicated Auto-Trading Bot Affiliates (activate by pasting link in monetization.config.js) ---
+  pionex: {
+    id: "pionex",
+    name: "Pionex",
+    categories: ["bots", "crypto"],
+    payout: "USDT",
+    blocked: new Set(["US", "CN", ...SANCTIONED_RESTRICTED]),
+    priority: 92,
+    badgeEn: "Built-In Crypto Bots",
+    badgeAr: "منصة بوتات تداول مدمجة",
+    ctaEn: "Try Pionex Bots",
+    ctaAr: "جرّب بوتات Pionex",
+    botBadgeEn: "16 Built-In Automated Grid/DCA Bots",
+    botBadgeAr: "16 بوت تداول آلي مدمج (دفع USDT)",
+    botCtaEn: "Launch Pionex Bots",
+    botCtaAr: "بوتات Pionex الآلية",
+  },
+  threecommas: {
+    id: "threecommas",
+    name: "3Commas",
+    categories: ["bots"],
+    payout: "USD/Crypto",
+    blocked: new Set([...SANCTIONED_RESTRICTED]),
+    priority: 88,
+    badgeEn: "Multi-Exchange Bot Hub",
+    badgeAr: "إدارة بوتات متعددة المنصات",
+    ctaEn: "Explore 3Commas",
+    ctaAr: "منصة 3Commas",
+    botBadgeEn: "Automated DCA, Grid & Signal Bots",
+    botBadgeAr: "تأجير وإدارة بوتات التداول الآلي",
+    botCtaEn: "Try 3Commas Bots",
+    botCtaAr: "بوتات 3Commas",
+  },
+  cryptohopper: {
+    id: "cryptohopper",
+    name: "Cryptohopper",
+    categories: ["bots"],
+    payout: "USD",
+    blocked: new Set([...SANCTIONED_RESTRICTED]),
+    priority: 84,
+    badgeEn: "Cloud AI Trading Bots",
+    badgeAr: "بوتات تداول سحابية",
+    ctaEn: "Explore Cryptohopper",
+    ctaAr: "منصة Cryptohopper",
+    botBadgeEn: "24/7 Cloud Strategy & Alert Bots",
+    botBadgeAr: "بوتات متابعة وتنفيذ سحابية 24/7",
+    botCtaEn: "Try Cryptohopper",
+    botCtaAr: "بوتات Cryptohopper",
   },
   ledger: {
     id: "ledger",
@@ -183,7 +252,8 @@ export function selectGeoCompliantPartners({
   if (!affiliatesEnabled) return [];
 
   const cc = String(countryCode || "GLOBAL").trim().toUpperCase();
-  const cat = category === "fiat" || category === "gold" ? category : "crypto";
+  const cat =
+    category === "fiat" || category === "gold" || category === "bots" ? category : "crypto";
 
   const eligible = [];
   for (const [key, rule] of Object.entries(PARTNER_GEO_RULES)) {

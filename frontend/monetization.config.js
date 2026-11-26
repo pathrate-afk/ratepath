@@ -57,6 +57,11 @@ export const MONETIZATION_CONFIG = {
     tradingview: "https://www.tradingview.com/?aff_id=1176056",
     ledger: "",      // https://shop.ledger.com/?r=YOUR_CODE    [Direct BTC/USDT Payout]
 
+    // Automated Trading & Alert Bot Platforms (Optional extra slots — Bybit/Bitget/TradingView Bots are ALREADY ACTIVE above!)
+    pionex: "",       // https://www.pionex.com/en/signUp?r=YOUR_CODE  [Direct USDT Payout]
+    threecommas: "",  // https://3commas.io/?c=YOUR_CODE
+    cryptohopper: "", // https://www.cryptohopper.com/?atid=YOUR_CODE
+
     // International Fiat Remittances (Auto-hidden in restricted countries like SY/LB/IQ)
     wise: "",        // https://wise.com/invite/u/YOUR_CODE
     remitly: "",     // https://remit.ly/YOUR_CODE
@@ -70,12 +75,13 @@ export const MONETIZATION_CONFIG = {
     aAdsPartnerUrl: "https://aads.com/?partner=ratepath",
   },
 
-  // 3. Business VIP Channel Subscription — $10/month paid in USDT directly to owner's NOWPayments wallet
+  // 3. Subscriptions — Paid in USDT directly to owner's NOWPayments wallet (Informational Data Service Only)
   vipPayments: {
     checkoutApiUrl: "/api/create-vip-checkout",
     // Optional static NOWPayments Payment Link fallback if API key is not configured yet
     nowPaymentsVipUrl: "",
     vipMonthlyPriceUsd: "10",
+    personalBotMonthlyPriceUsd: "19",
     defaultPayCurrency: "usdttrc20",
   },
 

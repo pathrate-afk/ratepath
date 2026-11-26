@@ -70,13 +70,13 @@ def calibrate_source_trust_weights(
     """Dynamically adjust source trust weights using pure Decimal & integer bounds."""
     updated = dict(current_weights)
     if avg_accuracy_pct >= Decimal("75.00"):
-        for k in ("agent_4_macro_life_filter", "agent_5_crypto_solvency"):
+        for k in ("agent_4_macro_life_filter", "agent_5_crypto_solvency", "agent_8_quant_macro"):
             updated[k] = min(100, int(updated.get(k, 90)) + 2)
     elif avg_accuracy_pct < Decimal("55.00"):
         # Down-weight crowd chatter when 24h post-mortem accuracy dips below 55%
         for k in ("agent_1_social_pulse", "agent_2_search_trends", "agent_3_telegram_scanner"):
             updated[k] = max(10, int(updated.get(k, 20)) - 3)
-        for k in ("agent_4_macro_life_filter", "agent_5_crypto_solvency"):
+        for k in ("agent_4_macro_life_filter", "agent_5_crypto_solvency", "agent_8_quant_macro"):
             updated[k] = min(100, int(updated.get(k, 90)) + 3)
     return updated
 

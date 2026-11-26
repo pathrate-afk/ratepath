@@ -98,6 +98,16 @@ const ASSET_ALIASES = [
   { symbol: "SUI", kind: "crypto", en: "Sui (SUI)", ar: "سوي (SUI)", terms: ["سوي", "sui"] },
   { symbol: "TRX", kind: "crypto", en: "TRON (TRX)", ar: "ترون (TRX)", terms: ["ترون", "tron", "trx"] },
   { symbol: "LTC", kind: "crypto", en: "Litecoin (LTC)", ar: "لايتكوين (LTC)", terms: ["لايتكوين", "litecoin", "ltc"] },
+  // Major Global Stocks & Companies
+  { symbol: "AAPL", kind: "stock", en: "Apple Inc. (AAPL)", ar: "سهم أبل (AAPL)", terms: ["سهم أبل", "سهم ابل", "أبل", "apple", "aapl"] },
+  { symbol: "TSLA", kind: "stock", en: "Tesla Inc. (TSLA)", ar: "سهم تسلا (TSLA)", terms: ["سهم تسلا", "تسلا", "tesla", "tsla"] },
+  { symbol: "NVDA", kind: "stock", en: "NVIDIA Corp. (NVDA)", ar: "سهم إنفيديا (NVDA)", terms: ["إنفيديا", "انفيديا", "nvidia", "nvda"] },
+  { symbol: "MSFT", kind: "stock", en: "Microsoft Corp. (MSFT)", ar: "سهم مايكروسوفت (MSFT)", terms: ["مايكروسوفت", "microsoft", "msft"] },
+  { symbol: "AMZN", kind: "stock", en: "Amazon (AMZN)", ar: "سهم أمازون (AMZN)", terms: ["أمازون", "امازون", "amazon", "amzn"] },
+  { symbol: "GOOGL", kind: "stock", en: "Alphabet / Google (GOOGL)", ar: "سهم جوجل (GOOGL)", terms: ["جوجل", "غوغل", "alphabet", "google", "googl"] },
+  { symbol: "META", kind: "stock", en: "Meta Platforms (META)", ar: "سهم ميتا (META)", terms: ["ميتا", "فيسبوك", "meta"] },
+  { symbol: "2222.SR", kind: "stock", en: "Saudi Aramco (2222.SR)", ar: "سهم أرامكو (2222.SR)", terms: ["أرامكو", "ارامكو", "aramco", "2222.sr"] },
+  { symbol: "SPY", kind: "stock", en: "S&P 500 ETF (SPY)", ar: "مؤشر S&P 500 (SPY)", terms: ["اس اند بي", "إس آند بي", "s&p 500", "spy"] },
 ];
 
 const IGNORE_TICKERS = new Set([
@@ -424,42 +434,76 @@ export async function resolveLiveAssetSnapshot(parsedAsset, env, fetchImpl = fet
   }
 
   // Long-tail Crypto fallback via CoinMarketCap public search / CoinGecko
-  try {
-    const cgResp = await fetchImpl(
-      `https://api.coingecko.com/api/v3/search?query=${encodeURIComponent(sym)}`,
-      { headers: { Accept: "application/json", "User-Agent": "RatePath-VIPBot/2.0" } }
-    );
-    if (cgResp.ok) {
-      const cgData = await cgResp.json();
-      const match = (cgData?.coins || []).find(
-        (c) => String(c.symbol || "").toUpperCase() === sym
-      ) || cgData?.coins?.[0];
-      if (match?.id) {
-        const pResp = await fetchImpl(
-          `https://api.coingecko.com/api/v3/simple/price?ids=${encodeURIComponent(match.id)}&vs_currencies=usd&include_24hr_change=true`
-        );
-        if (pResp.ok) {
-          const pData = await pResp.json();
-          const row = pData?.[match.id];
-          if (row?.usd) {
-            const p = Number(row.usd);
-            const pStr = p >= 1 ? p.toFixed(2) : p >= 0.01 ? p.toFixed(4) : p.toFixed(6);
-            const chgNum = Number(row.usd_24h_change);
-            const chgStr = Number.isFinite(chgNum)
-              ? `${chgNum >= 0 ? "+" : ""}${chgNum.toFixed(2)}`
-              : null;
-            return {
-              found: true,
-              symbol: String(match.symbol || sym).toUpperCase(),
-              name: match.name || sym,
-              rank: match.market_cap_rank || null,
-              priceFormattedEn: `$${pStr}`,
-              priceFormattedAr: `$${pStr}`,
-              change24h: chgStr,
-              source: "coingecko_longtail",
-            };
+  if (parsedAsset.kind !== "stock") {
+    try {
+      const cgResp = await fetchImpl(
+        `https://api.coingecko.com/api/v3/search?query=${encodeURIComponent(sym)}`,
+        { headers: { Accept: "application/json", "User-Agent": "RatePath-VIPBot/2.0" } }
+      );
+      if (cgResp.ok) {
+        const cgData = await cgResp.json();
+        const match = (cgData?.coins || []).find(
+          (c) => String(c.symbol || "").toUpperCase() === sym
+        ) || cgData?.coins?.[0];
+        if (match?.id) {
+          const pResp = await fetchImpl(
+            `https://api.coingecko.com/api/v3/simple/price?ids=${encodeURIComponent(match.id)}&vs_currencies=usd&include_24hr_change=true`
+          );
+          if (pResp.ok) {
+            const pData = await pResp.json();
+            const row = pData?.[match.id];
+            if (row?.usd) {
+              const p = Number(row.usd);
+              const pStr = p >= 1 ? p.toFixed(2) : p >= 0.01 ? p.toFixed(4) : p.toFixed(6);
+              const chgNum = Number(row.usd_24h_change);
+              const chgStr = Number.isFinite(chgNum)
+                ? `${chgNum >= 0 ? "+" : ""}${chgNum.toFixed(2)}`
+                : null;
+              return {
+                found: true,
+                symbol: String(match.symbol || sym).toUpperCase(),
+                name: match.name || sym,
+                rank: match.market_cap_rank || null,
+                priceFormattedEn: `$${pStr}`,
+                priceFormattedAr: `$${pStr}`,
+                change24h: chgStr,
+                source: "coingecko_longtail",
+              };
+            }
           }
         }
+      }
+    } catch {
+      // Fall through to global stock lookup
+    }
+  }
+
+  // Global Stocks, ETFs & Company Quotes fallback via Yahoo Finance public chart API
+  try {
+    const yResp = await fetchImpl(
+      `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(sym)}?range=5d&interval=1d`,
+      { headers: { Accept: "application/json", "User-Agent": "Mozilla/5.0 RatePathBot/2.0" } }
+    );
+    if (yResp.ok) {
+      const yData = await yResp.json();
+      const meta = yData?.chart?.result?.[0]?.meta;
+      const p = Number(meta?.regularMarketPrice);
+      if (Number.isFinite(p) && p > 0) {
+        const prev = Number(meta?.chartPreviousClose || meta?.previousClose || p);
+        const chg = prev > 0 ? ((p - prev) / prev) * 100 : 0;
+        const curr = String(meta?.currency || "USD");
+        const pStr = p >= 1 ? p.toFixed(2) : p.toFixed(4);
+        const chgStr = `${chg >= 0 ? "+" : ""}${chg.toFixed(2)}`;
+        return {
+          found: true,
+          symbol: String(meta?.symbol || sym).toUpperCase(),
+          name: meta?.shortName || parsedAsset.displayEn || sym,
+          rank: null,
+          priceFormattedEn: `${pStr} ${curr}`,
+          priceFormattedAr: `${pStr} ${curr}`,
+          change24h: chgStr,
+          source: "yahoo_stock",
+        };
       }
     }
   } catch {
@@ -523,16 +567,16 @@ async function generateVipAiBrief(parsedAsset, snapshot, headlines, env, fetchIm
         "استخدم التنسيق التالي حرفياً مع سطر فارغ (\\n\\n) بين كل قسم ولا تكتب أي روابط:",
         "📌 <b>السعر والزخم:</b>\n[جملة واحدة واضحة تضم السعر وحالة الصعود 🟢 ⬆️ أو الهبوط 🔴 ⬇️]",
         "📰 <b>أهم أخبار العملة الآن:</b>\n[نقطتان قصيرتان بأسلوب واضح عن أهم الأخبار المحركة]",
-        "💡 <b>الخلاصة واتجاه السيولة:</b>\n[جملتان عمليتان عن مسار السيولة وما يجب مراقبته]",
-        "قاعدة صارمة: لا تكتب أبداً عبارة 'ذاكرة 100 عام' أو 'توأم تاريخي'، ولا تكتب رمز علم سوريا الإيموجي (U+1F1F8 U+1F1FE)، واكتب '🟢 الليرة السورية' أو '🟢 ل.س'.",
+        "💡 <b>الخلاصة واتجاه السيولة:</b>\n[جملتان عمليتان عن مسار السيولة وما يجب مراقبته بلغة الأرقام فقط دون وعد بصعود أو هبوط مؤكد]",
+        "قاعدة صارمة: الخدمة معلوماتية وتحليلية للأرقام فقط — لا تقدّم نصيحة استثمارية ولا تضمن صعوداً أو هبوطاً، ولا تكتب أبداً عبارة 'ذاكرة 100 عام' أو 'توأم تاريخي'، ولا تكتب رمز علم سوريا الإيموجي (U+1F1F8 U+1F1FE)، واكتب '🟢 الليرة السورية' أو '🟢 ل.س'.",
       ].join("\n")
     : [
         "You are the RatePath VIP desk analyst. Write a crisp, zero-fluff briefing in clean Telegram HTML with ZERO URLs and ZERO historical fluff.",
         "Use 🟢 ⬆️ for rising moves and 🔴 ⬇️ for falling moves. Exact 3-block layout separated by blank lines (\\n\\n):",
         "📌 <b>Price &amp; Momentum:</b>\n[1 clear sentence with live price and 🟢 ⬆️ / 🔴 ⬇️ momentum]",
         "📰 <b>Latest Headlines:</b>\n[2 crisp bullet points summarizing the active catalysts]",
-        "💡 <b>Bottom Line &amp; Money Flow:</b>\n[1-2 plain sentences on liquidity direction and what to watch]",
-        "STRICT RULE: NEVER mention '100-year memory' or 'historical twin', and NEVER output raw Unicode Syria flag emoji (U+1F1F8 U+1F1FE); always use '🟢 SYP'.",
+        "💡 <b>Bottom Line &amp; Money Flow:</b>\n[1-2 plain data-driven sentences on liquidity flow — never guarantee rises or falls]",
+        "STRICT RULE: Informational data analytics ONLY (not financial advice or guaranteed outcomes). NEVER mention '100-year memory' or 'historical twin', and NEVER output raw Unicode Syria flag emoji (U+1F1F8 U+1F1FE); always use '🟢 SYP'.",
       ].join("\n");
 
   const usrPrompt = JSON.stringify({
@@ -736,6 +780,74 @@ async function sendTelegramReply(chatId, htmlText, env, fetchImpl = fetch) {
 // Core Update Processor (Exported for direct unit testing & Cloudflare runtime)
 // ---------------------------------------------------------------------------
 
+async function linkPersonalTrackerAccount(linkToken, chatId, env, fetchImpl = fetch) {
+  const supaUrl = String(env?.SUPABASE_URL || "").trim().replace(/\/+$/, "");
+  const supaKey = String(env?.SUPABASE_KEY || "").trim();
+  if (!supaUrl || !supaKey || supaUrl.toLowerCase() === "placeholder" || supaKey.toLowerCase() === "placeholder") {
+    return { linked: false, reason: "supabase_unconfigured" };
+  }
+  const restBase = supaUrl.endsWith("/rest/v1") ? supaUrl : `${supaUrl}/rest/v1`;
+  const headers = {
+    apikey: supaKey,
+    Authorization: `Bearer ${supaKey}`,
+    "User-Agent": SUPABASE_SERVER_UA,
+    "Content-Type": "application/json",
+  };
+  try {
+    const getResp = await fetchImpl(
+      `${restBase}/user_tracker_profiles?link_token=eq.${encodeURIComponent(linkToken)}&select=user_id,email,lang,plan_tier,watchlist&limit=1`,
+      { headers }
+    );
+    if (!getResp.ok) return { linked: false, reason: "lookup_failed" };
+    const rows = await getResp.json();
+    if (!Array.isArray(rows) || rows.length === 0) {
+      return { linked: false, reason: "invalid_or_expired_token" };
+    }
+    const row = rows[0];
+    const patchResp = await fetchImpl(
+      `${restBase}/user_tracker_profiles?user_id=eq.${encodeURIComponent(row.user_id)}`,
+      {
+        method: "PATCH",
+        headers: { ...headers, Prefer: "return=minimal" },
+        body: JSON.stringify({
+          telegram_chat_id: String(chatId),
+          link_token: null,
+        }),
+      }
+    );
+    if (!patchResp.ok) return { linked: false, reason: "patch_failed" };
+    return { linked: true, profile: row };
+  } catch {
+    return { linked: false, reason: "network_error" };
+  }
+}
+
+async function fetchPersonalWatchlistByChatId(chatId, env, fetchImpl = fetch) {
+  const supaUrl = String(env?.SUPABASE_URL || "").trim().replace(/\/+$/, "");
+  const supaKey = String(env?.SUPABASE_KEY || "").trim();
+  if (!supaUrl || !supaKey || supaUrl.toLowerCase() === "placeholder" || supaKey.toLowerCase() === "placeholder") {
+    return null;
+  }
+  const restBase = supaUrl.endsWith("/rest/v1") ? supaUrl : `${supaUrl}/rest/v1`;
+  try {
+    const resp = await fetchImpl(
+      `${restBase}/user_tracker_profiles?telegram_chat_id=eq.${encodeURIComponent(String(chatId))}&select=email,plan_tier,lang,watchlist&limit=1`,
+      {
+        headers: {
+          apikey: supaKey,
+          Authorization: `Bearer ${supaKey}`,
+          "User-Agent": SUPABASE_SERVER_UA,
+        },
+      }
+    );
+    if (!resp.ok) return null;
+    const rows = await resp.json();
+    return Array.isArray(rows) && rows.length > 0 ? rows[0] : null;
+  } catch {
+    return null;
+  }
+}
+
 export async function processTelegramUpdate(update, env, fetchImpl = fetch) {
   const msg = update?.message;
   if (!msg || !msg.text || msg.chat?.type !== "private") {
@@ -747,6 +859,47 @@ export async function processTelegramUpdate(update, env, fetchImpl = fetch) {
   const userLang = msg.from?.language_code || "";
   const rawText = String(msg.text || "").trim();
   const lang = detectQueryLang(rawText, userLang);
+
+  // 1-Click Personal Bot Account Pairing (`/start link_<TOKEN>`)
+  const linkMatch = rawText.match(/^\/start(?:@\w+)?\s+link_([A-Za-z0-9_-]{8,40})$/i);
+  if (linkMatch) {
+    const pairRes = await linkPersonalTrackerAccount(linkMatch[1], chatId, env, fetchImpl);
+    const prefLang = pairRes.profile?.lang === "en" ? "en" : lang;
+    const replyText = pairRes.linked
+      ? prefLang === "ar"
+        ? `✅ <b>تم ربط حسابك ببوت المتابعة الشخصي بنجاح!</b>\n\n🔔 ستصلك هنا تنبيهات الأسعار وملخصات الأخبار المخصصة للعملات والذهب والأسهم التي تضيفها من حسابك في https://ratepathlive.com.\n\n📋 أرسل <code>/watchlist</code> في أي وقت لعرض قائمتك.\n\nℹ️ <i>خدمة معلوماتية لمتابعة البيانات فقط وليست توصية استثمارية.</i>`
+        : `✅ <b>Your RatePath Personal Tracker Bot is Now Linked!</b>\n\n🔔 You will receive private price &amp; company-news alerts here for every currency, metal, crypto, or stock in your https://ratepathlive.com watchlist.\n\n📋 Send <code>/watchlist</code> anytime to inspect your tracked items.\n\nℹ️ <i>Informational market monitoring only — not investment advice.</i>`
+      : lang === "ar"
+      ? "⚠️ رابط الربط غير صالح أو تم استخدامه مسبقاً. افتح نافذة «البوت الشخصي» في https://ratepathlive.com لإنشاء رابط جديد."
+      : "⚠️ This pairing link is invalid or already used. Open the Personal Bot modal on https://ratepathlive.com to generate a fresh link.";
+    await sendTelegramReply(chatId, replyText, env, fetchImpl);
+    return { handled: true, mode: "personal_bot_linked", linked: pairRes.linked };
+  }
+
+  // Personal Watchlist Inspection (`/watchlist`, `/my`, `قائمتي`)
+  if (/^(\/(?:watchlist|my)\b|قائمتي\s*$)/i.test(rawText)) {
+    const prof = await fetchPersonalWatchlistByChatId(chatId, env, fetchImpl);
+    if (!prof) {
+      const unlinked =
+        lang === "ar"
+          ? "🤖 حسابك غير مربوط بعد بالبوت الشخصي.\n\nسجّل دخولك بالإيميل في https://ratepathlive.com واضغط «🤖 البوت الشخصي» لربط تلغرامك وإضافة العملات والأسهم التي تريد متابعتها."
+          : "🤖 Your Telegram is not linked to a Personal Tracker account yet.\n\nSign in at https://ratepathlive.com and tap «🤖 Personal Bot» to link your watchlist.";
+      await sendTelegramReply(chatId, unlinked, env, fetchImpl);
+      return { handled: true, mode: "watchlist_unlinked" };
+    }
+    const items = Array.isArray(prof.watchlist) ? prof.watchlist : [];
+    const lines = items.map((it) => {
+      const hi = it.alert_above ? ` 🟢≥${escapeHtml(it.alert_above)}` : "";
+      const lo = it.alert_below ? ` 🔴≤${escapeHtml(it.alert_below)}` : "";
+      return `• <b>${escapeHtml(it.symbol)}</b> (${escapeHtml(it.category || "asset")})${hi}${lo}`;
+    });
+    const listHtml =
+      lang === "ar"
+        ? `🤖 <b>قائمة المتابعة الخاصة بك (${items.length}):</b>\n\n${lines.length ? lines.join("\n") : "القائمة فارغة حالياً — أضف عملات أو أسهماً من https://ratepathlive.com."}\n\nℹ️ <i>تنبيهات معلوماتية للأرقام فقط وليست نصيحة استثمارية.</i>`
+        : `🤖 <b>Your Personal Watchlist (${items.length}):</b>\n\n${lines.length ? lines.join("\n") : "Your watchlist is empty — add currencies, metals, crypto, or stocks at https://ratepathlive.com."}\n\nℹ️ <i>Informational alerts only — not financial advice.</i>`;
+    await sendTelegramReply(chatId, listHtml, env, fetchImpl);
+    return { handled: true, mode: "watchlist_shown", count: items.length };
+  }
 
   // Check VIP membership
   const vipStatus = await checkVipMembership(userId, env, fetchImpl);
