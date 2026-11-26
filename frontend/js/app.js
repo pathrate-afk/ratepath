@@ -769,13 +769,31 @@ function renderContextualAffiliateCta() {
   }
 }
 
+const ALLOWED_LOGO_HOSTS = new Set([
+  "s2.coinmarketcap.com",
+  "assets.coingecko.com",
+  "coin-images.coingecko.com",
+]);
+
+function safeLogoUrl(url) {
+  const s = String(url || "").trim();
+  if (!/^https:\/\//i.test(s)) return "";
+  try {
+    const parsed = new URL(s);
+    return ALLOWED_LOGO_HOSTS.has(parsed.hostname.toLowerCase()) ? parsed.toString() : "";
+  } catch {
+    return "";
+  }
+}
+
 function renderAssetIconBadge(item) {
   if (item.id === "SYP") {
     return `<span class="inline-flex items-center justify-center w-[27px] h-[18px] rounded-[3px] overflow-hidden bg-slate-900 ring-1 ring-white/20 shrink-0" dir="ltr">${getSyriaRevolutionFlagSvg("w-full h-full block")}</span>`;
   }
-  if (item.logoUrl && /^https?:\/\//i.test(item.logoUrl)) {
+  const cleanLogo = safeLogoUrl(item.logoUrl);
+  if (cleanLogo) {
     const fallbackSym = escapeHtml((item.code || "?").slice(0, 3));
-    return `<span class="inline-flex items-center justify-center w-6 h-6 rounded-full overflow-hidden bg-slate-800 ring-1 ring-white/10 shrink-0" dir="ltr"><img src="${escapeHtml(item.logoUrl)}" alt="${escapeHtml(item.code)}" loading="lazy" class="rp-coin-logo" onerror="this.outerHTML='<span class=&quot;text-[10px] font-bold text-amber-300 font-mono&quot;>${fallbackSym}</span>'" /></span>`;
+    return `<span class="inline-flex items-center justify-center w-6 h-6 rounded-full overflow-hidden bg-slate-800 ring-1 ring-white/10 shrink-0" dir="ltr"><img src="${escapeHtml(cleanLogo)}" alt="${escapeHtml(item.code)}" loading="lazy" referrerpolicy="no-referrer" data-fallback-sym="${fallbackSym}" class="rp-coin-logo" /></span>`;
   }
   const badgeTone =
     item.category === "gold"
@@ -2009,6 +2027,9 @@ function bindEvents() {
       targetPrice,
       triggered: false,
     });
+    if (state.alerts.length > 50) {
+      state.alerts = state.alerts.slice(0, 50);
+    }
     saveStoredAlerts();
     renderVipAlertsList();
     evaluateLocalPriceAlerts();
@@ -2048,6 +2069,21 @@ function bindEvents() {
       }
     }
   });
+
+  // CSP-safe coin logo error fallback (zero inline DOM error handler attributes)
+  document.addEventListener(
+    "error",
+    (e) => {
+      const target = e.target;
+      if (target instanceof HTMLImageElement && target.classList.contains("rp-coin-logo")) {
+        const span = document.createElement("span");
+        span.className = "text-[10px] font-bold text-amber-300 font-mono";
+        span.textContent = target.dataset.fallbackSym || "?";
+        target.replaceWith(span);
+      }
+    },
+    true
+  );
 
   // Close modals on Escape or backdrop click
   document.addEventListener("keydown", (e) => {

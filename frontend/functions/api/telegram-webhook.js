@@ -26,7 +26,45 @@ const RAW_SYRIA_FLAG_EMOJI = "\uD83C\uDDF8\uD83C\uDDFE";
 const JSON_HEADERS = {
   "Content-Type": "application/json; charset=utf-8",
   "Cache-Control": "no-store",
+  "X-Content-Type-Options": "nosniff",
+  "X-Robots-Tag": "noindex",
 };
+const SUPABASE_SERVER_UA = "RatePath-Edge/2.0 (server)";
+
+function withTimeout(init = {}, ms = 8000) {
+  if (typeof AbortSignal !== "undefined" && typeof AbortSignal.timeout === "function") {
+    return { ...init, signal: AbortSignal.timeout(ms) };
+  }
+  return init;
+}
+
+/**
+ * Strictly sanitize AI-generated Telegram HTML:
+ * - Converts <br> to newline, strips dangerous/unsupported tags (including <a href=...>, <script>, <div>)
+ * - Preserves ONLY balanced <b>, <i>, <code> tags and escapes all stray <, >, & characters
+ *   so Telegram `parse_mode: "HTML"` NEVER fails with HTTP 400 and phishing links cannot be injected.
+ */
+export function sanitizeTelegramHtml(raw) {
+  let s = String(raw ?? "").replace(/<br\s*\/?>/gi, "\n");
+  // Strip any link/script/unknown tags while keeping inner text (except script/style bodies)
+  s = s.replace(/<(script|style)[^>]*>[\s\S]*?<\/\1>/gi, "");
+  const placeholders = [];
+  s = s.replace(/<(\/?)(b|i|code)\s*>/gi, (_m, slash, tag) => {
+    const idx = placeholders.length;
+    placeholders.push(`<${slash ? "/" : ""}${tag.toLowerCase()}>`);
+    return `\u0000TAG${idx}\u0000`;
+  });
+  // Drop all remaining HTML tags (such as <a href="...">, <div>, <p>, etc.)
+  s = s.replace(/<\/?[a-zA-Z][^>]*>/g, "");
+  // Escape any unescaped special HTML entities (preserving existing safe entities)
+  s = s
+    .replace(/&(?!(?:amp|lt|gt|quot|#39);)/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+  // Restore whitelisted <b>, <i>, <code> tags
+  s = s.replace(/\u0000TAG(\d+)\u0000/g, (_m, idxStr) => placeholders[Number(idxStr)] || "");
+  return s;
+}
 
 const ASSET_ALIASES = [
   // Precious Metals
@@ -264,6 +302,7 @@ export async function checkVipMembership(userId, env, fetchImpl = fetch) {
           headers: {
             apikey: supaKey,
             Authorization: `Bearer ${supaKey}`,
+            "User-Agent": SUPABASE_SERVER_UA,
           },
         }
       );
@@ -496,63 +535,70 @@ async function generateVipAiBrief(parsedAsset, snapshot, headlines, env, fetchIm
     recent_headlines: headlines,
   });
 
-  // 1. Primary: Groq (`llama-3.3-70b-versatile` with resilient model fallback)
-  const groqKey = String(env?.GROQ_API_KEY_1 || env?.GROQ_API_KEY || "").trim();
-  if (groqKey && groqKey.toLowerCase() !== "placeholder") {
+  // 1. Primary: Groq 3-key failover (`llama-3.3-70b-versatile` / `openai/gpt-oss-120b`)
+  const groqKeys = [env?.GROQ_API_KEY_1, env?.GROQ_API_KEY_2, env?.GROQ_API_KEY_3, env?.GROQ_API_KEY]
+    .map((k) => String(k || "").trim())
+    .filter((k, i, arr) => k && k.toLowerCase() !== "placeholder" && arr.indexOf(k) === i);
+  for (const groqKey of groqKeys) {
     for (const modelName of ["llama-3.3-70b-versatile", "openai/gpt-oss-120b"]) {
       try {
-        const resp = await fetchImpl("https://api.groq.com/openai/v1/chat/completions", {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${groqKey}`,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            model: modelName,
-            temperature: 0.3,
-            max_tokens: 450,
-            messages: [
-              { role: "system", content: sysPrompt },
-              { role: "user", content: usrPrompt },
-            ],
-          }),
-        });
+        const resp = await fetchImpl(
+          "https://api.groq.com/openai/v1/chat/completions",
+          withTimeout({
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${groqKey}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              model: modelName,
+              temperature: 0.3,
+              max_tokens: 450,
+              messages: [
+                { role: "system", content: sysPrompt },
+                { role: "user", content: usrPrompt },
+              ],
+            }),
+          })
+        );
         if (!resp.ok) continue;
         const data = await resp.json();
         const content = data?.choices?.[0]?.message?.content;
         if (typeof content === "string" && content.trim().length > 40) {
-          return sanitizeSyriaEmoji(normalizePreserveNewlines(content), lang);
+          return sanitizeTelegramHtml(sanitizeSyriaEmoji(normalizePreserveNewlines(content), lang));
         }
       } catch {
-        // Try next model / Gemini fallback
+        // Try next model / key / Gemini fallback
       }
     }
   }
 
-  // 2. Secondary: Gemini Flash Fallback
-  const geminiKey = String(env?.GEMINI_API_KEY_1 || env?.GEMINI_API_KEY || "").trim();
-  if (geminiKey && geminiKey.toLowerCase() !== "placeholder") {
-    for (const gModel of ["gemini-2.5-flash", "gemini-3.5-flash-lite"]) {
+  // 2. Secondary: Gemini 3-key Flash Fallback
+  const geminiKeys = [env?.GEMINI_API_KEY_1, env?.GEMINI_API_KEY_2, env?.GEMINI_API_KEY_3, env?.GEMINI_API_KEY]
+    .map((k) => String(k || "").trim())
+    .filter((k, i, arr) => k && k.toLowerCase() !== "placeholder" && arr.indexOf(k) === i);
+  for (const geminiKey of geminiKeys) {
+    for (const gModel of ["gemini-3.5-flash-lite", "gemini-2.5-flash"]) {
       try {
         const resp = await fetchImpl(
           `https://generativelanguage.googleapis.com/v1beta/models/${gModel}:generateContent?key=${encodeURIComponent(geminiKey)}`,
-          {
+          withTimeout({
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
               systemInstruction: { parts: [{ text: sysPrompt }] },
               contents: [{ role: "user", parts: [{ text: usrPrompt }] }],
             }),
-          }
+          })
         );
         if (!resp.ok) continue;
         const data = await resp.json();
         const textOut = data?.candidates?.[0]?.content?.parts?.[0]?.text;
         if (typeof textOut === "string" && textOut.trim().length > 40) {
-          return sanitizeSyriaEmoji(normalizePreserveNewlines(textOut), lang);
+          return sanitizeTelegramHtml(sanitizeSyriaEmoji(normalizePreserveNewlines(textOut), lang));
         }
       } catch {
-        // Continue to next model / deterministic fallback
+        // Continue to next model / key / deterministic fallback
       }
     }
   }
@@ -652,17 +698,30 @@ export function buildNonVipPriceLockMessage(parsedAsset, snapshot, publicSiteUrl
 async function sendTelegramReply(chatId, htmlText, env, fetchImpl = fetch) {
   const botToken = String(env?.TELEGRAM_BOT_TOKEN || "").trim();
   if (!botToken) return false;
+  const normalized = normalizePreserveNewlines(htmlText);
   const resp = await fetchImpl(`https://api.telegram.org/bot${botToken}/sendMessage`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       chat_id: chatId,
-      text: normalizePreserveNewlines(htmlText),
+      text: normalized,
       parse_mode: "HTML",
       disable_web_page_preview: true,
     }),
   });
-  return resp.ok;
+  if (resp.ok) return true;
+  // Automatic plain-text retry if Telegram rejects HTML entities so VIP users never receive silence
+  const plainFallback = normalized.replace(/<\/?[a-zA-Z][^>]*>/g, "");
+  const retryResp = await fetchImpl(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      chat_id: chatId,
+      text: plainFallback,
+      disable_web_page_preview: true,
+    }),
+  });
+  return retryResp.ok;
 }
 
 // ---------------------------------------------------------------------------
@@ -773,10 +832,10 @@ export async function onRequestPost(context) {
       status: 200,
       headers: JSON_HEADERS,
     });
-  } catch (err) {
-    // Return 200 to Telegram so transient downstream errors never create retry storms
+  } catch {
+    // Return 200 to Telegram so transient downstream errors never create retry storms (never leak internals)
     return new Response(
-      JSON.stringify({ ok: false, error: String(err?.message || "internal_error") }),
+      JSON.stringify({ ok: false, error: "internal_error" }),
       { status: 200, headers: JSON_HEADERS }
     );
   }

@@ -102,7 +102,7 @@ function buildAuthHeaders(accessToken = null) {
   };
   if (accessToken) {
     headers.Authorization = `Bearer ${accessToken}`;
-  } else {
+  } else if (!anonKey.startsWith("sb_publishable_")) {
     headers.Authorization = `Bearer ${anonKey}`;
   }
   return headers;
@@ -211,15 +211,17 @@ export async function sendEmailOtp(email) {
 
   try {
     const redirectTo = `${window.location.origin}${window.location.pathname}`;
-    const resp = await fetch(`${getSupabaseUrl()}/auth/v1/otp`, {
-      method: "POST",
-      headers: buildAuthHeaders(),
-      body: JSON.stringify({
-        email: cleanEmail,
-        create_user: true,
-        options: { emailRedirectTo: redirectTo },
-      }),
-    });
+    const resp = await fetch(
+      `${getSupabaseUrl()}/auth/v1/otp?redirect_to=${encodeURIComponent(redirectTo)}`,
+      {
+        method: "POST",
+        headers: buildAuthHeaders(),
+        body: JSON.stringify({
+          email: cleanEmail,
+          create_user: true,
+        }),
+      }
+    );
     if (!resp.ok) {
       const errBody = await resp.json().catch(() => ({}));
       return {

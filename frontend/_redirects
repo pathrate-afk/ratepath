@@ -1,6 +1,8 @@
-# RatePath (ريت باث) — Cloudflare Pages Clean Bilingual & Feed Routing
-/ar              /index.html?lang=ar          200
-/ar/             /index.html?lang=ar          200
-/en              /index.html?lang=en          200
-/en/             /index.html?lang=en          200
-/live_feed.json  /public/live_feed.json       200
+# RatePath (ريت باث) — Cloudflare Pages Clean Bilingual, Feed & Security Routing
+/server.py          /404.html                    404
+/ar                 /index.html?lang=ar          200
+/ar/                /index.html?lang=ar          200
+/en                 /index.html?lang=en          200
+/en/                /index.html?lang=en          200
+/live_feed.json     /public/live_feed.json       200
+/catalog_feed.json  /public/catalog_feed.json    200

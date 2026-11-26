@@ -5,13 +5,26 @@
   Referrer-Policy: strict-origin-when-cross-origin
   Strict-Transport-Security: max-age=31536000; includeSubDomains; preload
   Permissions-Policy: camera=(), microphone=(), geolocation=(), payment=()
-  Content-Security-Policy: frame-ancestors 'self' https://web.telegram.org https://*.telegram.org;
+  Cross-Origin-Opener-Policy: same-origin-allow-popups
+  X-Permitted-Cross-Domain-Policies: none
+  Content-Security-Policy: default-src 'self'; script-src 'self' https://telegram.org; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob: https://s2.coinmarketcap.com https://assets.coingecko.com https://coin-images.coingecko.com; connect-src 'self' https://raw.githubusercontent.com https://*.supabase.co; frame-src https://ad.a-ads.com; frame-ancestors 'self' https://web.telegram.org https://*.telegram.org; object-src 'none'; base-uri 'self'; form-action 'self'; upgrade-insecure-requests;
 
 /index.html
   Cache-Control: public, max-age=0, must-revalidate
 
+/404.html
+  Cache-Control: public, max-age=0, must-revalidate
+  X-Robots-Tag: noindex
+
 /ar
   Cache-Control: public, max-age=0, must-revalidate
+
+/en
+  Cache-Control: public, max-age=0, must-revalidate
+
+/api/*
+  X-Robots-Tag: noindex
+  X-Content-Type-Options: nosniff
 
 /sw.js
   Cache-Control: public, max-age=0, must-revalidate
@@ -37,6 +50,12 @@
   Content-Type: application/json; charset=utf-8
 
 /public/catalog_feed.json
+  Access-Control-Allow-Origin: *
+  Access-Control-Allow-Methods: GET, HEAD, OPTIONS
+  Cache-Control: public, max-age=120, stale-while-revalidate=600
+  Content-Type: application/json; charset=utf-8
+
+/catalog_feed.json
   Access-Control-Allow-Origin: *
   Access-Control-Allow-Methods: GET, HEAD, OPTIONS
   Cache-Control: public, max-age=120, stale-while-revalidate=600

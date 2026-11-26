@@ -133,6 +133,7 @@ export const TRANSLATIONS = {
     nowPaymentsVipBtn: "Unlock VIP via NOWPayments ($19/mo)",
     openTelegramBotBtn: "Launch @RatePathTerminalBot",
     deleteAlertLabel: "Remove",
+    footerDisclaimer: "RatePath (ريت باث) — Live market rates & macro briefings are for informational purposes only and do not constitute financial advice.",
     // Asset Localized Names
     assets: {
       USD: "US Dollar",
@@ -282,6 +283,7 @@ export const TRANSLATIONS = {
     nowPaymentsVipBtn: "اشتراك VIP عبر NOWPayments (19$/شهرياً)",
     openTelegramBotBtn: "تشغيل بوت تيليجرام",
     deleteAlertLabel: "حذف",
+    footerDisclaimer: "ريت باث (RatePath) — الأسعار الحية والملخصات الاقتصادية لأغراض معلوماتية فقط ولا تُعدّ توصية مالية أو استثمارية.",
     // Asset Localized Names
     assets: {
       USD: "الدولار الأمريكي",

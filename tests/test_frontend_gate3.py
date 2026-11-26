@@ -80,3 +80,22 @@ def test_frontend_gate3_pwa_seo_and_bilingual_integrity() -> None:
     assert "./favicon.ico" in index_html
     assert "./icons/apple-touch-icon.png" in index_html
     assert any(i.get("purpose") == "maskable" for i in manifest.get("icons", []))
+
+    # 6. Pre-Launch Security Hardening (CSP, zero inline onerror=, /server.py blocked, /api/ SW bypass, 404)
+    headers_txt = (frontend_dir / "_headers").read_text(encoding="utf-8")
+    redirects_txt = (frontend_dir / "_redirects").read_text(encoding="utf-8")
+    robots_txt = (frontend_dir / "robots.txt").read_text(encoding="utf-8")
+    app_js = (frontend_dir / "js" / "app.js").read_text(encoding="utf-8")
+
+    assert "script-src 'self' https://telegram.org" in headers_txt
+    assert "object-src 'none'" in headers_txt
+    assert "base-uri 'self'" in headers_txt
+    assert "frame-ancestors 'self' https://web.telegram.org https://*.telegram.org" in headers_txt
+    assert "/server.py" in redirects_txt and "404" in redirects_txt
+    assert "/catalog_feed.json" in redirects_txt
+    assert "Disallow: /api/" in robots_txt
+    assert "Disallow: /server.py" in robots_txt
+    assert (frontend_dir / "404.html").exists()
+    assert 'url.pathname.startsWith("/api/")' in sw_js
+    assert "onerror=" not in app_js
+    assert "ALLOWED_LOGO_HOSTS" in app_js

@@ -12,10 +12,19 @@ const CORS_HEADERS = {
   "Access-Control-Allow-Methods": "GET, OPTIONS",
   "Access-Control-Allow-Headers": "Content-Type",
   "Content-Type": "application/json; charset=utf-8",
+  "X-Content-Type-Options": "nosniff",
+  "X-Robots-Tag": "noindex",
 };
 
 const CACHE_CONTROL = "public, max-age=120, s-maxage=120";
 const CMC_LOGO = (id) => `https://s2.coinmarketcap.com/static/img/coins/64x64/${id}.png`;
+
+function withTimeout(init = {}, ms = 8000) {
+  if (typeof AbortSignal !== "undefined" && typeof AbortSignal.timeout === "function") {
+    return { ...init, signal: AbortSignal.timeout(ms) };
+  }
+  return init;
+}
 
 function formatUsdPrice(num) {
   const n = Number(num);
@@ -51,13 +60,13 @@ async function searchCoinMarketCap(query, env) {
   // 1. Query CMC public active currency map to resolve long-tail CMC IDs
   const mapResp = await fetch(
     "https://api.coinmarketcap.com/data-api/v3/map/all?listing_status=active&start=1&limit=4000",
-    {
+    withTimeout({
       headers: {
         Accept: "application/json",
         "User-Agent": "RatePath-Edge/2.0",
       },
       cf: { cacheTtl: 600, cacheEverything: true },
-    }
+    })
   );
   if (!mapResp.ok) throw new Error(`CMC map HTTP ${mapResp.status}`);
   const mapJson = await mapResp.json();
@@ -226,7 +235,7 @@ export async function onRequestOptions() {
 
 export async function onRequestGet(context) {
   const url = new URL(context.request.url);
-  const rawQuery = (url.searchParams.get("q") || "").trim();
+  const rawQuery = (url.searchParams.get("q") || "").replace(/[\u0000-\u001F\u007F<>]/g, "").trim();
   if (rawQuery.length < 2 || rawQuery.length > 64) {
     return jsonResponse(
       { query: rawQuery, source: "validation", results: [], error: "Query must be 2-64 chars." },
@@ -247,9 +256,9 @@ export async function onRequestGet(context) {
   try {
     const cgResults = await searchCoinGeckoFallback(rawQuery);
     return jsonResponse({ query: rawQuery, source: "coingecko_fallback", results: cgResults }, 200);
-  } catch (err) {
+  } catch {
     return jsonResponse(
-      { query: rawQuery, source: "unavailable", results: [], error: String(err?.message || "Upstream unavailable") },
+      { query: rawQuery, source: "unavailable", results: [], error: "Upstream search temporarily unavailable." },
       502,
       "no-store"
     );

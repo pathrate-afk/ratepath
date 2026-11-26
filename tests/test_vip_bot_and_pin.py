@@ -237,17 +237,26 @@ def test_cloudflare_vip_telegram_webhook_gating_caching_and_coin_parsing() -> No
 import assert from "node:assert/strict";
 import {{
   verifyWebhookSecret,
+  sanitizeTelegramHtml,
   parseUserAssetQuery,
   checkVipMembership,
   processTelegramUpdate,
   onRequestPost,
 }} from "{webhook_uri}";
 
-// 1. Secret token verification
+// 1. Secret token verification & strict Telegram HTML sanitization
 assert.equal(verifyWebhookSecret("my_sec", "my_sec"), true);
 assert.equal(verifyWebhookSecret("wrong", "my_sec"), false);
 assert.equal(verifyWebhookSecret("", "my_sec"), false);
 assert.equal(verifyWebhookSecret("placeholder", "placeholder"), false);
+const cleanedHtml = sanitizeTelegramHtml(
+  '<b>Price</b>: BTC < $60k & ETH > $2k<br><a href="https://phish.test">Click</a><script>alert(1)</script>'
+);
+assert.ok(cleanedHtml.includes("<b>Price</b>"));
+assert.ok(cleanedHtml.includes("&lt; $60k &amp; ETH &gt; $2k"));
+assert.ok(!cleanedHtml.includes("<a "));
+assert.ok(!cleanedHtml.includes("<script"));
+assert.ok(!cleanedHtml.includes("alert(1)"));
 
 // Reject unauthorized POST with HTTP 401
 const badResp = await onRequestPost({{

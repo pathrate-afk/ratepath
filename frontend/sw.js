@@ -1,5 +1,5 @@
-/* RatePath (ريت باث) Offline-First Service Worker (Bypassed on localhost) */
-const CACHE_VERSION = "ratepath-pwa-v8";
+/* RatePath (ريت باث) Offline-First Service Worker (Bypassed on localhost & /api/) */
+const CACHE_VERSION = "ratepath-pwa-v9";
 const FEED_CACHE_NAME = "ratepath-live-feed-v3";
 
 const IS_LOCALHOST =
@@ -64,6 +64,11 @@ self.addEventListener("fetch", (event) => {
   if (request.method !== "GET") return;
 
   const url = new URL(request.url);
+
+  // Never intercept Cloudflare Pages serverless `/api/*` endpoints (avoid caching or HTML fallback)
+  if (url.origin === self.location.origin && url.pathname.startsWith("/api/")) {
+    return;
+  }
 
   // Network-first with guaranteed offline cache fallback for live_feed.json & catalog_feed.json
   if (url.pathname.endsWith("/live_feed.json") || url.pathname.endsWith("/catalog_feed.json")) {

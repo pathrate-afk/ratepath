@@ -27,6 +27,8 @@ export const DEFAULT_WORKSPACE_IDS = Object.freeze([
 ]);
 
 const DEFAULT_ID_SET = new Set(DEFAULT_WORKSPACE_IDS);
+const MAX_WORKSPACE_ASSETS = 80;
+const FORBIDDEN_KEYS = new Set(["__proto__", "constructor", "prototype"]);
 
 export function createDefaultWorkspace() {
   return {
@@ -51,12 +53,15 @@ export function normalizeWorkspace(raw) {
       : []
   );
 
-  const customMap = {};
+  const customMap = Object.create(null);
   if (raw.added_custom_assets && typeof raw.added_custom_assets === "object") {
+    let customCount = 0;
     for (const [k, v] of Object.entries(raw.added_custom_assets)) {
-      const cleanId = String(k || "").trim();
-      if (!cleanId || !v || typeof v !== "object") continue;
+      if (customCount >= MAX_WORKSPACE_ASSETS) break;
+      const cleanId = String(k || "").trim().slice(0, 48);
+      if (!cleanId || FORBIDDEN_KEYS.has(cleanId) || !v || typeof v !== "object") continue;
       customMap[cleanId] = { ...v, id: cleanId };
+      customCount += 1;
     }
   }
 
@@ -64,8 +69,9 @@ export function normalizeWorkspace(raw) {
   const ordered = [];
   if (Array.isArray(raw.ordered_ids)) {
     for (const item of raw.ordered_ids) {
-      const cleanId = String(item || "").trim();
-      if (!cleanId || seen.has(cleanId) || hiddenSet.has(cleanId)) continue;
+      if (ordered.length >= MAX_WORKSPACE_ASSETS) break;
+      const cleanId = String(item || "").trim().slice(0, 48);
+      if (!cleanId || FORBIDDEN_KEYS.has(cleanId) || seen.has(cleanId) || hiddenSet.has(cleanId)) continue;
       seen.add(cleanId);
       ordered.push(cleanId);
     }
@@ -87,7 +93,7 @@ export function normalizeWorkspace(raw) {
   return {
     version: 1,
     ordered_ids: ordered,
-    added_custom_assets: customMap,
+    added_custom_assets: { ...customMap },
     hidden_defaults: [...hiddenSet],
     updated_at:
       typeof raw.updated_at === "string" && raw.updated_at.trim()

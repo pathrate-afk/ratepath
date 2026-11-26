@@ -18,7 +18,7 @@ export const CMC_SEARCH_API_URL = "/api/cmc-search";
 // Public Supabase Auth & Preferences Sync Config
 // SECURITY: ONLY place a public anon / publishable client key here (never a privileged backend secret key).
 export const SUPABASE_URL = "https://kyhljlkituvhyiawjtqr.supabase.co";
-export const SUPABASE_PUBLIC_ANON_KEY = "SUPABASE_PUBLIC_ANON_KEY";
+export const SUPABASE_PUBLIC_ANON_KEY = "sb_publishable_WtLIN9IYG46IfC67plySDg_AStEV44u";
 
 // Affiliate monetization toggle — strictly FALSE until verified partner accounts are activated
 export const AFFILIATES_ENABLED = false;
