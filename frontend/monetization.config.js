@@ -20,9 +20,9 @@ export const CMC_SEARCH_API_URL = "/api/cmc-search";
 export const SUPABASE_URL = "https://kyhljlkituvhyiawjtqr.supabase.co";
 export const SUPABASE_PUBLIC_ANON_KEY = "sb_publishable_WtLIN9IYG46IfC67plySDg_AStEV44u";
 
-// Affiliate monetization toggle — flip to `true` as soon as you paste your personal referral links below.
+// Affiliate monetization toggle — ACTIVE with verified USDT-paying partner accounts.
 // Geo-compliance router (`frontend/js/affiliates.js`) automatically hides any partner blocked in the visitor's country.
-export const AFFILIATES_ENABLED = false;
+export const AFFILIATES_ENABLED = true;
 
 // Public Canonical Site URL (Cloudflare Pages / Custom Domain)
 export const PUBLIC_SITE_URL = "https://ratepath.io";
@@ -37,24 +37,24 @@ export const MONETIZATION_CONFIG = {
   PUBLIC_SITE_URL,
   cloudFeedUrl: LIVE_FEED_URL,
 
-  // 1. Geo-Filtered Financial & Crypto Affiliates (Paste YOUR real partner link; leave "" to hide)
+  // 1. Geo-Filtered Financial & Crypto Affiliates (Verified personal referral links; leave "" to hide)
   // Payouts marked [USDT] pay commissions directly to your USDT wallet without a bank account.
   affiliates: {
     // Crypto Exchanges — MENA / Asia / LATAM / Turkey [Direct USDT Payout]
-    bybit: "",       // https://partner.bybit.com/b/YOUR_CODE  (Blocked in US/UK/CA/SY)
-    okx: "",         // https://www.okx.com/join/YOUR_CODE     (Blocked in US/UK/CA/SY)
-    bitget: "",      // https://partner.bitget.com/bg/YOUR_CODE (Blocked in US/UK/CA/SY)
-    binance: "",     // https://accounts.binance.com/register?ref=YOUR_CODE (Blocked in US/UK/CA/SY)
+    bybit: "https://www.bybit.com/invite?ref=N8PZMKN&medium=referral&utm_campaign=evergreen&share_to=link",
+    okx: "",         // Complete OKX TR KYC/Apply to unlock your OKX link
+    bitget: "https://share.bitget.com/u/N9R5T1J8",
+    binance: "",     // Optional: paste your Binance referral link here when ready
 
     // Gold (XAU/USD) & Forex Trading Broker [Direct USDT TRC20 Payout]
-    exness: "",      // https://one.exness-track.com/a/YOUR_CODE (MENA/Asia/LATAM/TR; blocked in US/EU/UK/SY)
+    exness: "https://one.toexness.com/a/c_zmvyur7qg4",
 
     // Regulated US / UK / Canada / EU Exchanges (Auto-shown ONLY to US/UK/CA/EU visitors)
     kraken: "",      // https://kraken.pxf.io/YOUR_CODE
     coinbase: "",    // https://advanced.coinbase.com/join/YOUR_CODE
 
     // Global Charting & Cold Wallet (Works worldwide including US/EU/MENA; TradingView works in SY too)
-    tradingview: "", // https://www.tradingview.com/?aff_id=YOUR_ID
+    tradingview: "", // Click "Become a partner" on your open TradingView tab to unlock your link
     ledger: "",      // https://shop.ledger.com/?r=YOUR_CODE    [Direct BTC/USDT Payout]
 
     // International Fiat Remittances (Auto-hidden in restricted countries like SY/LB/IQ)

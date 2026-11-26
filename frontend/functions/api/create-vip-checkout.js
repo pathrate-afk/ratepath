@@ -13,9 +13,10 @@
 
 const VIP_MONTHLY_PRICE_USD = 10;
 const ALLOWED_USDT_NETWORKS = new Set([
-  "usdttrc20", // USDT TRC-20 (TRON — default, lowest fee & widest MENA/global usage)
+  "usdttrc20", // USDT TRC-20 (TRON — default, widest MENA/global usage)
   "usdtbsc",   // USDT BEP-20 (BNB Smart Chain)
-  "usdton",    // USDT TON (Telegram native network)
+  "usdtton",   // USDT TON (Telegram native network — exact NOWPayments ticker)
+  "usdtsol",   // USDT Solana
   "usdtarb",   // USDT Arbitrum
   "usdtmatic", // USDT Polygon
 ]);

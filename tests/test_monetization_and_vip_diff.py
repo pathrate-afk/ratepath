@@ -83,7 +83,8 @@ import {{ MONETIZATION_CONFIG }} from "{mon_uri}";
 // 1. Verify $10/month USDT pricing config
 assert.equal(MONETIZATION_CONFIG.vipPayments.vipMonthlyPriceUsd, "10");
 assert.equal(MONETIZATION_CONFIG.vipPayments.defaultPayCurrency, "usdttrc20");
-assert.equal(normalizePayCurrency("usdton"), "usdton");
+assert.equal(normalizePayCurrency("usdtton"), "usdtton");
+assert.equal(normalizePayCurrency("usdtsol"), "usdtsol");
 assert.equal(normalizePayCurrency("invalid_coin"), "usdttrc20");
 
 // 2. Verify NOWPayments $10 USDT Checkout Session creation

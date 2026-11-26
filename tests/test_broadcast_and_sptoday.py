@@ -327,9 +327,10 @@ def test_two_layer_jaccard_dedup_workflows_and_affiliates_disabled(tmp_path: Pat
     assert decision.publish_allowed is False
     assert decision.rejection_reason and decision.rejection_reason.startswith("duplicate_supabase_jaccard_silenced")
 
-    # Affiliates disabled in frontend config & worker/swarm workflow env parity
+    # Telegram channels remain promo-free while frontend uses verified geo-filtered referral links
     mon_cfg = (WORKSPACE_ROOT / "frontend" / "monetization.config.js").read_text(encoding="utf-8")
-    assert "AFFILIATES_ENABLED = false" in mon_cfg
+    assert "AFFILIATES_ENABLED = true" in mon_cfg
+    assert "N8PZMKN" in mon_cfg and "c_zmvyur7qg4" in mon_cfg and "N9R5T1J8" in mon_cfg
 
     run_cycle_src = (WORKSPACE_ROOT / "backend" / "run_cycle.py").read_text(encoding="utf-8")
     assert "broadcast_feed_to_telegram" not in run_cycle_src
