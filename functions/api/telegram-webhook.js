@@ -502,29 +502,37 @@ async function fetchTargetedAssetHeadlines(parsedAsset, fetchImpl = fetch) {
 // VIP AI Briefing Generator (Groq llama-3.3-70b-versatile -> Gemini Flash -> Fallback)
 // ---------------------------------------------------------------------------
 
+function formatDirectionBadge(change24h) {
+  if (!change24h || String(change24h).trim() === "0.00") return "";
+  const raw = String(change24h).trim();
+  const isDown = raw.startsWith("-");
+  const cleanNum = raw.replace(/^[+-]/, "");
+  return isDown ? ` 🔴 ⬇️ (-${cleanNum}%)` : ` 🟢 ⬆️ (+${cleanNum}%)`;
+}
+
 async function generateVipAiBrief(parsedAsset, snapshot, headlines, env, fetchImpl = fetch) {
   const lang = parsedAsset.lang;
   const isAr = lang === "ar";
   const label = isAr ? parsedAsset.displayAr : parsedAsset.displayEn;
   const priceLine = isAr ? snapshot.priceFormattedAr : snapshot.priceFormattedEn;
-  const chgText = snapshot.change24h ? ` (${snapshot.change24h}% 24h)` : "";
+  const chgText = formatDirectionBadge(snapshot.change24h);
 
   const sysPrompt = isAr
     ? [
-        "أنت محلل ريت باث (RatePath VIP) الذكي. قدّم إجابة فورية ومختصرة بلغة عربية فصحى سلسة يفهمها المبتدئ بدون تعقيد.",
+        "أنت محلل ريت باث (RatePath VIP) الذكي. قدّم إجابة فورية ومختصرة بلغة عربية فصحى سلسة بدون حشو أو مقدمات تاريخية طويلة.",
         "استخدم التنسيق التالي حرفياً مع سطر فارغ (\\n\\n) بين كل قسم ولا تكتب أي روابط:",
-        "📌 <b>السعر والزخم:</b>\n[جملة واحدة واضحة تضم السعر وحالة الزخم]",
+        "📌 <b>السعر والزخم:</b>\n[جملة واحدة واضحة تضم السعر وحالة الصعود 🟢 ⬆️ أو الهبوط 🔴 ⬇️]",
         "📰 <b>أهم أخبار العملة الآن:</b>\n[نقطتان قصيرتان بأسلوب واضح عن أهم الأخبار المحركة]",
         "💡 <b>الخلاصة واتجاه السيولة:</b>\n[جملتان عمليتان عن مسار السيولة وما يجب مراقبته]",
-        "قاعدة صارمة: لا تكتب أبداً رمز علم سوريا الإيموجي (U+1F1F8 U+1F1FE)، واكتب '🟢 الليرة السورية' أو '🟢 ل.س'.",
+        "قاعدة صارمة: لا تكتب أبداً عبارة 'ذاكرة 100 عام' أو 'توأم تاريخي'، ولا تكتب رمز علم سوريا الإيموجي (U+1F1F8 U+1F1FE)، واكتب '🟢 الليرة السورية' أو '🟢 ل.س'.",
       ].join("\n")
     : [
-        "You are the RatePath VIP desk analyst. Write a crisp, beginner-friendly briefing in clean Telegram HTML with ZERO URLs.",
-        "Use this exact 3-block layout separated by blank lines (\\n\\n):",
-        "📌 <b>Price &amp; Momentum:</b>\n[1 clear sentence with live price and momentum]",
+        "You are the RatePath VIP desk analyst. Write a crisp, zero-fluff briefing in clean Telegram HTML with ZERO URLs and ZERO historical fluff.",
+        "Use 🟢 ⬆️ for rising moves and 🔴 ⬇️ for falling moves. Exact 3-block layout separated by blank lines (\\n\\n):",
+        "📌 <b>Price &amp; Momentum:</b>\n[1 clear sentence with live price and 🟢 ⬆️ / 🔴 ⬇️ momentum]",
         "📰 <b>Latest Headlines:</b>\n[2 crisp bullet points summarizing the active catalysts]",
         "💡 <b>Bottom Line &amp; Money Flow:</b>\n[1-2 plain sentences on liquidity direction and what to watch]",
-        "STRICT RULE: NEVER output the raw Unicode Syria flag emoji (U+1F1F8 U+1F1FE); always use '🟢 SYP'.",
+        "STRICT RULE: NEVER mention '100-year memory' or 'historical twin', and NEVER output raw Unicode Syria flag emoji (U+1F1F8 U+1F1FE); always use '🟢 SYP'.",
       ].join("\n");
 
   const usrPrompt = JSON.stringify({
@@ -670,7 +678,7 @@ export function buildNonVipPriceLockMessage(parsedAsset, snapshot, publicSiteUrl
   const symPrefix = parsedAsset.symbol === "SYP" ? "🟢 " : "📊 ";
   const label = isAr ? parsedAsset.displayAr : parsedAsset.displayEn;
   const priceText = isAr ? snapshot.priceFormattedAr : snapshot.priceFormattedEn;
-  const chgPart = snapshot.change24h ? ` (${snapshot.change24h}%)` : "";
+  const chgPart = formatDirectionBadge(snapshot.change24h);
 
   if (isAr) {
     return sanitizeSyriaEmoji(

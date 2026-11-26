@@ -500,7 +500,7 @@ function renderStatusAndTopTicker() {
   const tickerContainer = document.getElementById("top-live-ticker");
   if (!tickerContainer) return;
 
-  const tickerIds = ["XAU_OZ", "GRAM_21K", "BTC", "ETH", "EUR", "SAR", "AED", "EGP", "TRY", "SYP"];
+  const tickerIds = ["XAU_OZ", "GRAM_21K", "XAG_OZ", "BTC", "ETH", "EUR", "SAR", "AED", "EGP", "TRY", "SYP"];
   tickerContainer.innerHTML = tickerIds
     .map((id) => {
       const item = state.catalog.byId[id];
@@ -779,6 +779,8 @@ const ALLOWED_LOGO_HOSTS = new Set([
   "s2.coinmarketcap.com",
   "assets.coingecko.com",
   "coin-images.coingecko.com",
+  "cdn.dexscreener.com",
+  "dd.dexscreener.com",
 ]);
 
 function safeLogoUrl(url) {
@@ -1406,20 +1408,24 @@ function renderAssetPickerResults() {
     });
   }
 
-  // Merge remote CMC long-tail results if available
+  // Merge remote online World Fiat & Crypto results if available
   const existingIds = new Set(localMatches.map((x) => x.id));
   const combined = [...localMatches.slice(0, 80)];
   for (const rc of state.pickerRemoteResults) {
     if (!rc?.id || existingIds.has(rc.id)) continue;
+    const isRemoteFiat = rc.category === "fiat" && rc.units_per_usd;
+    if (state.pickerTab !== "all" && (isRemoteFiat ? "fiat" : "crypto") !== state.pickerTab) {
+      continue;
+    }
     combined.push({
       id: rc.id,
-      code: rc.symbol,
-      symbol: rc.symbol,
-      category: "crypto",
-      nameEn: rc.name || rc.symbol,
-      nameAr: rc.name || rc.symbol,
-      spotDisplay: rc.price_usd || "0",
-      pairLabel: `${rc.symbol}/USD`,
+      code: rc.code || rc.symbol,
+      symbol: rc.symbol || rc.code,
+      category: isRemoteFiat ? "fiat" : "crypto",
+      nameEn: rc.name_en || rc.name || rc.symbol,
+      nameAr: rc.name_ar || rc.name || rc.symbol,
+      spotDisplay: isRemoteFiat ? rc.units_per_usd : rc.price_usd || "0",
+      pairLabel: isRemoteFiat ? `USD/${rc.code || rc.symbol}` : `${rc.symbol}/USD`,
       logoUrl: rc.logo_url || "",
       change24hPct: rc.change_24h_pct || "0.00",
       cmcId: rc.cmc_id ?? null,
@@ -1803,12 +1809,12 @@ function bindEvents() {
           rank: localItem?.cmcRank ?? null,
           category: localItem?.category || "crypto",
         };
-        commitWorkspaceChange(addAssetToWorkspace(state.workspace, descriptor, { pinTop: true }), {
+        commitWorkspaceChange(addAssetToWorkspace(state.workspace, descriptor, { pinTop: false, autoGroup: true }), {
           rebuildCatalog: true,
           toastMsg:
             state.lang === "ar"
-              ? `تمت إضافة ${descriptor.code} إلى واجهتك`
-              : `${descriptor.code} added to your workspace`,
+              ? `تمت إضافة ${descriptor.code} وترتيبها تلقائياً في صفحتك`
+              : `${descriptor.code} added and auto-organized in your workspace`,
         });
       }
       triggerTelegramHaptic("light");
@@ -1880,16 +1886,18 @@ function bindEvents() {
     state.pickerRemoteResults = [];
     renderAssetPickerResults();
     clearTimeout(remoteSearchDebounce);
-    if (state.pickerQuery.trim().length >= 3 && (state.pickerTab === "all" || state.pickerTab === "crypto")) {
+    // Automatically search online for ANY world fiat currency or crypto coin if local matches < 2
+    if (state.pickerQuery.trim().length >= 2) {
       remoteSearchDebounce = setTimeout(() => {
         const q = state.pickerQuery.trim().toLowerCase();
-        const localHits = (state.catalog?.allSearchable || []).filter((item) =>
-          `${item.code} ${item.nameEn || ""}`.toLowerCase().includes(q)
-        );
+        const localHits = (state.catalog?.allSearchable || []).filter((item) => {
+          if (state.pickerTab !== "all" && item.category !== state.pickerTab) return false;
+          return `${item.id} ${item.code} ${item.nameEn || ""} ${item.nameAr || ""}`.toLowerCase().includes(q);
+        });
         if (localHits.length < 2) {
           runRemoteCmcSearch(state.pickerQuery);
         }
-      }, 450);
+      }, 350);
     }
   });
 

@@ -267,12 +267,12 @@ export function buildAssetCatalog(feed, catalogFeed = null, customAssets = {}) {
   const allSearchable = [...coreAssets];
 
   // 2. Extended Metals: Silver (XAG_OZ & XAG_GRAM)
-  for (const [metalId, shortCode, unitTag] of [
-    ["XAG_OZ", "XAG", "oz"],
-    ["XAG_GRAM", "Ag/g", "g"],
+  for (const [metalId, shortCode, unitTag, nameEn, nameAr] of [
+    ["XAG_OZ", "XAG", "oz", "Silver Troy Ounce", "أونصة الفضة الفوري"],
+    ["XAG_GRAM", "Ag/g", "g", "Silver Gram (999)", "جرام الفضة عيار 999"],
   ]) {
     if (extMetals[metalId] && !byId[metalId]) {
-      const m = makeMetalEntry(metalId, shortCode, unitTag, "Ag");
+      const m = makeMetalEntry(metalId, shortCode, unitTag, "Ag", nameEn, nameAr);
       byId[metalId] = m;
       allSearchable.push(m);
     }

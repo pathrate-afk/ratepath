@@ -144,12 +144,12 @@ def test_change_only_rates_bulletin_one_asset_per_line_and_3h_cooldown(tmp_path:
         assert "0.8610" not in msg    # Unchanged EUR excluded
         assert "1,720.00" not in msg  # Unchanged ETH excluded
 
-    assert "🪙 عيار 21: <code>$100.90</code> (▲ +0.9%)" in ar_msg
-    assert "🟢 الليرة السورية: <code>151.75 ل.س</code> (▲ +1.2%)" in ar_msg
-    assert "₿ بيتكوين: <code>$61,500.00</code> (▲ +2.5%)" in ar_msg
+    assert "🪙 عيار 21: <code>$100.90</code> 🟢 ⬆️ (+0.9%)" in ar_msg
+    assert "🟢 الليرة السورية: <code>151.75 ل.س</code> 🟢 ⬆️ (+1.2%)" in ar_msg
+    assert "₿ بيتكوين: <code>$61,500.00</code> 🟢 ⬆️ (+2.5%)" in ar_msg
 
-    assert "🪙 Gold 21K: <code>$100.90</code> (▲ +0.9%)" in en_msg
-    assert "🟢 SYP: <code>151.75 SYP</code> (▲ +1.2%)" in en_msg
+    assert "🪙 Gold 21K: <code>$100.90</code> 🟢 ⬆️ (+0.9%)" in en_msg
+    assert "🟢 SYP: <code>151.75 SYP</code> 🟢 ⬆️ (+1.2%)" in en_msg
 
     # Verify every asset line has strictly ONE `<code>` price block
     for line in ar_msg.splitlines():

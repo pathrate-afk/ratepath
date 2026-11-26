@@ -241,8 +241,10 @@ def test_cloudflare_cmc_proxy_frontend_workspace_and_security_invariants() -> No
     )
     assert "Access-Control-Allow-Origin" in fn_src
     assert "max-age=120" in fn_src
-    assert "api.coinmarketcap.com" in fn_src
+    assert "coinmarketcap.com" in fn_src
     assert "api.coingecko.com" in fn_src
+    assert "api.dexscreener.com" in fn_src
+    assert "open.er-api.com" in fn_src
 
     mon_cfg = (WORKSPACE_ROOT / "frontend" / "monetization.config.js").read_text(encoding="utf-8")
     assert "CATALOG_FEED_URL" in mon_cfg

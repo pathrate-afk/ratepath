@@ -7,7 +7,7 @@
   Permissions-Policy: camera=(), microphone=(), geolocation=(), payment=()
   Cross-Origin-Opener-Policy: same-origin-allow-popups
   X-Permitted-Cross-Domain-Policies: none
-  Content-Security-Policy: default-src 'self'; script-src 'self' https://telegram.org; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob: https://s2.coinmarketcap.com https://assets.coingecko.com https://coin-images.coingecko.com; connect-src 'self' https://raw.githubusercontent.com https://*.supabase.co; frame-src https://ad.a-ads.com; frame-ancestors 'self' https://web.telegram.org https://*.telegram.org; object-src 'none'; base-uri 'self'; form-action 'self'; upgrade-insecure-requests;
+  Content-Security-Policy: default-src 'self'; script-src 'self' https://telegram.org; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob: https://s2.coinmarketcap.com https://assets.coingecko.com https://coin-images.coingecko.com https://cdn.dexscreener.com https://dd.dexscreener.com; connect-src 'self' https://raw.githubusercontent.com https://*.supabase.co; frame-src https://ad.a-ads.com; frame-ancestors 'self' https://web.telegram.org https://*.telegram.org; object-src 'none'; base-uri 'self'; form-action 'self'; upgrade-insecure-requests;
 
 /index.html
   Cache-Control: public, max-age=0, must-revalidate

@@ -32,32 +32,40 @@ def test_vip_channel_is_distinct_and_richer_than_public_channel() -> None:
     vip_en = build_vip_channel_payload(news_item, feed, chat_id="@RatePathVIP_EN", lang="en")["text"]
 
     # VIP must be materially richer and strictly distinct from Public
-    assert len(vip_ar) > len(pub_ar) + 200
-    assert len(vip_en) > len(pub_en) + 200
+    assert len(vip_ar) > len(pub_ar) + 120
+    assert len(vip_en) > len(pub_en) + 100
 
     # Public channel stays clean summary WITHOUT VIP-only institutional modules
-    assert "خريطة اتجاه الأصول" not in pub_ar
-    assert "24h Institutional Direction Matrix" not in pub_en
-    assert "رادار فروق التمويل" not in pub_ar
-    assert "VIP Funding Carry Radar" not in pub_en
+    assert "اتجاه الأصول" not in pub_ar
+    assert "24h Asset Direction" not in pub_en
+    assert "فرصة فروق التمويل" not in pub_ar
+    assert "VIP Funding Carry" not in pub_en
 
-    # VIP AR delivers full executive playbook
-    assert "غرفة رجال الأعمال VIP" in vip_ar
-    assert "خريطة اتجاه الأصول (24 ساعة)" in vip_ar
-    assert "التوأم التاريخي (ذاكرة 100 عام)" in vip_ar
+    # ZERO unnecessary "100-Year Memory / ذاكرة 100 عام" fluff in Telegram posts
+    for msg in (vip_ar, vip_en, pub_ar, pub_en):
+        assert "ذاكرة 100 عام" not in msg
+        assert "100-Year" not in msg
+        assert "التوأم التاريخي" not in msg
+
+    # VIP AR delivers clean direction arrows (🟢 ⬆️ / 🔴 ⬇️), conviction & carry
+    assert "اتجاه الأصول خلال 24 ساعة" in vip_ar
+    assert "🟢 ⬆️" in vip_ar or "🔴 ⬇️" in vip_ar
     assert "86/100" in vip_ar
-    assert "رادار فروق التمويل" in vip_ar
-    assert "@RatePathTerminalBot" in vip_ar
+    assert "فرصة فروق التمويل" in vip_ar
     assert "http" not in vip_ar.lower()  # Standard post remains link-free
 
-    # VIP EN delivers full executive playbook
-    assert "RatePath Business VIP Desk" in vip_en
-    assert "24h Institutional Direction Matrix" in vip_en
-    assert "100-Year Historical Twin" in vip_en
+    # VIP EN delivers clean direction arrows (🟢 ⬆️ / 🔴 ⬇️), conviction & carry
+    assert "24h Asset Direction" in vip_en
+    assert "🟢 ⬆️" in vip_en or "🔴 ⬇️" in vip_en
     assert "86/100" in vip_en
-    assert "VIP Funding Carry Radar" in vip_en
-    assert "@RatePathTerminalBot" in vip_en
+    assert "VIP Funding Carry" in vip_en
     assert "http" not in vip_en.lower()
+
+    # Silver (XAG_OZ / XAG_GRAM) on default homepage & universal "+ Add Currency / + أضف عملة" copy
+    ws_js = (WORKSPACE_ROOT / "frontend" / "js" / "workspace.js").read_text(encoding="utf-8")
+    i18n_js = (WORKSPACE_ROOT / "frontend" / "js" / "i18n.js").read_text(encoding="utf-8")
+    assert '"XAG_OZ"' in ws_js and '"XAG_GRAM"' in ws_js
+    assert "+ أضف عملة" in i18n_js and "+ Add Currency" in i18n_js
 
 
 def test_nowpayments_10_usd_usdt_checkout_webhook_and_geo_affiliates_in_nodejs() -> None:

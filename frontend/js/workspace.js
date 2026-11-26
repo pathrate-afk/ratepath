@@ -7,6 +7,7 @@
  */
 
 export const WORKSPACE_STORAGE_KEY = "ratepath_workspace_v1";
+export const WORKSPACE_VERSION = 2;
 
 export const DEFAULT_WORKSPACE_IDS = Object.freeze([
   "USD",
@@ -21,10 +22,15 @@ export const DEFAULT_WORKSPACE_IDS = Object.freeze([
   "GRAM_24K",
   "GRAM_21K",
   "GRAM_18K",
+  "XAG_OZ",
+  "XAG_GRAM",
   "BTC",
   "ETH",
   "SOL",
 ]);
+
+const METAL_IDS = new Set(["XAU_OZ", "GRAM_24K", "GRAM_21K", "GRAM_18K", "XAG_OZ", "XAG_GRAM"]);
+const CORE_CRYPTO_IDS = new Set(["BTC", "ETH", "SOL"]);
 
 const DEFAULT_ID_SET = new Set(DEFAULT_WORKSPACE_IDS);
 const MAX_WORKSPACE_ASSETS = 80;
@@ -32,7 +38,7 @@ const FORBIDDEN_KEYS = new Set(["__proto__", "constructor", "prototype"]);
 
 export function createDefaultWorkspace() {
   return {
-    version: 1,
+    version: WORKSPACE_VERSION,
     ordered_ids: [...DEFAULT_WORKSPACE_IDS],
     added_custom_assets: {},
     hidden_defaults: [],
@@ -90,8 +96,22 @@ export function normalizeWorkspace(raw) {
     return createDefaultWorkspace();
   }
 
+  // Seamless v1 -> v2 upgrade: add live Silver (XAG_OZ & XAG_GRAM) right after Gold for existing users
+  const rawVersion = Number(raw.version || 1);
+  if (rawVersion < WORKSPACE_VERSION) {
+    for (const silverId of ["XAG_GRAM", "XAG_OZ"]) {
+      if (!seen.has(silverId) && !hiddenSet.has(silverId) && ordered.length < MAX_WORKSPACE_ASSETS) {
+        const goldAnchorIdx = ordered.indexOf("GRAM_18K");
+        const xauIdx = ordered.indexOf("XAU_OZ");
+        const insertAt = goldAnchorIdx !== -1 ? goldAnchorIdx + 1 : xauIdx !== -1 ? xauIdx + 1 : ordered.length;
+        ordered.splice(insertAt, 0, silverId);
+        seen.add(silverId);
+      }
+    }
+  }
+
   return {
-    version: 1,
+    version: WORKSPACE_VERSION,
     ordered_ids: ordered,
     added_custom_assets: { ...customMap },
     hidden_defaults: [...hiddenSet],
@@ -181,7 +201,15 @@ export function isWorkspaceCustomized(workspace) {
   return ids.some((id, idx) => id !== DEFAULT_WORKSPACE_IDS[idx]);
 }
 
-export function addAssetToWorkspace(workspace, assetDescriptor, { pinTop = false } = {}) {
+function inferAssetCategory(id, customAssets = {}) {
+  if (METAL_IDS.has(id)) return "gold";
+  if (CORE_CRYPTO_IDS.has(id) || /^(CMC_|CG_|DEX_|BN_|CDN_)/.test(id)) return "crypto";
+  const custom = customAssets?.[id];
+  if (custom?.category) return custom.category;
+  return "fiat";
+}
+
+export function addAssetToWorkspace(workspace, assetDescriptor, { pinTop = false, autoGroup = true } = {}) {
   const ws = normalizeWorkspace(workspace);
   const id = String(assetDescriptor?.id || "").trim();
   if (!id) return ws;
@@ -203,19 +231,37 @@ export function addAssetToWorkspace(workspace, assetDescriptor, { pinTop = false
       change_24h_pct: assetDescriptor.change_24h_pct || "0.00",
       logo_url: assetDescriptor.logo_url || "",
       rank: assetDescriptor.rank ?? null,
-      category: assetDescriptor.category || "crypto",
+      category: assetDescriptor.category || (assetDescriptor.units_per_usd ? "fiat" : "crypto"),
     };
   }
 
   let ordered = ws.ordered_ids.filter((x) => x !== id);
   if (pinTop) {
     ordered = [id, ...ordered];
+  } else if (autoGroup) {
+    // Automatically insert the new asset cleanly at the end of its matching category group
+    // (Fiat with Fiat, Gold/Silver with Metals, Crypto with Crypto) so the page stays neatly organized!
+    const targetCat = assetDescriptor.category || inferAssetCategory(id, customAssets);
+    let lastMatchingIdx = -1;
+    for (let i = 0; i < ordered.length; i++) {
+      if (inferAssetCategory(ordered[i], customAssets) === targetCat) {
+        lastMatchingIdx = i;
+      }
+    }
+    if (lastMatchingIdx !== -1) {
+      ordered.splice(lastMatchingIdx + 1, 0, id);
+    } else if (targetCat === "fiat") {
+      ordered.unshift(id);
+    } else {
+      ordered.push(id);
+    }
   } else {
     ordered = [...ordered, id];
   }
 
   return {
     ...ws,
+    version: WORKSPACE_VERSION,
     ordered_ids: ordered,
     added_custom_assets: customAssets,
     hidden_defaults: hidden,
