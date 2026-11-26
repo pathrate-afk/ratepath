@@ -91,7 +91,8 @@ def test_frontend_gate3_pwa_seo_and_bilingual_integrity() -> None:
     assert "object-src 'none'" in headers_txt
     assert "base-uri 'self'" in headers_txt
     assert "frame-ancestors 'self' https://web.telegram.org https://*.telegram.org" in headers_txt
-    assert "/server.py" in redirects_txt and "404" in redirects_txt
+    middleware_txt = (WORKSPACE_ROOT / "functions" / "_middleware.js").read_text(encoding="utf-8")
+    assert "status: 404" in middleware_txt and ".py" in middleware_txt
     assert "/catalog_feed.json" in redirects_txt
     assert "Disallow: /api/" in robots_txt
     assert "Disallow: /server.py" in robots_txt

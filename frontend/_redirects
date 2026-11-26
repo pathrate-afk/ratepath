@@ -1,5 +1,4 @@
-# RatePath (ريت باث) — Cloudflare Pages Clean Bilingual, Feed & Security Routing
-/server.py          /404.html                    404
+# RatePath (ريت باث) — Cloudflare Pages Clean Bilingual & Feed Routing
 /ar                 /index.html?lang=ar          200
 /ar/                /index.html?lang=ar          200
 /en                 /index.html?lang=en          200

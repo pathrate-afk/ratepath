@@ -65,9 +65,9 @@ def test_nowpayments_10_usd_usdt_checkout_webhook_and_geo_affiliates_in_nodejs()
     node_bin = shutil.which("node")
     assert node_bin is not None, "Node.js is required to test Cloudflare Edge Functions and affiliates.js"
 
-    checkout_uri = (WORKSPACE_ROOT / "frontend" / "functions" / "api" / "create-vip-checkout.js").as_uri()
-    webhook_uri = (WORKSPACE_ROOT / "frontend" / "functions" / "api" / "nowpayments-webhook.js").as_uri()
-    geo_uri = (WORKSPACE_ROOT / "frontend" / "functions" / "api" / "geo.js").as_uri()
+    checkout_uri = (WORKSPACE_ROOT / "functions" / "api" / "create-vip-checkout.js").as_uri()
+    webhook_uri = (WORKSPACE_ROOT / "functions" / "api" / "nowpayments-webhook.js").as_uri()
+    geo_uri = (WORKSPACE_ROOT / "functions" / "api" / "geo.js").as_uri()
     aff_uri = (WORKSPACE_ROOT / "frontend" / "js" / "affiliates.js").as_uri()
     mon_uri = (WORKSPACE_ROOT / "frontend" / "monetization.config.js").as_uri()
 

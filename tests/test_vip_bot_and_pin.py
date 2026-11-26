@@ -227,7 +227,7 @@ def test_link_free_regular_posts_vs_special_topic_deep_links() -> None:
 
 def test_cloudflare_vip_telegram_webhook_gating_caching_and_coin_parsing() -> None:
     """Execute real Node.js ESM tests directly against `frontend/functions/api/telegram-webhook.js`."""
-    webhook_path = WORKSPACE_ROOT / "frontend" / "functions" / "api" / "telegram-webhook.js"
+    webhook_path = WORKSPACE_ROOT / "functions" / "api" / "telegram-webhook.js"
     assert webhook_path.exists()
     node_bin = shutil.which("node")
     assert node_bin is not None, "Node.js is required to verify Cloudflare Pages Function ESM code"

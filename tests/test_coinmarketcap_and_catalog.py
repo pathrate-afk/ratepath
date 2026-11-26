@@ -236,7 +236,7 @@ def test_sp_today_parser_and_global_catalog_atomic_publish(tmp_path: Path) -> No
 
 def test_cloudflare_cmc_proxy_frontend_workspace_and_security_invariants() -> None:
     """Verify Cloudflare Function, Personal Workspace UI, Email Sync & zero service_role exposure."""
-    fn_src = (WORKSPACE_ROOT / "frontend" / "functions" / "api" / "cmc-search.js").read_text(
+    fn_src = (WORKSPACE_ROOT / "functions" / "api" / "cmc-search.js").read_text(
         encoding="utf-8"
     )
     assert "Access-Control-Allow-Origin" in fn_src
