@@ -41,6 +41,10 @@ import {
   verifyEmailOtp,
 } from "./auth_sync.js";
 import {
+  detectVisitorCountry,
+  selectGeoCompliantPartners,
+} from "./affiliates.js";
+import {
   AFFILIATES_ENABLED,
   CATALOG_FEED_URL,
   CMC_SEARCH_API_URL,
@@ -135,6 +139,7 @@ const state = {
   pickerRemoteLoading: false,
   authSession: null,
   pendingOtpEmail: "",
+  visitorCountry: "GLOBAL",
 };
 
 function escapeHtml(value) {
@@ -710,7 +715,17 @@ function renderContextualAffiliateCta() {
   const box = document.getElementById("affiliate-cta-box");
   if (!box || !state.catalog) return;
 
-  if (!AFFILIATES_ENABLED || MONETIZATION_CONFIG?.AFFILIATES_ENABLED === false) {
+  const affEnabled = Boolean(AFFILIATES_ENABLED && MONETIZATION_CONFIG?.AFFILIATES_ENABLED !== false);
+  const activeAsset = state.catalog.byId[state.baseAssetId] || state.catalog.byId.USD;
+  const partners = selectGeoCompliantPartners({
+    countryCode: state.visitorCountry,
+    category: activeAsset.category,
+    affiliatesConfig: MONETIZATION_CONFIG?.affiliates || {},
+    affiliatesEnabled: affEnabled,
+    maxCount: 2,
+  });
+
+  if (partners.length === 0) {
     box.innerHTML = "";
     box.classList.add("hidden");
     return;
@@ -718,55 +733,46 @@ function renderContextualAffiliateCta() {
   box.classList.remove("hidden");
 
   const t = TRANSLATIONS[state.lang];
-  const aff = MONETIZATION_CONFIG?.affiliates || {};
-  const activeAsset = state.catalog.byId[state.baseAssetId] || state.catalog.byId.USD;
+  const isAr = state.lang === "ar";
   const isFiat = activeAsset.category === "fiat";
+  const gradientCls = isFiat
+    ? "from-emerald-950/60 via-slate-900/90 to-slate-900 border-emerald-500/30"
+    : "from-amber-950/55 via-slate-900/90 to-slate-900 border-amber-500/35";
+  const badgeCls = isFiat
+    ? "bg-emerald-500/15 text-emerald-300 border-emerald-500/30"
+    : "bg-amber-500/15 text-amber-300 border-amber-500/30";
+  const primaryBtnCls = isFiat
+    ? "bg-emerald-400 hover:bg-emerald-300 text-slate-950"
+    : "bg-amber-400 hover:bg-amber-300 text-slate-950";
+  const secondaryBtnCls = isFiat
+    ? "bg-slate-800 hover:bg-slate-700 text-emerald-200 border border-emerald-500/30"
+    : "bg-slate-800 hover:bg-slate-700 text-amber-200 border border-amber-500/30";
 
-  if (isFiat) {
-    box.innerHTML = `
-      <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3.5 rounded-xl bg-gradient-to-r from-emerald-950/60 via-slate-900/90 to-slate-900 border border-emerald-500/30">
-        <div class="space-y-0.5">
-          <span class="inline-block text-[10px] font-bold tracking-wider uppercase px-2 py-0.5 rounded bg-emerald-500/15 text-emerald-300 border border-emerald-500/30">
-            ${escapeHtml(t.affFiatBadge)}
-          </span>
-          <p class="text-xs sm:text-sm font-bold text-slate-100">${escapeHtml(t.affFiatTitle)}</p>
-          <p class="text-[11px] text-slate-400">${escapeHtml(t.affFiatDesc)}</p>
-        </div>
-        <div class="flex items-center gap-2 shrink-0">
-          <a href="${safeHref(aff.wise)}" target="_blank" rel="noopener noreferrer sponsored"
-            class="px-3 py-1.5 rounded-lg text-xs font-bold bg-emerald-400 hover:bg-emerald-300 text-slate-950 transition-colors">
-            ${escapeHtml(t.affFiatBtnPrimary)} ↗
-          </a>
-          <a href="${safeHref(aff.remitly)}" target="_blank" rel="noopener noreferrer sponsored"
-            class="px-3 py-1.5 rounded-lg text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-emerald-200 border border-emerald-500/30 transition-colors">
-            ${escapeHtml(t.affFiatBtnSecondary)}
-          </a>
-        </div>
+  const buttonsHtml = partners
+    .map((partner, idx) => {
+      const btnText = isAr ? partner.ctaAr : partner.ctaEn;
+      const cls = idx === 0 ? primaryBtnCls : secondaryBtnCls;
+      return `<a href="${safeHref(partner.url)}" target="_blank" rel="noopener noreferrer sponsored"
+        class="px-3 py-1.5 rounded-lg text-xs font-bold ${cls} transition-colors">
+        ${escapeHtml(btnText)}${idx === 0 ? " ↗" : ""}
+      </a>`;
+    })
+    .join("");
+
+  box.innerHTML = `
+    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3.5 rounded-xl bg-gradient-to-r ${gradientCls} border">
+      <div class="space-y-0.5">
+        <span class="inline-block text-[10px] font-bold tracking-wider uppercase px-2 py-0.5 rounded border ${badgeCls}">
+          ${escapeHtml(isFiat ? t.affFiatBadge : t.affCryptoBadge)}
+        </span>
+        <p class="text-xs sm:text-sm font-bold text-slate-100">${escapeHtml(isFiat ? t.affFiatTitle : t.affCryptoTitle)}</p>
+        <p class="text-[11px] text-slate-400">${escapeHtml(isFiat ? t.affFiatDesc : t.affCryptoDesc)}</p>
       </div>
-    `;
-  } else {
-    box.innerHTML = `
-      <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3.5 rounded-xl bg-gradient-to-r from-amber-950/55 via-slate-900/90 to-slate-900 border border-amber-500/35">
-        <div class="space-y-0.5">
-          <span class="inline-block text-[10px] font-bold tracking-wider uppercase px-2 py-0.5 rounded bg-amber-500/15 text-amber-300 border border-amber-500/30">
-            ${escapeHtml(t.affCryptoBadge)}
-          </span>
-          <p class="text-xs sm:text-sm font-bold text-slate-100">${escapeHtml(t.affCryptoTitle)}</p>
-          <p class="text-[11px] text-slate-400">${escapeHtml(t.affCryptoDesc)}</p>
-        </div>
-        <div class="flex items-center gap-2 shrink-0">
-          <a href="${safeHref(aff.bybit)}" target="_blank" rel="noopener noreferrer sponsored"
-            class="px-3 py-1.5 rounded-lg text-xs font-bold bg-amber-400 hover:bg-amber-300 text-slate-950 transition-colors">
-            ${escapeHtml(t.affCryptoBtnPrimary)} ↗
-          </a>
-          <a href="${safeHref(aff.binance)}" target="_blank" rel="noopener noreferrer sponsored"
-            class="px-3 py-1.5 rounded-lg text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-amber-200 border border-amber-500/30 transition-colors">
-            ${escapeHtml(t.affCryptoBtnSecondary)}
-          </a>
-        </div>
+      <div class="flex flex-wrap items-center gap-2 shrink-0">
+        ${buttonsHtml}
       </div>
-    `;
-  }
+    </div>
+  `;
 }
 
 const ALLOWED_LOGO_HOSTS = new Set([
@@ -2070,6 +2076,57 @@ function bindEvents() {
     }
   });
 
+  // Direct $10/mo USDT NOWPayments Checkout Form
+  document.getElementById("vip-usdt-checkout-form")?.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const btn = document.getElementById("btn-vip-usdt-checkout");
+    const payCurrency = document.getElementById("vip-usdt-network")?.value || "usdttrc20";
+    const tgUserId = (document.getElementById("vip-tg-user-id")?.value || "").trim();
+    const vipCfg = MONETIZATION_CONFIG?.vipPayments || {};
+    const checkoutEndpoint = vipCfg.checkoutApiUrl || "/api/create-vip-checkout";
+    const staticFallbackUrl = String(vipCfg.nowPaymentsVipUrl || "").trim();
+
+    if (btn) btn.disabled = true;
+    try {
+      const resp = await fetch(checkoutEndpoint, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          lang: state.lang,
+          pay_currency: payCurrency,
+          telegram_user_id: tgUserId || null,
+          email: state.authSession?.user?.email || null,
+        }),
+      });
+      const data = await resp.json().catch(() => ({}));
+      if (resp.ok && data?.ok && typeof data.invoice_url === "string" && data.invoice_url.startsWith("https://")) {
+        window.location.href = data.invoice_url;
+        return;
+      }
+      if (/^https:\/\//i.test(staticFallbackUrl) && !/placeholder/i.test(staticFallbackUrl)) {
+        window.open(staticFallbackUrl, "_blank", "noopener,noreferrer");
+        return;
+      }
+      showToast(
+        state.lang === "ar"
+          ? "الدفع الآلي بـ USDT قيد التفعيل؛ تواصل عبر @RatePathTerminalBot للاشتراك الفوري (10$/شهرياً)."
+          : "Automated USDT checkout activates once connected to NOWPayments; message @RatePathTerminalBot ($10/mo)."
+      );
+    } catch {
+      if (/^https:\/\//i.test(staticFallbackUrl) && !/placeholder/i.test(staticFallbackUrl)) {
+        window.open(staticFallbackUrl, "_blank", "noopener,noreferrer");
+      } else {
+        showToast(
+          state.lang === "ar"
+            ? "تعذر الاتصال ببوابة الدفع الآن؛ يمكنك الاشتراك عبر @RatePathTerminalBot"
+            : "Payment gateway unreachable right now; please subscribe via @RatePathTerminalBot"
+        );
+      }
+    } finally {
+      if (btn) btn.disabled = false;
+    }
+  });
+
   // CSP-safe coin logo error fallback (zero inline DOM error handler attributes)
   document.addEventListener(
     "error",
@@ -2115,7 +2172,30 @@ document.addEventListener("DOMContentLoaded", async () => {
   applyMonetizationConfigDom();
   applyLanguageAttributes();
   bindEvents();
+
+  // Handle return state from NOWPayments $10 USDT checkout
+  try {
+    const vipStatus = new URLSearchParams(window.location.search).get("vip_checkout");
+    if (vipStatus === "success") {
+      showToast(
+        state.lang === "ar"
+          ? "✅ تم استلام طلب الدفع بـ USDT! سيصلك رابط قناة رجال الأعمال VIP فور تأكيد الشبكة."
+          : "✅ USDT payment submitted! Your private Business VIP invite link arrives as soon as the network confirms."
+      );
+    } else if (vipStatus === "cancelled") {
+      showToast(
+        state.lang === "ar" ? "تم إلغاء عملية الدفع." : "VIP USDT checkout was cancelled."
+      );
+    }
+  } catch {
+    // Ignore URL errors
+  }
+
+  const geoPromise = detectVisitorCountry().then((cc) => {
+    state.visitorCountry = cc;
+    renderContextualAffiliateCta();
+  });
   await fetchLiveFeed();
-  await initCloudAndTelegramSync();
+  await Promise.allSettled([geoPromise, initCloudAndTelegramSync()]);
   setInterval(fetchLiveFeed, 30000);
 });

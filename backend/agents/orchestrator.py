@@ -634,6 +634,8 @@ async def run_lane2_swarm(
                     "ar": decision.brief.verdict_ar,
                 },
                 "assets_bias_24h": decision.brief.assets_bias_24h,
+                "matched_twin_key": decision.brief.matched_twin_key,
+                "stage": decision.brief.stage,
                 "confidence_score": decision.conviction_score,
                 "auditor_verified": decision.auditor_approved,
             }

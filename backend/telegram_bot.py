@@ -456,6 +456,79 @@ def build_public_channel_payload(
     return payload
 
 
+_STAGE_LABELS_EN: dict[str, str] = {
+    "stage_1_cash_dash": "Stage 1 — Cash Dash & De-risking",
+    "stage_2_hard_asset_rotation": "Stage 2 — Hard-Asset Rotation (Gold/USD)",
+    "consolidation": "Consolidation — Range-Bound Liquidity",
+}
+
+_STAGE_LABELS_AR: dict[str, str] = {
+    "stage_1_cash_dash": "المرحلة 1 — اندفاع نحو السيولة والكاش",
+    "stage_2_hard_asset_rotation": "المرحلة 2 — تحوّل نحو الذهب والأصول الصلبة",
+    "consolidation": "مرحلة تجميع واستقرار للسيولة",
+}
+
+
+def _resolve_historical_twin_for_vip(news_item: dict[str, Any]) -> dict[str, Any]:
+    """Use Agent 6's exact `matched_twin_key` if present, otherwise fall back cleanly."""
+    twin_key = str(news_item.get("matched_twin_key") or "").strip()
+    if twin_key:
+        for t in get_historical_macro_twins():
+            if str(t.get("event_key", "")) == twin_key:
+                return t
+    return match_closest_historical_twin(news_item)
+
+
+def _format_vip_bias_matrix(biases: dict[str, Any], lang: Literal["en", "ar"]) -> str:
+    """Format crisp directional asset matrix for VIP subscribers (never shown in public channel)."""
+    order = ("XAU", "USD", "EUR", "GBP", "BTC", "ETH", "SOL")
+    names_ar = {
+        "XAU": "الذهب (XAU)",
+        "USD": "الدولار (USD)",
+        "EUR": "اليورو (EUR)",
+        "GBP": "الإسترليني (GBP)",
+        "BTC": "بيتكوين (BTC)",
+        "ETH": "إيثيريوم (ETH)",
+        "SOL": "سولانا (SOL)",
+    }
+    lines: list[str] = []
+    for sym in order:
+        raw_dir = str(biases.get(sym, "")).strip().lower()
+        if raw_dir not in ("bullish", "bearish", "neutral"):
+            continue
+        if lang == "ar":
+            icon_lbl = (
+                "🟢 صعود" if raw_dir == "bullish"
+                else ("🔴 هبوط" if raw_dir == "bearish" else "⚪ محايد")
+            )
+            lines.append(f"• {names_ar[sym]}: <b>{icon_lbl}</b>")
+        else:
+            icon_lbl = (
+                "🟢 Bullish" if raw_dir == "bullish"
+                else ("🔴 Bearish" if raw_dir == "bearish" else "⚪ Neutral")
+            )
+            lines.append(f"• {sym}: <b>{icon_lbl}</b>")
+    if not lines:
+        return (
+            "• مراقبة محايدة عبر الأصول الرئيسية"
+            if lang == "ar"
+            else "• Neutral positioning across major benchmarks"
+        )
+    return "\n".join(lines)
+
+
+def _format_twin_realized_moves(twin: dict[str, Any]) -> str:
+    changes = twin.get("realized_changes_pct")
+    if not isinstance(changes, dict) or not changes:
+        return ""
+    parts: list[str] = []
+    for sym, pct in list(changes.items())[:4]:
+        val = str(pct).strip()
+        prefix = "+" if val and not val.startswith(("-", "+")) else ""
+        parts.append(f"{sym} {prefix}{val}%")
+    return " · ".join(parts)
+
+
 def build_vip_channel_payload(
     news_item: dict[str, Any],
     feed_payload: dict[str, Any],
@@ -466,19 +539,26 @@ def build_vip_channel_payload(
     is_special_topic: bool | None = None,
     topic_asset: str | None = None,
 ) -> dict[str, Any]:
-    """Build clean 3-block VIP news-only brief (ZERO price tickers, ZERO links on regular posts)."""
-    del feed_payload  # News alerts strictly contain ZERO exchange rates or price tickers
+    """Build Executive Business VIP brief with 24h Asset Matrix, 100-Year Precedent, Priced-In Risk & Funding Carry.
 
+    Deliberately differentiated from the free Public Channel so VIP ($10/mo) subscribers receive
+    deep institutional playbooks, directional calls, historical moves, conviction scores, and carry alerts.
+    """
     special_flag = (
         bool(news_item.get("is_special_topic", False))
         if is_special_topic is None
         else bool(is_special_topic)
     )
-    twin = match_closest_historical_twin(news_item)
+    twin = _resolve_historical_twin_for_vip(news_item)
+    funding_opps = extract_high_yield_funding_opportunities(feed_payload)
     en_block = news_item.get("en", {})
     ar_block = news_item.get("ar", {})
     pw = news_item.get("priced_in_warning", {})
     biases = news_item.get("assets_bias_24h", {})
+    conviction = news_item.get("confidence_score")
+    stage_key = str(news_item.get("stage") or "consolidation")
+    pw_active = bool(pw.get("active", False))
+    twin_moves = _format_twin_realized_moves(twin)
 
     deep_link_url: str | None = None
     deep_link_btn_text: str | None = None
@@ -497,46 +577,89 @@ def build_vip_channel_payload(
         story_en = _strip_urls(
             _clean_single_block(en_block.get("summary") or _compact_money_flow(biases, "en"))
         )[:320]
-        verdict_part = _strip_urls(
+        verdict_en = _strip_urls(
             _clean_single_block(
                 en_block.get("macro_thesis") or pw.get("en") or _compact_verdict(pw, "en")
             )
-        )[:220]
-        twin_hint = _strip_urls(_clean_single_block(twin.get("headline_en") or ""))[:100]
-        bottom_en = f"{verdict_part} (Precedent: {twin_hint})" if twin_hint else verdict_part
-        body = (
-            f"🔥 <b>[VIP] {_esc(headline_en)}</b>\n\n"
-            f"📖 <b>What Happened:</b>\n"
-            f"{_esc(story_en)}\n\n"
-            f"💡 <b>Bottom Line:</b>\n"
-            f"{_esc(bottom_en)}"
+        )[:280]
+        matrix_en = _format_vip_bias_matrix(biases, "en")
+        twin_title = _strip_urls(_clean_single_block(twin.get("headline_en") or ""))[:140]
+        twin_lesson = _strip_urls(_clean_single_block(twin.get("lesson_en") or ""))[:200]
+        stage_label = _STAGE_LABELS_EN.get(stage_key, "Active Macro Regime")
+        conv_tag = f" · Conviction: <b>{int(conviction)}/100</b>" if conviction is not None else ""
+        trap_line = (
+            "⚠️ <b>Priced-In / Trap Risk:</b> HIGH — avoid chasing spikes; wait for confirmation."
+            if pw_active
+            else "✅ <b>Catalyst Freshness:</b> Fresh unpriced impulse — monitor follow-through."
         )
+
+        sections_en = [
+            f"🔥 <b>[VIP] {_esc(headline_en)}</b>\n<i>💎 RatePath Business VIP Desk · {_esc(stage_label)}</i>{conv_tag}",
+            f"📖 <b>What Happened:</b>\n{_esc(story_en)}",
+            f"🎯 <b>24h Institutional Direction Matrix:</b>\n{matrix_en}",
+            (
+                f"🕰 <b>100-Year Historical Twin:</b>\n{_esc(twin_title)}"
+                + (f"\n<i>Historical Move: {_esc(twin_moves)}</i>" if twin_moves else "")
+                + (f"\n📌 {_esc(twin_lesson)}" if twin_lesson else "")
+            ),
+            f"💡 <b>Bottom Line:</b>\n{_esc(verdict_en)}\n{trap_line}",
+        ]
+        if funding_opps:
+            top_f = funding_opps[0]
+            sections_en.append(
+                f"⚡ <b>VIP Funding Carry Radar:</b>\n"
+                f"• {_esc(top_f['symbol'])}: <b>{_esc(top_f['annualized_spread_pct'])}% APR</b> "
+                f"({_esc(top_f['spread_bps'])} bps · {_esc(top_f['arbitrage_signal'])})"
+            )
+        sections_en.append("🤖 <i>VIP Perk: Ask @RatePathTerminalBot for instant AI analysis on any coin, gold, or FX 24/7.</i>")
         if deep_link_url:
-            body += f"\n\n🔎 <b>Full Deep Dive:</b> {deep_link_url}"
-        text = sanitize_syria_flag_emoji(normalize_preserve_newlines(body), lang="en")
+            sections_en.append(f"🔎 <b>Full Deep Dive:</b> {deep_link_url}")
+        text = sanitize_syria_flag_emoji(normalize_preserve_newlines("\n\n".join(sections_en)), lang="en")
 
     elif lang == "ar":
-        headline_ar = _strip_urls(_clean_single_block(ar_block.get("title") or "ملخص VIP للأسواق"))
+        headline_ar = _strip_urls(_clean_single_block(ar_block.get("title") or "ملخص VIP لرجال الأعمال"))
         story_ar = _strip_urls(
             _clean_single_block(ar_block.get("summary") or _compact_money_flow(biases, "ar"))
         )[:320]
-        verdict_part_ar = _strip_urls(
+        verdict_ar = _strip_urls(
             _clean_single_block(
                 ar_block.get("macro_thesis") or pw.get("ar") or _compact_verdict(pw, "ar")
             )
-        )[:220]
-        twin_hint_ar = _strip_urls(_clean_single_block(twin.get("headline_ar") or ""))[:100]
-        bottom_ar = f"{verdict_part_ar} (سابقة تاريخية: {twin_hint_ar})" if twin_hint_ar else verdict_part_ar
-        body = (
-            f"🔥 <b>[VIP] {_esc(headline_ar)}</b>\n\n"
-            f"📖 <b>ما القصة؟</b>\n"
-            f"{_esc(story_ar)}\n\n"
-            f"💡 <b>الخلاصة ومسار السيولة:</b>\n"
-            f"{_esc(bottom_ar)}"
+        )[:280]
+        matrix_ar = _format_vip_bias_matrix(biases, "ar")
+        twin_title_ar = _strip_urls(_clean_single_block(twin.get("headline_ar") or ""))[:140]
+        twin_lesson_ar = _strip_urls(_clean_single_block(twin.get("lesson_ar") or ""))[:200]
+        stage_label_ar = _STAGE_LABELS_AR.get(stage_key, "مسار اقتصادي نشط")
+        conv_tag_ar = f" · درجة القناعة: <b>{int(conviction)}/100</b>" if conviction is not None else ""
+        trap_line_ar = (
+            "⚠️ <b>تحذير التسعير المسبق:</b> مرتفع — لا تلاحق القمم السريعة وانتظر تأكيد السيولة."
+            if pw_active
+            else "✅ <b>جودة المحفّز:</b> زخم جديد غير مسعّر مسبقاً — راقب استمرارية التدفق."
         )
+
+        sections_ar = [
+            f"🔥 <b>[VIP] {_esc(headline_ar)}</b>\n<i>💎 غرفة رجال الأعمال VIP · {_esc(stage_label_ar)}</i>{conv_tag_ar}",
+            f"📖 <b>ما القصة؟</b>\n{_esc(story_ar)}",
+            f"🎯 <b>خريطة اتجاه الأصول (24 ساعة):</b>\n{matrix_ar}",
+            (
+                f"🕰 <b>التوأم التاريخي (ذاكرة 100 عام):</b>\n{_esc(twin_title_ar)}"
+                + (f"\n<i>حركة السوق التاريخية: {_esc(twin_moves)}</i>" if twin_moves else "")
+                + (f"\n📌 {_esc(twin_lesson_ar)}" if twin_lesson_ar else "")
+            ),
+            f"💡 <b>الخلاصة ومسار السيولة:</b>\n{_esc(verdict_ar)}\n{trap_line_ar}",
+        ]
+        if funding_opps:
+            top_f = funding_opps[0]
+            sig_ar = _translate_arbitrage_signal_ar(top_f["arbitrage_signal"])
+            sections_ar.append(
+                f"⚡ <b>رادار فروق التمويل (VIP Carry):</b>\n"
+                f"• {_esc(top_f['symbol'])}: عائد سنوي <b>{_esc(top_f['annualized_spread_pct'])}%</b> "
+                f"({_esc(top_f['spread_bps'])} bps · {_esc(sig_ar)})"
+            )
+        sections_ar.append("🤖 <i>ميزة VIP الحصرية: راسل @RatePathTerminalBot في أي وقت لطلب تحليل فوري لأي عملة أو ذهب.</i>")
         if deep_link_url:
-            body += f"\n\n🔎 <b>التقرير الكامل:</b> {deep_link_url}"
-        text = sanitize_syria_flag_emoji(normalize_preserve_newlines(body), lang="ar")
+            sections_ar.append(f"🔎 <b>التقرير الكامل:</b> {deep_link_url}")
+        text = sanitize_syria_flag_emoji(normalize_preserve_newlines("\n\n".join(sections_ar)), lang="ar")
 
     else:
         headline_en = _strip_urls(_clean_single_block(en_block.get("title") or "VIP Market Brief"))
@@ -548,10 +671,13 @@ def build_vip_channel_payload(
                 en_block.get("macro_thesis") or pw.get("en") or _compact_verdict(pw, "en")
             )
         )[:260]
+        matrix_en = _format_vip_bias_matrix(biases, "en")
         body = (
             f"🔥 <b>[VIP] {_esc(headline_en)}</b>\n\n"
             f"📖 <b>What Happened:</b>\n"
             f"{_esc(story_en)}\n\n"
+            f"🎯 <b>24h Asset Direction Matrix:</b>\n"
+            f"{matrix_en}\n\n"
             f"💡 <b>Bottom Line:</b>\n"
             f"{_esc(bottom_en)}"
         )

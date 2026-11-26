@@ -1,8 +1,8 @@
 /**
- * RatePath (ريت باث) — Centralized Cloud Endpoints, Monetization & 4-Channel Telegram Config
+ * RatePath (ريت باث) — Centralized Cloud Endpoints, Geo-Filtered Monetization & 4-Channel Telegram Config
  *
- * Edit ONLY this file to activate your live Hugging Face Spaces feed URL, public Cloudflare domain,
- * affiliate links, A-Ads unit ID, NOWPayments VIP checkout link, and EN/AR Telegram channels.
+ * Edit ONLY this file to activate your personal referral URLs, A-Ads unit ID,
+ * NOWPayments $10/mo USDT VIP checkout, and EN/AR Telegram channels.
  */
 
 // Live Serverless Feed URLs (GitHub Actions `live-data` orphan branch with CORS)
@@ -20,7 +20,8 @@ export const CMC_SEARCH_API_URL = "/api/cmc-search";
 export const SUPABASE_URL = "https://kyhljlkituvhyiawjtqr.supabase.co";
 export const SUPABASE_PUBLIC_ANON_KEY = "sb_publishable_WtLIN9IYG46IfC67plySDg_AStEV44u";
 
-// Affiliate monetization toggle — strictly FALSE until verified partner accounts are activated
+// Affiliate monetization toggle — flip to `true` as soon as you paste your personal referral links below.
+// Geo-compliance router (`frontend/js/affiliates.js`) automatically hides any partner blocked in the visitor's country.
 export const AFFILIATES_ENABLED = false;
 
 // Public Canonical Site URL (Cloudflare Pages / Custom Domain)
@@ -36,18 +37,32 @@ export const MONETIZATION_CONFIG = {
   PUBLIC_SITE_URL,
   cloudFeedUrl: LIVE_FEED_URL,
 
-  // 1. Contextual Converter Affiliate Links
+  // 1. Geo-Filtered Financial & Crypto Affiliates (Paste YOUR real partner link; leave "" to hide)
+  // Payouts marked [USDT] pay commissions directly to your USDT wallet without a bank account.
   affiliates: {
-    // Shown when Fiat (USD, EUR, GBP, SAR, AED, EGP, TRY) is the active base asset
-    wise: "https://wise.com/?utm_source=ratepath&utm_medium=converter_cta",
-    remitly: "https://www.remitly.com/?utm_source=ratepath&utm_medium=converter_cta",
+    // Crypto Exchanges — MENA / Asia / LATAM / Turkey [Direct USDT Payout]
+    bybit: "",       // https://partner.bybit.com/b/YOUR_CODE  (Blocked in US/UK/CA/SY)
+    okx: "",         // https://www.okx.com/join/YOUR_CODE     (Blocked in US/UK/CA/SY)
+    bitget: "",      // https://partner.bitget.com/bg/YOUR_CODE (Blocked in US/UK/CA/SY)
+    binance: "",     // https://accounts.binance.com/register?ref=YOUR_CODE (Blocked in US/UK/CA/SY)
 
-    // Shown when Gold (XAU_OZ, 24K, 21K, 18K) or Crypto (BTC, ETH, SOL) is the active base asset
-    bybit: "https://www.bybit.com/?utm_source=ratepath&utm_medium=converter_cta",
-    binance: "https://www.binance.com/?utm_source=ratepath&utm_medium=converter_cta",
+    // Gold (XAU/USD) & Forex Trading Broker [Direct USDT TRC20 Payout]
+    exness: "",      // https://one.exness-track.com/a/YOUR_CODE (MENA/Asia/LATAM/TR; blocked in US/EU/UK/SY)
+
+    // Regulated US / UK / Canada / EU Exchanges (Auto-shown ONLY to US/UK/CA/EU visitors)
+    kraken: "",      // https://kraken.pxf.io/YOUR_CODE
+    coinbase: "",    // https://advanced.coinbase.com/join/YOUR_CODE
+
+    // Global Charting & Cold Wallet (Works worldwide including US/EU/MENA; TradingView works in SY too)
+    tradingview: "", // https://www.tradingview.com/?aff_id=YOUR_ID
+    ledger: "",      // https://shop.ledger.com/?r=YOUR_CODE    [Direct BTC/USDT Payout]
+
+    // International Fiat Remittances (Auto-hidden in restricted countries like SY/LB/IQ)
+    wise: "",        // https://wise.com/invite/u/YOUR_CODE
+    remitly: "",     // https://remit.ly/YOUR_CODE
   },
 
-  // 2. Privacy-Preserving Display Ad Slot (A-Ads / Anonymous Ads)
+  // 2. Privacy-Preserving Display Ad Slot (A-Ads / Anonymous Ads — pays directly in BTC/Crypto!)
   advertising: {
     // Drop your numeric A-Ads unit ID here (e.g. "2390123") to render the live iframe automatically
     aAdsUnitId: "",
@@ -55,11 +70,13 @@ export const MONETIZATION_CONFIG = {
     aAdsPartnerUrl: "https://aads.com/?partner=ratepath",
   },
 
-  // 3. VIP Subscription Crypto Checkout (NOWPayments)
+  // 3. Business VIP Channel Subscription — $10/month paid in USDT directly to owner's NOWPayments wallet
   vipPayments: {
-    // Leave as "" until your real NOWPayments invoice/checkout link exists -> the button auto-hides.
+    checkoutApiUrl: "/api/create-vip-checkout",
+    // Optional static NOWPayments Payment Link fallback if API key is not configured yet
     nowPaymentsVipUrl: "",
-    vipMonthlyPriceUsd: "19",
+    vipMonthlyPriceUsd: "10",
+    defaultPayCurrency: "usdttrc20",
   },
 
   // 4. Official 4-Channel Language-Separated Telegram Ecosystem Links

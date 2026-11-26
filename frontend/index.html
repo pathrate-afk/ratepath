@@ -545,9 +545,41 @@
       </div>
 
       <div class="pt-2 border-t border-slate-800 space-y-2">
+        <!-- Direct $10/mo USDT NOWPayments Business VIP Checkout -->
+        <form id="vip-usdt-checkout-form" class="p-3 rounded-xl bg-slate-950/70 border border-amber-400/35 space-y-2">
+          <div class="flex items-center justify-between gap-2">
+            <span class="text-xs font-extrabold text-amber-300" data-i18n="vipCheckoutHeading">
+              💎 Business VIP Channel — $10/mo (USDT)
+            </span>
+            <span class="px-2 py-0.5 rounded-full text-[10px] font-mono font-bold bg-emerald-500/15 text-emerald-300 border border-emerald-500/30">
+              USDT Direct
+            </span>
+          </div>
+          <p class="text-[11px] text-slate-400 leading-relaxed" data-i18n="vipPerksSummary">
+            24h Asset Direction Matrix, 100-Year Historical Twins, Priced-In Trap Warnings, 8h Funding Carry &amp; 24/7 AI Coin Bot.
+          </p>
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            <select id="vip-usdt-network" aria-label="USDT Network"
+              class="h-10 px-3 rounded-lg bg-slate-900 border border-slate-700 text-xs font-semibold text-slate-200">
+              <option value="usdttrc20">USDT (TRC-20 • TRON)</option>
+              <option value="usdtbsc">USDT (BEP-20 • BSC)</option>
+              <option value="usdton">USDT (TON • Telegram)</option>
+              <option value="usdtarb">USDT (Arbitrum)</option>
+            </select>
+            <input id="vip-tg-user-id" type="text" inputmode="numeric" dir="ltr"
+              placeholder="Telegram ID (optional)"
+              class="h-10 px-3 rounded-lg bg-slate-900 border border-slate-700 text-xs font-mono text-white placeholder:text-slate-500" />
+          </div>
+          <button id="btn-vip-usdt-checkout" type="submit"
+            class="w-full py-2.5 px-3 rounded-xl text-xs font-extrabold bg-gradient-to-r from-amber-400 to-yellow-300 hover:from-amber-300 hover:to-yellow-200 text-slate-950 transition-colors"
+            data-i18n="nowPaymentsVipBtn">
+            Subscribe to Business VIP — $10/mo (USDT)
+          </button>
+        </form>
+
         <a id="nowpayments-vip-link" href="#" target="_blank" rel="noopener noreferrer sponsored"
-          class="block w-full text-center py-2.5 px-3 rounded-xl text-xs font-extrabold bg-gradient-to-r from-amber-400 to-yellow-300 hover:from-amber-300 hover:to-yellow-200 text-slate-950 transition-colors" data-i18n="nowPaymentsVipBtn">
-          Unlock VIP via NOWPayments ($19/mo)
+          class="hidden block w-full text-center py-2 px-3 rounded-xl text-xs font-bold bg-slate-800 hover:bg-slate-700 text-amber-300 border border-amber-500/35 transition-colors" data-i18n="nowPaymentsStaticBtn">
+          Direct NOWPayments USDT Link ($10/mo)
         </a>
         <div class="grid grid-cols-1 sm:grid-cols-3 gap-2">
           <a id="vip-channel-link" data-tg-channel="vip" href="https://t.me/RatePathTerminalBot?start=vip_en" target="_blank" rel="noopener noreferrer"
