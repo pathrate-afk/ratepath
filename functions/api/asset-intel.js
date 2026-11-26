@@ -166,6 +166,33 @@ async function searchGlobalStocks(query) {
 }
 
 async function fetchAssetNewsHeadlines(symbol, name, category = "stock") {
+  // 1. Primary: Yahoo Finance Search News JSON (fast & reliable on Cloudflare Edge)
+  try {
+    const yResp = await fetch(
+      `https://query1.finance.yahoo.com/v1/finance/search?q=${encodeURIComponent(symbol)}&quotesCount=0&newsCount=5`,
+      withTimeout({ headers: FETCH_HEADERS, cf: { cacheTtl: 180, cacheEverything: true } })
+    );
+    if (yResp.ok) {
+      const yJson = await yResp.json();
+      const news = Array.isArray(yJson?.news) ? yJson.news : [];
+      const items = news
+        .map((n) => ({
+          title: String(n?.title || "").trim(),
+          url: String(n?.link || "").trim(),
+          source: String(n?.publisher || "Yahoo Finance").trim(),
+          published_at: n?.providerPublishTime
+            ? new Date(Number(n.providerPublishTime) * 1000).toISOString()
+            : "",
+        }))
+        .filter((x) => x.title.length >= 10 && /^https?:\/\//i.test(x.url))
+        .slice(0, 4);
+      if (items.length > 0) return items;
+    }
+  } catch {
+    // Fall through to Google News RSS
+  }
+
+  // 2. Fallback: Google News RSS
   const topic =
     category === "stock"
       ? `${name || symbol} ${symbol} stock earnings company news`
@@ -177,7 +204,7 @@ async function fetchAssetNewsHeadlines(symbol, name, category = "stock") {
     const resp = await fetch(
       rssUrl,
       withTimeout({
-        headers: { "User-Agent": "RatePathIntel/2.0", Accept: "application/rss+xml, text/xml" },
+        headers: { "User-Agent": "Mozilla/5.0 RatePathIntel/2.0", Accept: "application/rss+xml, text/xml" },
         cf: { cacheTtl: 180, cacheEverything: true },
       })
     );

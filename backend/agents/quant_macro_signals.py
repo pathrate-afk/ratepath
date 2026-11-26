@@ -236,9 +236,13 @@ async def _fetch_kucoin_4h_closes(client: httpx.AsyncClient, symbol: str) -> lis
         for row in ordered:
             if isinstance(row, list) and len(row) >= 3:
                 closes.append(parse_strict_decimal(str(row[2]), field_name=f"kucoin.{symbol}.close"))
-        return closes
+        if len(closes) >= 20:
+            return closes
     except Exception:
-        return []
+        pass
+    # Fallback to Yahoo Finance daily crypto candles if KuCoin is geo/IP throttled
+    yahoo_closes, _ = await _fetch_yahoo_daily_closes(client, f"{symbol}-USD")
+    return yahoo_closes
 
 
 async def _fetch_okx_funding_pct(client: httpx.AsyncClient, symbol: str) -> Decimal | None:

@@ -205,7 +205,12 @@ export function scoreAssetQuant({ asset, closes, fundingPct = null, dxyChgPct = 
   };
 }
 
-async function fetchKucoinCloses(sym) {
+async function fetchCryptoCloses(sym) {
+  // Primary: Yahoo Finance crypto daily candles (100% reliable on Cloudflare Edge)
+  const yahooRes = await fetchYahooCloses(`${sym}-USD`);
+  if (yahooRes.closes.length >= 20) return yahooRes.closes;
+
+  // Fallback: KuCoin 4h candles
   try {
     const resp = await fetch(
       `https://api.kucoin.com/api/v1/market/candles?type=4hour&symbol=${encodeURIComponent(sym)}-USDT`,
@@ -322,9 +327,9 @@ export async function onRequestGet(context) {
     us10y,
     trackRecord,
   ] = await Promise.all([
-    fetchKucoinCloses("BTC"),
-    fetchKucoinCloses("ETH"),
-    fetchKucoinCloses("SOL"),
+    fetchCryptoCloses("BTC"),
+    fetchCryptoCloses("ETH"),
+    fetchCryptoCloses("SOL"),
     fetchOkxFundingPct("BTC"),
     fetchOkxFundingPct("ETH"),
     fetchOkxFundingPct("SOL"),
