@@ -66,7 +66,7 @@ export async function createVipCheckoutSession(body, env, fetchImpl = fetch) {
   const rawTgId = String(body?.telegram_user_id || "").trim().replace(/^@/, "");
   const telegramUserId = /^\d{5,20}$/.test(rawTgId) ? rawTgId : null;
 
-  const siteBase = String(env?.PUBLIC_SITE_URL || "https://ratepath.io")
+  const siteBase = String(env?.PUBLIC_SITE_URL || "https://ratepathlive.com")
     .trim()
     .replace(/\/+$/, "");
   const orderId = generateOrderId();

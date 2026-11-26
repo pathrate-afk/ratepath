@@ -100,13 +100,13 @@ def _clean_single_block(text: Any) -> str:
 
 def build_lang_mini_app_url(base_url: str, lang: Literal["en", "ar"]) -> str:
     """Append or overwrite `?lang=en` / `?lang=ar` on the Mini App URL cleanly."""
-    cleaned = (base_url or "https://ratepath.io/").strip()
+    cleaned = (base_url or "https://ratepathlive.com/").strip()
     parts = urlsplit(cleaned)
     query_pairs = [(k, v) for k, v in parse_qsl(parts.query, keep_blank_values=True) if k != "lang"]
     query_pairs.append(("lang", lang))
     new_query = urlencode(query_pairs)
     path = parts.path or "/"
-    return urlunsplit((parts.scheme or "https", parts.netloc or "ratepath.io", path, new_query, ""))
+    return urlunsplit((parts.scheme or "https", parts.netloc or "ratepathlive.com", path, new_query, ""))
 
 
 def build_special_topic_deep_link(
@@ -115,9 +115,9 @@ def build_special_topic_deep_link(
     lang: Literal["en", "ar"],
 ) -> str:
     """Build exact contextual deep-link `{PUBLIC_SITE_URL}/?asset={SYMBOL}&lang={lang}`."""
-    cleaned_base = (base_url or "https://ratepath.io").strip().rstrip("/")
+    cleaned_base = (base_url or "https://ratepathlive.com").strip().rstrip("/")
     if not cleaned_base.startswith(("https://", "http://")):
-        cleaned_base = "https://ratepath.io"
+        cleaned_base = "https://ratepathlive.com"
     clean_sym = re.sub(r"[^A-Za-z0-9_]", "", (asset_symbol or "XAU").strip().upper()) or "XAU"
     return f"{cleaned_base}/?asset={clean_sym}&lang={lang}"
 

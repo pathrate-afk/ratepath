@@ -25,7 +25,7 @@ export const SUPABASE_PUBLIC_ANON_KEY = "sb_publishable_WtLIN9IYG46IfC67plySDg_A
 export const AFFILIATES_ENABLED = true;
 
 // Public Canonical Site URL (Cloudflare Pages / Custom Domain)
-export const PUBLIC_SITE_URL = "https://ratepath.io";
+export const PUBLIC_SITE_URL = "https://ratepathlive.com";
 
 export const MONETIZATION_CONFIG = {
   AFFILIATES_ENABLED,
@@ -54,7 +54,7 @@ export const MONETIZATION_CONFIG = {
     coinbase: "",    // https://advanced.coinbase.com/join/YOUR_CODE
 
     // Global Charting & Cold Wallet (Works worldwide including US/EU/MENA; TradingView works in SY too)
-    tradingview: "", // Click "Become a partner" on your open TradingView tab to unlock your link
+    tradingview: "https://www.tradingview.com/?aff_id=1176056",
     ledger: "",      // https://shop.ledger.com/?r=YOUR_CODE    [Direct BTC/USDT Payout]
 
     // International Fiat Remittances (Auto-hidden in restricted countries like SY/LB/IQ)

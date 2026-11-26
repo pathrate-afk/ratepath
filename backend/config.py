@@ -131,7 +131,7 @@ class Settings:
     telegram_public_channel: str
     telegram_vip_channel: str
     admin_chat_id: str
-    mini_app_url: str = "https://ratepath.io/"
+    mini_app_url: str = "https://ratepathlive.com/"
     telegram_public_channel_en: str = "placeholder"
     telegram_vip_channel_en: str = "placeholder"
     telegram_public_channel_ar: str = "placeholder"
@@ -139,7 +139,7 @@ class Settings:
     gemini_api_keys: tuple[str, ...] = ()
     groq_api_keys: tuple[str, ...] = ()
     cmc_pro_api_key: str = "placeholder"
-    public_site_url: str = "https://ratepath.io"
+    public_site_url: str = "https://ratepathlive.com"
     telegram_webhook_secret: str = "placeholder"
 
     def __post_init__(self) -> None:
@@ -174,7 +174,7 @@ class Settings:
         raw_mini_app = (
             _get("MINI_APP_URL")
             if not is_placeholder_secret(_get("MINI_APP_URL"))
-            else "https://ratepath.io/"
+            else "https://ratepathlive.com/"
         )
         raw_site = (
             _get("PUBLIC_SITE_URL")
@@ -202,7 +202,7 @@ class Settings:
             gemini_api_keys=gemini_pool,
             groq_api_keys=groq_pool,
             cmc_pro_api_key=_get("CMC_PRO_API_KEY"),
-            public_site_url=raw_site.rstrip("/") or "https://ratepath.io",
+            public_site_url=raw_site.rstrip("/") or "https://ratepathlive.com",
             telegram_webhook_secret=_get("TELEGRAM_WEBHOOK_SECRET"),
         )
 

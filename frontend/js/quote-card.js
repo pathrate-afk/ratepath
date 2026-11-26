@@ -253,7 +253,7 @@ export function renderQuoteCardCanvas(canvas, state) {
   ctx.textAlign = "right";
   ctx.fillStyle = "#D4AF37";
   ctx.font = "800 17px system-ui, sans-serif";
-  ctx.fillText("ratepath.io • ريت باث", width - 56, 584);
+  ctx.fillText("ratepathlive.com • ريت باث", width - 56, 584);
 }
 
 /**

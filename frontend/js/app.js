@@ -153,7 +153,7 @@ function escapeHtml(value) {
 
 function safeHref(url) {
   const s = String(url || "").trim();
-  const fallback = `${String(PUBLIC_SITE_URL || "https://ratepath.io").replace(/\/+$/, "")}/`;
+  const fallback = `${String(PUBLIC_SITE_URL || "https://ratepathlive.com").replace(/\/+$/, "")}/`;
   return /^https?:\/\//i.test(s) ? s : fallback;
 }
 

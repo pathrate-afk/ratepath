@@ -369,7 +369,7 @@ export function updateSeoJsonLd(feed, lang = "en") {
     },
   }));
 
-  const siteBase = String(PUBLIC_SITE_URL || "https://ratepath.io").replace(/\/+$/, "");
+  const siteBase = String(PUBLIC_SITE_URL || "https://ratepathlive.com").replace(/\/+$/, "");
   const schemaGraph = {
     "@context": "https://schema.org",
     "@graph": [

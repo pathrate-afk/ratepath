@@ -664,9 +664,9 @@ export function buildWelcomeMessage(lang, isVip) {
   );
 }
 
-export function buildNonVipPriceLockMessage(parsedAsset, snapshot, publicSiteUrl = "https://ratepath.io") {
+export function buildNonVipPriceLockMessage(parsedAsset, snapshot, publicSiteUrl = "https://ratepathlive.com") {
   const isAr = parsedAsset.lang === "ar";
-  const siteBase = String(publicSiteUrl || "https://ratepath.io").replace(/\/+$/, "");
+  const siteBase = String(publicSiteUrl || "https://ratepathlive.com").replace(/\/+$/, "");
   const symPrefix = parsedAsset.symbol === "SYP" ? "🟢 " : "📊 ";
   const label = isAr ? parsedAsset.displayAr : parsedAsset.displayEn;
   const priceText = isAr ? snapshot.priceFormattedAr : snapshot.priceFormattedEn;

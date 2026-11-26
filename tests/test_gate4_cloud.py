@@ -351,8 +351,8 @@ def test_monetization_config_100_usd_default_and_cloud_files() -> None:
     assert "backend.cloud_worker" in dockerfile
     assert "Access-Control-Allow-Origin: *" in headers_cfg
     assert "/ar" in redirects_cfg and "/index.html?lang=ar" in redirects_cfg
-    assert "https://ratepath.io/ar" in sitemap_xml
-    assert "Sitemap: https://ratepath.io/sitemap.xml" in robots_txt
+    assert "https://ratepathlive.com/ar" in sitemap_xml
+    assert "Sitemap: https://ratepathlive.com/sitemap.xml" in robots_txt
 
 
 def test_gitignore_and_dockerignore_strictly_exclude_env_and_caches() -> None:

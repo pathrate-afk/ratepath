@@ -34,8 +34,8 @@ def _utc_now_iso() -> str:
 
 
 def normalize_site_url(site_url: str) -> str:
-    cleaned = (site_url or "https://ratepath.io").strip().rstrip("/")
-    return cleaned if cleaned.startswith(("https://", "http://")) else "https://ratepath.io"
+    cleaned = (site_url or "https://ratepathlive.com").strip().rstrip("/")
+    return cleaned if cleaned.startswith(("https://", "http://")) else "https://ratepathlive.com"
 
 
 def build_pinned_header_text(site_url: str, lang: Literal["en", "ar"]) -> str:
