@@ -276,107 +276,188 @@ function decodeXmlText(raw) {
     .trim();
 }
 
-async function fetchTargetedAssetNews(id, code, nameHint, ticker, lang) {
-  const isAr = lang === "ar";
-  const topic = isAr
-    ? ARABIC_NEWS_TOPICS[id] || ARABIC_NEWS_TOPICS[code] || `سعر ${nameHint || code} أخبار الاقتصاد والعملات`
-    : ENGLISH_NEWS_TOPICS[id] || ENGLISH_NEWS_TOPICS[code] || `${nameHint || code} ${code} market price news`;
+const CLEAN_YAHOO_NEWS_QUERIES = {
+  USD: "US Dollar Federal Reserve DXY",
+  EUR: "Euro ECB currency",
+  GBP: "British Pound Bank of England",
+  SAR: "Saudi economy Aramco",
+  AED: "UAE Dubai economy",
+  EGP: "Egypt economy pound IMF",
+  TRY: "Turkey lira central bank",
+  SYP: "Syria economy currency",
+  RUB: "Russian ruble economy",
+  XAU_OZ: "Gold price bullion",
+  GRAM_24K: "Gold price bullion",
+  GRAM_21K: "Gold price bullion",
+  GRAM_18K: "Gold price bullion",
+  XAG_OZ: "Silver price metal",
+  XAG_GRAM: "Silver price metal",
+  BTC: "Bitcoin crypto",
+  ETH: "Ethereum crypto",
+  SOL: "Solana crypto",
+  XRP: "Ripple XRP crypto",
+};
 
-  // 1. For English, try Yahoo Finance News directly first (fast & clean)
-  if (!isAr && ticker) {
-    try {
-      const yResp = await fetch(
-        `https://query1.finance.yahoo.com/v1/finance/search?q=${encodeURIComponent(ticker)}&quotesCount=0&newsCount=6`,
-        withTimeout({ headers: FETCH_HEADERS, cf: { cacheTtl: 240, cacheEverything: true } })
-      );
-      if (yResp.ok) {
-        const yData = await yResp.json();
-        const items = (yData?.news || [])
-          .map((n) => ({
-            title: String(n?.title || "").trim(),
-            url: String(n?.link || "").trim(),
-            source: String(n?.publisher || "Yahoo Finance").trim(),
-            published_at: n?.providerPublishTime
-              ? new Date(Number(n.providerPublishTime) * 1000).toISOString()
-              : new Date().toISOString(),
-          }))
-          .filter((x) => x.title.length >= 10 && /^https?:\/\//i.test(x.url))
-          .slice(0, 5);
-        if (items.length >= 2) return items;
-      }
-    } catch {
-      // Fall through to Google News RSS
-    }
-  }
+const ASSET_FILTER_KEYWORDS_AR = {
+  USD: ["دولار", "الفيدرالي", "أمريك", "سندات", "usd", "dxy"],
+  EUR: ["يورو", "أوروب", "المركزي الأوروبي", "eur"],
+  GBP: ["إسترليني", "استرليني", "بريطاني", "إنجلترا", "gbp"],
+  SAR: ["سعود", "الريال", "أرامكو", "تاسي", "sar"],
+  AED: ["إمارات", "دبي", "أبوظبي", "الدرهم", "aed"],
+  EGP: ["مصر", "الجنيه المصري", "القاهرة", "egp"],
+  TRY: ["ترك", "الليرة التركية", "أنقرة", "try"],
+  SYP: ["سوري", "دمشق", "الليرة السورية", "syp"],
+  XAU_OZ: ["ذهب", "الذهب", "الأونصة", "سبائك", "xau", "gold"],
+  GRAM_24K: ["ذهب", "الذهب", "الأونصة", "xau", "gold"],
+  GRAM_21K: ["ذهب", "الذهب", "الأونصة", "xau", "gold"],
+  GRAM_18K: ["ذهب", "الذهب", "الأونصة", "xau", "gold"],
+  XAG_OZ: ["فضة", "الفضة", "معادن", "xag", "silver"],
+  XAG_GRAM: ["فضة", "الفضة", "معادن", "xag", "silver"],
+  BTC: ["بيتكوين", "بتكوين", "btc", "bitcoin", "كريبتو"],
+  ETH: ["إيثيريوم", "ايثيريوم", "eth", "ethereum"],
+  SOL: ["سولانا", "sol", "solana"],
+  XRP: ["ريبل", "xrp", "ripple"],
+};
 
-  // 2. Google News RSS (Arabic or English targeted query)
-  const localeParams = isAr ? "hl=ar&gl=EG&ceid=EG:ar" : "hl=en-US&gl=US&ceid=US:en";
+async function fetchRssArticles(url, defaultSource) {
   try {
-    const gResp = await fetch(
-      `https://news.google.com/rss/search?q=${encodeURIComponent(topic)}&${localeParams}`,
+    const resp = await fetch(
+      url,
       withTimeout({
         headers: {
           "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) RatePathDetail/2.0",
-          Accept: "application/rss+xml, text/xml",
+          Accept: "application/rss+xml, application/xml, text/xml",
         },
-        cf: { cacheTtl: 240, cacheEverything: true },
-      })
+        cf: { cacheTtl: 300, cacheEverything: true },
+      }, 5500)
     );
-    if (gResp.ok) {
-      const xml = await gResp.text();
-      const items = [];
-      const itemRe = /<item\b[^>]*>([\s\S]*?)<\/item>/gi;
-      let m;
-      while ((m = itemRe.exec(xml)) !== null && items.length < 5) {
-        const block = m[1];
-        const titleM = block.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
-        const linkM = block.match(/<link[^>]*>([\s\S]*?)<\/link>/i);
-        const pubM = block.match(/<pubDate[^>]*>([\s\S]*?)<\/pubDate>/i);
-        const srcM = block.match(/<source[^>]*>([\s\S]*?)<\/source>/i);
-        const title = decodeXmlText(titleM?.[1] || "");
-        const url = decodeXmlText(linkM?.[1] || "").trim();
-        if (title.length >= 10 && /^https?:\/\//i.test(url)) {
-          const ms = pubM?.[1] ? Date.parse(pubM[1].trim()) : NaN;
-          items.push({
-            title: title.slice(0, 170),
-            url,
-            source: decodeXmlText(srcM?.[1] || (isAr ? "أخبار السوق" : "Market Wire")),
-            published_at: Number.isFinite(ms) ? new Date(ms).toISOString() : new Date().toISOString(),
-          });
-        }
+    if (!resp.ok) return [];
+    const xml = await resp.text();
+    const items = [];
+    const itemRe = /<item\b[^>]*>([\s\S]*?)<\/item>/gi;
+    let m;
+    while ((m = itemRe.exec(xml)) !== null && items.length < 18) {
+      const block = m[1];
+      const titleM = block.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
+      const linkM = block.match(/<link[^>]*>([\s\S]*?)<\/link>/i);
+      const pubM = block.match(/<pubDate[^>]*>([\s\S]*?)<\/pubDate>/i);
+      const srcM = block.match(/<source[^>]*>([\s\S]*?)<\/source>/i);
+      const title = decodeXmlText(titleM?.[1] || "");
+      const link = decodeXmlText(linkM?.[1] || "").trim();
+      if (title.length >= 10 && /^https?:\/\//i.test(link)) {
+        const ms = pubM?.[1] ? Date.parse(pubM[1].trim()) : NaN;
+        items.push({
+          title: title.slice(0, 175),
+          url: link,
+          source: decodeXmlText(srcM?.[1] || defaultSource),
+          published_at: Number.isFinite(ms) ? new Date(ms).toISOString() : new Date().toISOString(),
+        });
       }
-      if (items.length > 0) return items;
     }
+    return items;
   } catch {
-    // Fallback below
+    return [];
+  }
+}
+
+async function fetchYahooSearchNews(query) {
+  try {
+    const resp = await fetch(
+      `https://query1.finance.yahoo.com/v1/finance/search?q=${encodeURIComponent(query)}&quotesCount=0&newsCount=6`,
+      withTimeout({ headers: FETCH_HEADERS, cf: { cacheTtl: 240, cacheEverything: true } }, 5500)
+    );
+    if (!resp.ok) return [];
+    const data = await resp.json();
+    return (data?.news || [])
+      .map((n) => ({
+        title: String(n?.title || "").trim(),
+        url: String(n?.link || "").trim(),
+        source: String(n?.publisher || "Yahoo Finance").trim(),
+        published_at: n?.providerPublishTime
+          ? new Date(Number(n.providerPublishTime) * 1000).toISOString()
+          : new Date().toISOString(),
+      }))
+      .filter((x) => x.title.length >= 10 && /^https?:\/\//i.test(x.url))
+      .slice(0, 5);
+  } catch {
+    return [];
+  }
+}
+
+async function fetchTargetedAssetNews(id, code, nameHint, ticker, lang) {
+  const isAr = lang === "ar";
+  const isCrypto = ["BTC", "ETH", "SOL", "XRP", "BNB", "DOGE", "ADA", "PEPE", "TON", "SUI", "TRX", "LTC", "AVAX", "LINK", "SHIB"].includes(code);
+  const isMetal = id.startsWith("XAU") || id.startsWith("GRAM_") || id.startsWith("XAG");
+
+  if (isAr) {
+    // 1. Cloudflare-proven reliable Arabic financial RSS feeds (Investing AR + CoinTelegraph AR + SkyNews Business)
+    const arSources = isCrypto
+      ? [
+          ["https://sa.investing.com/rss/news_301.rss", "Investing كريبتو"],
+          ["https://ar.cointelegraph.com/rss", "كوين تليغراف عربي"],
+          ["https://sa.investing.com/rss/news.rss", "Investing عربي"],
+        ]
+      : isMetal
+      ? [
+          ["https://sa.investing.com/rss/news_11.rss", "Investing سلع وذهب"],
+          ["https://sa.investing.com/rss/news.rss", "Investing عربي"],
+          ["https://www.skynewsarabia.com/rss/v1/business.xml", "سكاي نيوز اقتصاد"],
+        ]
+      : [
+          ["https://sa.investing.com/rss/news_1.rss", "Investing عملات"],
+          ["https://sa.investing.com/rss/news.rss", "Investing عربي"],
+          ["https://www.skynewsarabia.com/rss/v1/business.xml", "سكاي نيوز اقتصاد"],
+        ];
+
+    const batches = await Promise.all(arSources.map(([u, s]) => fetchRssArticles(u, s)));
+    const allAr = batches.flat();
+    const kws = [
+      ...(ASSET_FILTER_KEYWORDS_AR[id] || ASSET_FILTER_KEYWORDS_AR[code] || []),
+      code.toLowerCase(),
+      String(nameHint || "").toLowerCase(),
+    ].filter((k) => k && k.length >= 2);
+
+    const exactMatches = allAr.filter((it) => {
+      const low = it.title.toLowerCase();
+      return kws.some((k) => low.includes(k));
+    });
+
+    const chosen = exactMatches.length >= 2 ? exactMatches : [...exactMatches, ...allAr];
+    const seen = new Set();
+    const dedup = [];
+    for (const item of chosen) {
+      const k = item.title.slice(0, 55);
+      if (seen.has(k)) continue;
+      seen.add(k);
+      dedup.push(item);
+      if (dedup.length >= 5) break;
+    }
+    if (dedup.length > 0) return dedup;
   }
 
-  // 3. Final Yahoo News fallback (even if Arabic RSS was rate-limited)
-  if (ticker) {
-    try {
-      const yResp = await fetch(
-        `https://query1.finance.yahoo.com/v1/finance/search?q=${encodeURIComponent(ticker)}&quotesCount=0&newsCount=5`,
-        withTimeout({ headers: FETCH_HEADERS, cf: { cacheTtl: 240, cacheEverything: true } })
-      );
-      if (yResp.ok) {
-        const yData = await yResp.json();
-        return (yData?.news || [])
-          .map((n) => ({
-            title: String(n?.title || "").trim(),
-            url: String(n?.link || "").trim(),
-            source: String(n?.publisher || "Yahoo Finance").trim(),
-            published_at: n?.providerPublishTime
-              ? new Date(Number(n.providerPublishTime) * 1000).toISOString()
-              : new Date().toISOString(),
-          }))
-          .filter((x) => x.title.length >= 10 && /^https?:\/\//i.test(x.url))
-          .slice(0, 5);
-      }
-    } catch {
-      // Return empty gracefully
-    }
-  }
-  return [];
+  // English (or Arabic fallback): Yahoo Finance Search using clean keyword (NEVER raw `DX-Y.NYB` or `BTC-USD`) + CoinTelegraph/CNBC RSS
+  const yahooQuery = CLEAN_YAHOO_NEWS_QUERIES[id] || CLEAN_YAHOO_NEWS_QUERIES[code] || `${nameHint || code} ${code} price`;
+  const [yItems, rssFallback] = await Promise.all([
+    fetchYahooSearchNews(yahooQuery),
+    isCrypto
+      ? fetchRssArticles("https://cointelegraph.com/rss", "CoinTelegraph")
+      : fetchRssArticles("https://search.cnbc.com/rs/search/combinedcms/view.xml?partnerId=wrss01&id=20910258", "CNBC Economy"),
+  ]);
+
+  if (yItems.length >= 2) return yItems.slice(0, 5);
+
+  const kwEn = [code.toLowerCase(), String(nameHint || "").toLowerCase()].filter((k) => k && k.length >= 2);
+  const filteredRss = rssFallback.filter((it) => kwEn.some((k) => it.title.toLowerCase().includes(k)));
+  const merged = [...yItems, ...(filteredRss.length ? filteredRss : rssFallback)];
+  const seenEn = new Set();
+  return merged
+    .filter((it) => {
+      const k = it.title.toLowerCase().slice(0, 55);
+      if (seenEn.has(k)) return false;
+      seenEn.add(k);
+      return true;
+    })
+    .slice(0, 5);
 }
 
 function buildBilingualAnalysis({ unitLabelAr, unitLabelEn, timeframes, rsi14, ema20, ema50, spTodayMode }) {
