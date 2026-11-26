@@ -44,6 +44,7 @@ import {
   detectVisitorCountry,
   selectGeoCompliantPartners,
 } from "./affiliates.js";
+import { createAssetDetailController } from "./asset-detail.js";
 import { createQuantAndBotController } from "./quant_and_bot.js";
 import {
   AFFILIATES_ENABLED,
@@ -1669,6 +1670,13 @@ function bindWorkspaceDragAndDrop() {
 // 7. Master Render & Event Wiring
 // ---------------------------------------------------------------------------
 
+const assetDetailController = createAssetDetailController({
+  getState: () => state,
+  getLocalizedAssetName,
+  setMainBaseAsset: (id) => setActiveBaseAsset(id),
+  showToast,
+});
+
 const quantBotController = createQuantAndBotController({
   getState: () => state,
   showToast,
@@ -1693,6 +1701,7 @@ function recomputeAndRenderAll() {
   renderVipAlertsList();
   renderAuthSyncState();
   quantBotController.renderAll();
+  assetDetailController.refreshIfOpen();
   const pbotSearch = document.getElementById("pbot-search-input");
   if (pbotSearch) {
     pbotSearch.placeholder = TRANSLATIONS[state.lang]?.pbotSearchPlaceholder || pbotSearch.placeholder;
@@ -1848,7 +1857,9 @@ function bindEvents() {
 
     const assetTrigger = e.target.closest("[data-select-asset]");
     if (assetTrigger && !state.editMode) {
-      setActiveBaseAsset(assetTrigger.getAttribute("data-select-asset"));
+      const clickedId = assetTrigger.getAttribute("data-select-asset");
+      setActiveBaseAsset(clickedId);
+      assetDetailController.open(clickedId);
       return;
     }
 
@@ -2205,6 +2216,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   applyLanguageAttributes();
   bindEvents();
   quantBotController.init();
+  assetDetailController.init();
 
   // Handle return state from NOWPayments $10/$19 USDT checkout
   try {
