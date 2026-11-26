@@ -41,24 +41,27 @@ def test_vip_channel_is_distinct_and_richer_than_public_channel() -> None:
     assert "فرصة فروق التمويل" not in pub_ar
     assert "VIP Funding Carry" not in pub_en
 
-    # ZERO unnecessary "100-Year Memory / ذاكرة 100 عام" fluff in Telegram posts
+    # ZERO unnecessary fluff ("ذاكرة 100 عام", "القناعة 86/100", repetitive "[VIP]" tags, BiDi bps scramble, or balls+blue arrows)
     for msg in (vip_ar, vip_en, pub_ar, pub_en):
         assert "ذاكرة 100 عام" not in msg
         assert "100-Year" not in msg
         assert "التوأم التاريخي" not in msg
+        assert "86/100" not in msg
+        assert "القناعة" not in msg
+        assert "Conviction:" not in msg
+        assert "[VIP]" not in msg
+        assert "🟢 ⬆️" not in msg
+        assert "🔴 ⬇️" not in msg
+        assert "bps" not in msg
 
-    # VIP AR delivers clean direction arrows (🟢 ⬆️ / 🔴 ⬇️), conviction & carry
-    assert "اتجاه الأصول خلال 24 ساعة" in vip_ar
-    assert "🟢 ⬆️" in vip_ar or "🔴 ⬇️" in vip_ar
-    assert "86/100" in vip_ar
-    assert "فرصة فروق التمويل" in vip_ar
+    # VIP AR delivers clean direction matrix with ▲ / 🔻 arrows (zero balls) and liquidity timing
+    assert "اتجاه الأصول المتأثرة" in vip_ar
+    assert "▲" in vip_ar or "🔻" in vip_ar
     assert "http" not in vip_ar.lower()  # Standard post remains link-free
 
-    # VIP EN delivers clean direction arrows (🟢 ⬆️ / 🔴 ⬇️), conviction & carry
+    # VIP EN delivers clean direction matrix with ▲ / 🔻 arrows (zero balls) and liquidity timing
     assert "24h Asset Direction" in vip_en
-    assert "🟢 ⬆️" in vip_en or "🔴 ⬇️" in vip_en
-    assert "86/100" in vip_en
-    assert "VIP Funding Carry" in vip_en
+    assert "▲" in vip_en or "🔻" in vip_en
     assert "http" not in vip_en.lower()
 
     # Silver (XAG_OZ / XAG_GRAM) on default homepage & universal "+ Add Currency / + أضف عملة" copy

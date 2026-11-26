@@ -43,19 +43,23 @@ HTTP_HEADERS: dict[str, str] = {
 
 RSS_FEEDS: tuple[tuple[str, str], ...] = (
     (
-        "CNBC",
+        "CNBC Economy",
         "https://search.cnbc.com/rs/search/combinedcms/view.xml?partnerId=wrss01&id=20910258",
     ),
     (
-        "CNBC",
+        "CNBC Finance",
         "https://search.cnbc.com/rs/search/combinedcms/view.xml?partnerId=wrss01&id=10000664",
     ),
     (
-        "MarketWatch",
-        "https://feeds.content.dowjones.io/public/rss/mw_topstories",
+        "CoinTelegraph",
+        "https://cointelegraph.com/rss",
     ),
     (
-        "MarketWatch",
+        "CoinDesk",
+        "https://www.coindesk.com/arc/outboundfeeds/rss/",
+    ),
+    (
+        "MarketWatch Pulse",
         "https://feeds.content.dowjones.io/public/rss/mw_marketpulse",
     ),
     (
@@ -66,6 +70,22 @@ RSS_FEEDS: tuple[tuple[str, str], ...] = (
         "Federal Reserve",
         "https://www.federalreserve.gov/feeds/press_all.xml",
     ),
+)
+
+# Strictly filter out personal-finance advice columns & non-market lifestyle noise
+_NOISE_HEADLINE_RE = re.compile(
+    r"(401\(k\)|stay-at-home|my husband|my wife|should i retire|social security|wedding|divorce|"
+    r"dating|horoscope|credit card tips|best savings account|gift guide|holiday shopping|"
+    r"student loan forgiveness|my father left|my mother left|inheritance|buying a house at \d+)",
+    re.IGNORECASE,
+)
+
+# Prioritize high-impact investor catalysts: whales, USDT prints, crashes, surges, bankruptcies, closures, central banks
+_HIGH_IMPACT_RE = re.compile(
+    r"\b(whale|tether|usdt|usdc|mint|burn|treasury|bankrupt|bankruptcy|insolvency|collapse|crash|plunge|surge|soar|"
+    r"layoffs|shutdown|closure|record loss|earnings miss|earnings beat|sec|fed|fomc|ecb|boe|inflation|cpi|"
+    r"interest rate|rate cut|rate hike|gold|silver|oil|opec|tariff|sanctions|bitcoin|btc|ethereum|eth|solana|etf|hack|exploit|depeg)\b",
+    re.IGNORECASE,
 )
 
 _HTML_TAG_RE = re.compile(r"<[^>]+>")
@@ -585,6 +605,8 @@ async def _fetch_single_rss(
 
         if len(title) < 10 or not link.startswith(("https://", "http://")):
             continue
+        if _NOISE_HEADLINE_RE.search(title) or _NOISE_HEADLINE_RE.search(summary[:200]):
+            continue
 
         digest = hashlib.sha256(f"{source_name}|{link}".encode("utf-8")).hexdigest()[:16]
         items.append(
@@ -629,10 +651,18 @@ async def fetch_macro_news(
     if not merged:
         raise FetcherError(f"All financial RSS feeds failed -> {' | '.join(errors)}")
 
-    # Interleave across distinct news sources first for institutional breadth, then sort recency
+    # Rank each source's articles by high-impact investor relevance before interleaving
     by_source: dict[str, list[RawNewsItem]] = {}
     for item in merged:
         by_source.setdefault(item.source_name, []).append(item)
+    for src_items in by_source.values():
+        src_items.sort(
+            key=lambda it: (
+                len(_HIGH_IMPACT_RE.findall(f"{it.title} {it.summary[:160]}")),
+                it.published_at,
+            ),
+            reverse=True,
+        )
 
     diversified: list[RawNewsItem] = []
     round_idx = 0

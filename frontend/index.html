@@ -175,7 +175,34 @@
   <!-- ===================================================================== -->
   <!-- ADAPTIVE SPLIT-SCREEN TERMINAL (LEFT: CONVERTER/RATES | RIGHT: NEWS)  -->
   <!-- ===================================================================== -->
-  <main class="max-w-[1480px] mx-auto px-3 sm:px-5 pt-4 lg:pt-5">
+  <main class="max-w-[1480px] mx-auto px-3 sm:px-5 pt-4 lg:pt-5 space-y-4">
+    <!-- Top-of-Page Breaking Headlines Bar (Quick Titles -> Smooth Scroll to Full Details Below) -->
+    <section id="top-breaking-news-bar" aria-label="Breaking Market Headlines"
+      class="p-3 rounded-2xl bg-slate-900/75 border border-amber-400/35 shadow-lg shadow-black/25 space-y-2">
+      <div class="flex flex-wrap items-center justify-between gap-2">
+        <div class="flex items-center gap-2">
+          <span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-rose-500/20 text-rose-300 border border-rose-500/40">
+            <span class="w-1.5 h-1.5 rounded-full bg-rose-400 animate-pulse"></span>
+            <span data-i18n="breakingBarBadge">LIVE NEWS</span>
+          </span>
+          <span class="text-xs font-extrabold text-white" data-i18n="breakingBarTitle">
+            Breaking Headlines — Tap any title to read full details below
+          </span>
+        </div>
+        <div class="flex items-center gap-2">
+          <span id="top-usdt-flow-pill" class="hidden px-2 py-0.5 rounded-md text-[10px] font-mono font-bold bg-slate-950 border border-slate-700 text-slate-200" dir="ltr"></span>
+          <button id="btn-jump-all-news" type="button"
+            class="px-2.5 py-0.5 rounded-lg text-[11px] font-bold bg-amber-400/15 hover:bg-amber-400/25 text-amber-300 border border-amber-400/35 transition-colors"
+            data-i18n="breakingBarReadAll">
+            Full Details ↓
+          </button>
+        </div>
+      </div>
+      <div id="top-breaking-headlines-strip" class="rp-ticker-strip flex items-center gap-2 overflow-x-auto pb-0.5">
+        <!-- Populated dynamically every 10m from /api/live-news -->
+      </div>
+    </section>
+
     <div class="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
 
       <!-- LEFT COLUMN (7/12): SINGLE-INPUT CONVERTER, AFFILIATE CTA, 14-ASSET MATRIX, A-ADS -->
@@ -513,19 +540,29 @@
           </div>
         </section>
 
-        <!-- Auditor-Verified Bilingual Macro News Feed -->
+        <!-- Live Hourly Breaking News & Verified Macro Feed -->
         <section id="news-panel" class="p-4 sm:p-5 rounded-2xl bg-slate-900/55 border border-slate-800/90 space-y-3.5">
-          <div>
-            <h2 class="text-sm sm:text-base font-extrabold text-white" data-i18n="newsTitle">
-              Market Pulse
-            </h2>
-            <p class="text-xs text-slate-400 mt-0.5" data-i18n="newsSubtitle">
-              Verified catalysts, money flow &amp; 24h bias
-            </p>
+          <div class="flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <h2 class="text-sm sm:text-base font-extrabold text-white" data-i18n="newsTitle">
+                Market Pulse &amp; Hourly News
+              </h2>
+              <p class="text-xs text-slate-400 mt-0.5" data-i18n="newsSubtitle">
+                Live global economy, whales/USDT, crypto &amp; corporate headlines — refreshed hourly
+              </p>
+            </div>
+            <button id="btn-refresh-live-news" type="button"
+              class="px-2.5 py-1 rounded-lg text-[11px] font-bold bg-slate-800 hover:bg-slate-700 text-amber-300 border border-slate-700 transition-colors">
+              ↻
+            </button>
+          </div>
+
+          <div id="live-hourly-news-list" class="space-y-3">
+            <!-- Populated live every 10m from /api/live-news -->
           </div>
 
           <div id="news-feed-list" class="space-y-3.5">
-            <!-- Populated dynamically from live_feed.json.news -->
+            <!-- Fallback / macro briefings from live_feed.json.news -->
           </div>
         </section>
 

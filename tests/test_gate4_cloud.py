@@ -139,9 +139,10 @@ def test_telegram_payload_formatting_and_upstash_deduplication(tmp_path: Path) -
     )
     assert not _ARABIC_RE.search(vip_en["text"])
     assert vip_en["text"].count("\n\n") >= 2
-    assert "🔥 <b>[VIP]" in vip_en["text"]
+    assert "🔥 <b>" in vip_en["text"]
+    assert "[VIP]" not in vip_en["text"]
     assert "📖 <b>What Happened:</b>" in vip_en["text"]
-    assert "💡 <b>Bottom Line:</b>" in vip_en["text"]
+    assert "💡 <b>Liquidity Takeaway:</b>" in vip_en["text"]
     assert "reply_markup" not in vip_en
     assert "http" not in vip_en["text"].lower()
 
@@ -173,9 +174,10 @@ def test_telegram_payload_formatting_and_upstash_deduplication(tmp_path: Path) -
     )
     assert _ARABIC_RE.search(vip_ar["text"])
     assert vip_ar["text"].count("\n\n") >= 2
-    assert "📖 <b>ما القصة؟</b>" in vip_ar["text"]
-    assert "💡 <b>الخلاصة ومسار السيولة:</b>" in vip_ar["text"]
-    assert "Bottom Line" not in vip_ar["text"]
+    assert "[VIP]" not in vip_ar["text"]
+    assert "📖 <b>التفاصيل:</b>" in vip_ar["text"]
+    assert "💡 <b>مسار السيولة والخلاصة:</b>" in vip_ar["text"]
+    assert "Liquidity Takeaway" not in vip_ar["text"]
     assert "reply_markup" not in vip_ar
     assert "http" not in vip_ar["text"].lower()
 

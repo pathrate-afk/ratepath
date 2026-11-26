@@ -480,7 +480,7 @@ def _resolve_historical_twin_for_vip(news_item: dict[str, Any]) -> dict[str, Any
 
 
 def _format_vip_bias_matrix(biases: dict[str, Any], lang: Literal["en", "ar"]) -> str:
-    """Format crisp directional asset matrix with green up / red down arrows for VIP subscribers."""
+    """Format crisp directional asset matrix with clean arrows (▲ up / 🔻 red down, zero balls)."""
     order = ("XAU", "USD", "EUR", "GBP", "BTC", "ETH", "SOL")
     names_ar = {
         "XAU": "الذهب (XAU)",
@@ -498,19 +498,19 @@ def _format_vip_bias_matrix(biases: dict[str, Any], lang: Literal["en", "ar"]) -
             continue
         if lang == "ar":
             icon_lbl = (
-                "🟢 ⬆️ صعود" if raw_dir == "bullish"
-                else ("🔴 ⬇️ هبوط" if raw_dir == "bearish" else "⚪ محايد")
+                "▲ صعود" if raw_dir == "bullish"
+                else ("🔻 هبوط" if raw_dir == "bearish" else "➖ مستقر")
             )
             lines.append(f"• {names_ar[sym]}: <b>{icon_lbl}</b>")
         else:
             icon_lbl = (
-                "🟢 ⬆️ Bullish" if raw_dir == "bullish"
-                else ("🔴 ⬇️ Bearish" if raw_dir == "bearish" else "⚪ Neutral")
+                "▲ Bullish" if raw_dir == "bullish"
+                else ("🔻 Bearish" if raw_dir == "bearish" else "➖ Neutral")
             )
             lines.append(f"• {sym}: <b>{icon_lbl}</b>")
     if not lines:
         return (
-            "• مراقبة محايدة عبر الأصول الرئيسية"
+            "• استقرار ومراقبة عبر الأصول الرئيسية"
             if lang == "ar"
             else "• Neutral positioning across major benchmarks"
         )
@@ -527,18 +527,17 @@ def build_vip_channel_payload(
     is_special_topic: bool | None = None,
     topic_asset: str | None = None,
 ) -> dict[str, Any]:
-    """Build crisp Executive Business VIP brief (zero fluff, green-up/red-down arrows, direction matrix & carry)."""
+    """Build clean executive market brief (zero filler, zero Conviction X/100, zero repetitive VIP tags, zero BiDi-garbled lines)."""
+    del feed_payload  # Dedicated session & 4h reports handle live rates & whale/funding telemetry cleanly
     special_flag = (
         bool(news_item.get("is_special_topic", False))
         if is_special_topic is None
         else bool(is_special_topic)
     )
-    funding_opps = extract_high_yield_funding_opportunities(feed_payload)
     en_block = news_item.get("en", {})
     ar_block = news_item.get("ar", {})
     pw = news_item.get("priced_in_warning", {})
     biases = news_item.get("assets_bias_24h", {})
-    conviction = news_item.get("confidence_score")
     pw_active = bool(pw.get("active", False))
 
     deep_link_url: str | None = None
@@ -548,84 +547,67 @@ def build_vip_channel_payload(
         link_lang: Literal["en", "ar"] = "ar" if lang == "ar" else "en"
         deep_link_url = build_special_topic_deep_link(mini_app_url, resolved_sym, link_lang)
         deep_link_btn_text = (
-            f"🔎 ملف VIP الكامل لـ {resolved_sym}"
+            f"🔎 متابعة {resolved_sym} على ريت باث"
             if link_lang == "ar"
-            else f"🔎 VIP {resolved_sym} Deep Dive"
+            else f"🔎 Track {resolved_sym} on RatePath"
         )
 
     if lang == "en":
-        headline_en = _strip_urls(_clean_single_block(en_block.get("title") or "VIP Market Brief"))
+        headline_en = _strip_urls(_clean_single_block(en_block.get("title") or "Market Brief"))
         story_en = _strip_urls(
             _clean_single_block(en_block.get("summary") or _compact_money_flow(biases, "en"))
-        )[:320]
+        )[:340]
         verdict_en = _strip_urls(
             _clean_single_block(
                 en_block.get("macro_thesis") or pw.get("en") or _compact_verdict(pw, "en")
             )
         )[:280]
         matrix_en = _format_vip_bias_matrix(biases, "en")
-        conv_tag = f" (Conviction: {int(conviction)}/100)" if conviction is not None else ""
-        trap_line = (
-            "⚠️ <b>Priced-In Alert:</b> Mostly priced in — avoid chasing spikes."
+        timing_en = (
+            "⚠️ <b>Market Timing:</b> Partly priced in — watch for pullback before reacting."
             if pw_active
-            else "✅ <b>Signal Quality:</b> Fresh unpriced catalyst."
+            else "⚡ <b>Market Timing:</b> Fresh catalyst still unfolding across desks."
         )
 
         sections_en = [
-            f"🔥 <b>[VIP] {_esc(headline_en)}</b>",
+            f"🔥 <b>{_esc(headline_en)}</b>",
             f"📖 <b>What Happened:</b>\n{_esc(story_en)}",
             f"🎯 <b>24h Asset Direction:</b>\n{matrix_en}",
-            f"💡 <b>Bottom Line:</b>\n{_esc(verdict_en)}\n{trap_line}{_esc(conv_tag)}",
+            f"💡 <b>Liquidity Takeaway:</b>\n{_esc(verdict_en)}\n{timing_en}",
         ]
-        if funding_opps:
-            top_f = funding_opps[0]
-            sections_en.append(
-                f"⚡ <b>VIP Funding Carry:</b>\n"
-                f"• {_esc(top_f['symbol'])}: <b>{_esc(top_f['annualized_spread_pct'])}% APR</b> "
-                f"({_esc(top_f['spread_bps'])} bps · {_esc(top_f['arbitrage_signal'])})"
-            )
         if deep_link_url:
-            sections_en.append(f"🔎 <b>Full Deep Dive:</b> {deep_link_url}")
+            sections_en.append(f"🔎 <b>Full Report:</b> {deep_link_url}")
         text = sanitize_syria_flag_emoji(normalize_preserve_newlines("\n\n".join(sections_en)), lang="en")
 
     elif lang == "ar":
-        headline_ar = _strip_urls(_clean_single_block(ar_block.get("title") or "ملخص VIP للأسواق"))
+        headline_ar = _strip_urls(_clean_single_block(ar_block.get("title") or "تحديث الأسواق"))
         story_ar = _strip_urls(
             _clean_single_block(ar_block.get("summary") or _compact_money_flow(biases, "ar"))
-        )[:320]
+        )[:340]
         verdict_ar = _strip_urls(
             _clean_single_block(
                 ar_block.get("macro_thesis") or pw.get("ar") or _compact_verdict(pw, "ar")
             )
         )[:280]
         matrix_ar = _format_vip_bias_matrix(biases, "ar")
-        conv_tag_ar = f" (القناعة: {int(conviction)}/100)" if conviction is not None else ""
-        trap_line_ar = (
-            "⚠️ <b>التسعير المسبق:</b> مرتفع — لا تلاحق القمم وانتظر التهدئة."
+        timing_ar = (
+            "⚠️ <b>حالة التسعير:</b> جزء كبير من الخبر مسعّر مسبقاً — يُفضّل التريّث وعدم ملاحقة القمم."
             if pw_active
-            else "✅ <b>قوة الإشارة:</b> محفّز جديد غير مسعّر مسبقاً."
+            else "⚡ <b>توقيت الحدث:</b> محفّز طازج ما زالت الأسواق تتفاعل معه الآن."
         )
 
         sections_ar = [
-            f"🔥 <b>[VIP] {_esc(headline_ar)}</b>",
-            f"📖 <b>ما القصة؟</b>\n{_esc(story_ar)}",
-            f"🎯 <b>اتجاه الأصول خلال 24 ساعة:</b>\n{matrix_ar}",
-            f"💡 <b>الخلاصة ومسار السيولة:</b>\n{_esc(verdict_ar)}\n{trap_line_ar}{_esc(conv_tag_ar)}",
+            f"🔥 <b>{_esc(headline_ar)}</b>",
+            f"📖 <b>التفاصيل:</b>\n{_esc(story_ar)}",
+            f"🎯 <b>اتجاه الأصول المتأثرة (24 ساعة):</b>\n{matrix_ar}",
+            f"💡 <b>مسار السيولة والخلاصة:</b>\n{_esc(verdict_ar)}\n{timing_ar}",
         ]
-        if funding_opps:
-            top_f = funding_opps[0]
-            sig_ar = _translate_arbitrage_signal_ar(top_f["arbitrage_signal"])
-            sections_ar.append(
-                f"⚡ <b>فرصة فروق التمويل (VIP):</b>\n"
-                f"• {_esc(top_f['symbol'])}: عائد سنوي <b>{_esc(top_f['annualized_spread_pct'])}%</b> "
-                f"({_esc(top_f['spread_bps'])} bps · {_esc(sig_ar)})"
-            )
         if deep_link_url:
-            sections_ar.append(f"🔎 <b>التقرير الكامل:</b> {deep_link_url}")
+            sections_ar.append(f"🔎 <b>التفاصيل الكاملة:</b> {deep_link_url}")
         text = sanitize_syria_flag_emoji(normalize_preserve_newlines("\n\n".join(sections_ar)), lang="ar")
 
     else:
-        headline_en = _strip_urls(_clean_single_block(en_block.get("title") or "VIP Market Brief"))
+        headline_en = _strip_urls(_clean_single_block(en_block.get("title") or "Market Brief"))
         story_en = _strip_urls(
             _clean_single_block(en_block.get("summary") or _compact_money_flow(biases, "en"))
         )[:280]
@@ -636,16 +618,16 @@ def build_vip_channel_payload(
         )[:260]
         matrix_en = _format_vip_bias_matrix(biases, "en")
         body = (
-            f"🔥 <b>[VIP] {_esc(headline_en)}</b>\n\n"
+            f"🔥 <b>{_esc(headline_en)}</b>\n\n"
             f"📖 <b>What Happened:</b>\n"
             f"{_esc(story_en)}\n\n"
             f"🎯 <b>24h Asset Direction:</b>\n"
             f"{matrix_en}\n\n"
-            f"💡 <b>Bottom Line:</b>\n"
+            f"💡 <b>Liquidity Takeaway:</b>\n"
             f"{_esc(bottom_en)}"
         )
         if deep_link_url:
-            body += f"\n\n🔎 <b>Full Deep Dive:</b> {deep_link_url}"
+            body += f"\n\n🔎 <b>Full Report:</b> {deep_link_url}"
         text = sanitize_syria_flag_emoji(normalize_preserve_newlines(body), lang="en")
 
     assert text.count("\n\n") >= 2, "Telegram VIP message must contain >= 2 blank-line separators"

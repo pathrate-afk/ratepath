@@ -216,9 +216,9 @@ def format_single_mover_line(mover: RateMover, lang: Literal["en", "ar"]) -> str
 
     pct_q = format_decimal(abs(mover.change_pct), Decimal("0.1"))
     if mover.change_pct >= Decimal("0"):
-        arrow_badge = f"🟢 ⬆️ (+{pct_q}%)"
+        arrow_badge = f"▲ (+{pct_q}%)"
     else:
-        arrow_badge = f"🔴 ⬇️ (-{pct_q}%)"
+        arrow_badge = f"🔻 (-{pct_q}%)"
 
     label = spec.label_ar if lang == "ar" else spec.label_en
     return f"{spec.emoji} {_esc(label)}: <code>{_esc(code_price)}</code> {arrow_badge}"

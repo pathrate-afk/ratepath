@@ -102,3 +102,9 @@ header.rp-header {
   object-fit: cover;
   background-color: rgba(15, 23, 42, 0.9);
 }
+
+.rp-news-highlight {
+  border-color: #fbbf24 !important;
+  box-shadow: 0 0 0 2px rgba(251, 191, 36, 0.45);
+  background-color: rgba(251, 191, 36, 0.08) !important;
+}

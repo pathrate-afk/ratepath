@@ -50,10 +50,13 @@ export function createQuantAndBotController({
   getState,
   showToast,
   openAuthModal,
+  jumpToNewsTab,
 }) {
   const localState = {
     quantData: null,
     quantLoading: false,
+    liveNewsByLang: { ar: null, en: null },
+    liveNewsLoading: false,
     botProfile: null,
     watchlist: loadLocalWatchlist(),
     searchResults: [],
@@ -64,6 +67,120 @@ export function createQuantAndBotController({
     dailyDigest: true,
     digestHourUtc: 7,
   };
+
+  // -------------------------------------------------------------------------
+  // 0. Continuous Hourly Live Breaking News Bar (Top) + Full Details (Bottom)
+  // -------------------------------------------------------------------------
+
+  async function fetchLiveHourlyNews(forceLang = null) {
+    const lang = forceLang || getState().lang || "ar";
+    if (localState.liveNewsLoading) return;
+    localState.liveNewsLoading = true;
+    try {
+      const resp = await fetch(`/api/live-news?lang=${encodeURIComponent(lang)}`, { cache: "default" });
+      if (resp.ok) {
+        localState.liveNewsByLang[lang] = await resp.json();
+      }
+    } catch {
+      // Keep fallback feed cleanly
+    } finally {
+      localState.liveNewsLoading = false;
+      renderLiveBreakingNews();
+    }
+  }
+
+  function renderLiveBreakingNews() {
+    const strip = document.getElementById("top-breaking-headlines-strip");
+    const listEl = document.getElementById("live-hourly-news-list");
+    const usdtPill = document.getElementById("top-usdt-flow-pill");
+    const appState = getState();
+    const isAr = appState.lang === "ar";
+    const data = localState.liveNewsByLang[appState.lang];
+
+    if (!data || !Array.isArray(data.items) || data.items.length === 0) {
+      if (strip && localState.liveNewsLoading) {
+        strip.innerHTML = `<span class="text-xs text-slate-400">${
+          isAr ? "جارٍ جلب أحدث عناوين الاقتصاد والعملات والشركات..." : "Loading live hourly market headlines..."
+        }</span>`;
+      }
+      return;
+    }
+
+    if (usdtPill && data.usdt_24h_delta_m != null) {
+      const d = Number(data.usdt_24h_delta_m);
+      const isUp = d >= 0;
+      const sign = isUp ? "+" : "";
+      usdtPill.innerHTML = `USDT 24h <span class="${isUp ? "text-emerald-400" : "text-rose-500"}">${isUp ? "▲" : "▼"} ${sign}${esc(d)}M</span>`;
+      usdtPill.classList.remove("hidden");
+    }
+
+    const catMeta = (cat) => {
+      if (cat === "whale") return { icon: "🐋", label: isAr ? "حيتان وUSDT" : "Whales/USDT", cls: "bg-sky-500/15 text-sky-300 border-sky-500/35" };
+      if (cat === "corporate") return { icon: "🏢", label: isAr ? "شركات" : "Corporate", cls: "bg-amber-500/15 text-amber-300 border-amber-500/35" };
+      if (cat === "crypto") return { icon: "🪙", label: isAr ? "كريبتو" : "Crypto", cls: "bg-emerald-500/15 text-emerald-300 border-emerald-500/35" };
+      return { icon: "🌍", label: isAr ? "اقتصاد دولي" : "Global Macro", cls: "bg-slate-800 text-slate-200 border-slate-700" };
+    };
+
+    const arrowHtml = (dir) => {
+      if (dir === "up") return `<span class="text-emerald-400 font-extrabold" aria-hidden="true">▲</span>`;
+      if (dir === "down") return `<span class="text-rose-500 font-extrabold" aria-hidden="true">▼</span>`;
+      return "";
+    };
+
+    // 1. Top-of-Page Breaking Headlines Bar (crisp titles that pull visitors into full details below)
+    if (strip) {
+      strip.innerHTML = data.items
+        .slice(0, 7)
+        .map((item) => {
+          const cm = catMeta(item.category);
+          return `
+            <button type="button" data-jump-news-id="${esc(item.id)}"
+              class="shrink-0 max-w-[300px] sm:max-w-[360px] inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-950/90 hover:bg-slate-800 border border-slate-800 hover:border-amber-400/50 text-start transition-colors cursor-pointer">
+              <span class="shrink-0">${cm.icon}</span>
+              ${arrowHtml(item.direction)}
+              <span class="text-xs font-bold text-slate-100 truncate">${esc(item.title)}</span>
+            </button>
+          `;
+        })
+        .join("");
+    }
+
+    // 2. Full Hourly News Details Cards below inside `#news-panel`
+    if (listEl) {
+      listEl.innerHTML = data.items
+        .map((item) => {
+          const cm = catMeta(item.category);
+          const pubShort = String(item.published_at || "").slice(0, 16).replace("T", " ") + " UTC";
+          const hasSeparateSummary = item.summary && item.summary.trim() !== item.title.trim();
+          return `
+            <article id="news-card-${esc(item.id)}" class="p-3.5 rounded-xl bg-slate-950/80 border border-slate-800/90 hover:border-amber-400/35 transition-all space-y-2">
+              <div class="flex flex-wrap items-center justify-between gap-2 text-[11px]">
+                <div class="flex items-center gap-1.5 flex-wrap">
+                  <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold border ${cm.cls}">
+                    ${cm.icon} ${esc(cm.label)}
+                  </span>
+                  ${arrowHtml(item.direction)}
+                  <a href="${safeUrl(item.url)}" target="_blank" rel="noopener noreferrer"
+                    class="font-bold text-amber-300 hover:text-amber-200 underline decoration-amber-500/40">
+                    ${esc(item.source)} ↗
+                  </a>
+                </div>
+                <span class="text-[10px] text-slate-400 font-mono" dir="ltr">${esc(pubShort)}</span>
+              </div>
+              <h3 class="text-xs sm:text-sm font-extrabold text-white leading-snug">
+                ${esc(item.title)}
+              </h3>
+              ${
+                hasSeparateSummary
+                  ? `<p class="text-xs text-slate-300 leading-relaxed">${esc(item.summary)}</p>`
+                  : ""
+              }
+            </article>
+          `;
+        })
+        .join("");
+    }
+  }
 
   // -------------------------------------------------------------------------
   // 1. Live Quant & Macro Probabilistic Radar + Real 30-Day Track Record
@@ -172,15 +289,15 @@ export function createQuantAndBotController({
               : "bg-slate-800/90 text-slate-300 border-slate-700";
             const badgeLabel = isUp
               ? isAr
-                ? "🟢 ⬆️ ميل صاعد"
-                : "🟢 ⬆️ Bullish Lean"
+                ? `<span class="text-emerald-400">▲</span> صعود مرجّح`
+                : `<span class="text-emerald-400">▲</span> Bullish Lean`
               : isDown
               ? isAr
-                ? "🔴 ⬇️ ميل هابط"
-                : "🔴 ⬇️ Bearish Lean"
+                ? `<span class="text-rose-500">▼</span> هبوط مرجّح`
+                : `<span class="text-rose-500">▼</span> Bearish Lean`
               : isAr
-              ? "⚪ محايد (انتظار)"
-              : "⚪ Neutral (Wait)";
+              ? "➖ مستقر (انتظار)"
+              : "➖ Neutral (Wait)";
             const scoreNum = Number(sig.score || 0);
             const scoreText = `${scoreNum > 0 ? "+" : ""}${scoreNum}`;
             const rsiText = sig.rsi14 != null ? `RSI ${sig.rsi14}` : "";
@@ -410,7 +527,7 @@ export function createQuantAndBotController({
         const chg = String(item.change_24h_pct || "0.00");
         const chgBadge =
           chg !== "0.00"
-            ? `<span class="text-[10px] font-mono ${chg.startsWith("-") ? "text-rose-400" : "text-emerald-400"}" dir="ltr">${chg.startsWith("-") ? "🔴 ⬇️" : "🟢 ⬆️"} ${esc(chg)}%</span>`
+            ? `<span class="text-[10px] font-mono font-bold ${chg.startsWith("-") ? "text-rose-500" : "text-emerald-400"}" dir="ltr">${chg.startsWith("-") ? "▼" : "▲"} ${esc(chg)}%</span>`
             : "";
         return `
           <div class="flex items-center justify-between gap-2 p-2 rounded-lg bg-slate-950/85 border border-slate-800 hover:border-amber-400/40">
@@ -602,11 +719,11 @@ export function createQuantAndBotController({
                 <div class="grid grid-cols-2 gap-2">
                   <input type="text" inputmode="decimal" dir="ltr" data-pbot-above="${idx}"
                     value="${esc(item.alert_above || "")}"
-                    placeholder="${isAr ? "🟢 تنبيه صعود ≥" : "🟢 Alert Above ≥"}"
+                    placeholder="${isAr ? "▲ تنبيه صعود ≥" : "▲ Alert Above ≥"}"
                     class="h-8 px-2.5 rounded-lg bg-slate-900 border border-slate-700 text-[11px] font-mono text-emerald-300 placeholder:text-slate-500" />
                   <input type="text" inputmode="decimal" dir="ltr" data-pbot-below="${idx}"
                     value="${esc(item.alert_below || "")}"
-                    placeholder="${isAr ? "🔴 تنبيه هبوط ≤" : "🔴 Alert Below ≤"}"
+                    placeholder="${isAr ? "▼ تنبيه هبوط ≤" : "▼ Alert Below ≤"}"
                     class="h-8 px-2.5 rounded-lg bg-slate-900 border border-slate-700 text-[11px] font-mono text-rose-300 placeholder:text-slate-500" />
                 </div>
               </div>
@@ -720,6 +837,31 @@ export function createQuantAndBotController({
   function bindEvents() {
     document.getElementById("btn-refresh-quant")?.addEventListener("click", () => {
       fetchQuantSignals();
+    });
+
+    document.getElementById("btn-refresh-live-news")?.addEventListener("click", () => {
+      fetchLiveHourlyNews(getState().lang);
+    });
+
+    document.getElementById("btn-jump-all-news")?.addEventListener("click", () => {
+      if (typeof jumpToNewsTab === "function") jumpToNewsTab();
+      document.getElementById("news-panel")?.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+
+    document.addEventListener("click", (e) => {
+      const jumpBtn = e.target.closest("[data-jump-news-id]");
+      if (jumpBtn) {
+        const nid = jumpBtn.getAttribute("data-jump-news-id");
+        if (typeof jumpToNewsTab === "function") jumpToNewsTab();
+        setTimeout(() => {
+          const card = document.getElementById(`news-card-${nid}`) || document.getElementById("news-panel");
+          if (card) {
+            card.scrollIntoView({ behavior: "smooth", block: "center" });
+            card.classList.add("rp-news-highlight");
+            setTimeout(() => card.classList.remove("rp-news-highlight"), 2500);
+          }
+        }, 60);
+      }
     });
 
     document.getElementById("btn-open-personal-bot")?.addEventListener("click", () => {
@@ -864,14 +1006,22 @@ export function createQuantAndBotController({
     init() {
       bindEvents();
       renderQuantRadar();
+      renderLiveBreakingNews();
       renderPersonalBotHub();
       renderBotsAffiliateShelf();
       fetchQuantSignals();
+      fetchLiveHourlyNews();
+      setInterval(() => fetchLiveHourlyNews(), 600000);
     },
     renderAll() {
       renderQuantRadar();
+      renderLiveBreakingNews();
       renderPersonalBotHub();
       renderBotsAffiliateShelf();
+      const lang = getState().lang;
+      if (!localState.liveNewsByLang[lang]) {
+        fetchLiveHourlyNews(lang);
+      }
     },
     syncPersonalBotProfile,
     renderBotsAffiliateShelf,

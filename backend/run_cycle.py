@@ -28,7 +28,9 @@ from backend.config import (
     enforce_utf8_runtime,
 )
 from backend.evaluator import MarketMemoryStore, extract_price_snapshot
+from backend.market_sessions import maybe_broadcast_market_session
 from backend.math_engine import parse_strict_decimal
+from backend.news_digest_4h import maybe_broadcast_4h_digest
 from backend.personal_bot_worker import process_personal_tracker_alerts
 from backend.publisher import execute_live_cycle
 from backend.rates_bulletin import maybe_broadcast_rates_bulletin
@@ -254,8 +256,23 @@ async def run_single_cycle(
                 client=http_client,
                 now_utc=now_dt,
             )
+            session_summary = await maybe_broadcast_market_session(
+                feed_payload,
+                catalog_payload,
+                settings=cfg,
+                client=http_client,
+                now_utc=now_dt,
+            )
+            digest_4h_summary = await maybe_broadcast_4h_digest(
+                catalog_payload,
+                settings=cfg,
+                client=http_client,
+                now_utc=now_dt,
+            )
         else:
             personal_bot_summary = {"status": "skipped_mock_cycle", "profiles_checked": 0, "alerts_sent": 0, "digests_sent": 0}
+            session_summary = {"status": "skipped_mock_cycle", "session": None, "sent": 0}
+            digest_4h_summary = {"status": "skipped_mock_cycle", "slot": None, "sent": 0}
 
         # 3. Hourly 24h Self-Evaluation Gate via Upstash `ratepath:last_eval_ts`
         last_ts, gate_backend = await gate.get_last_eval_ts(client=http_client)
@@ -293,6 +310,8 @@ async def run_single_cycle(
             "catalog_cmc_source": catalog_meta.get("cmc_source", ""),
             "rates_bulletin": bulletin_summary,
             "personal_bot": personal_bot_summary,
+            "market_session": session_summary,
+            "digest_4h": digest_4h_summary,
             "news_broadcast_disabled_in_worker": True,
             "evaluator_ran": eval_due,
             "graded_count": graded_count,

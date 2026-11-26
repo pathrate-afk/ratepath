@@ -1114,9 +1114,6 @@ function renderVerifiedNews() {
                   ? `<span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/15 text-emerald-300 border border-emerald-500/30">✓ ${escapeHtml(t.auditorVerified)}</span>`
                   : ""
               }
-              <span class="px-2 py-0.5 rounded-full text-[10px] font-mono font-semibold bg-slate-800 text-slate-300 border border-slate-700">
-                ${escapeHtml(t.confidenceLabel)}: ${Number(item.confidence_score || 0)}%
-              </span>
             </div>
           </div>
 
@@ -1676,6 +1673,12 @@ const quantBotController = createQuantAndBotController({
   getState: () => state,
   showToast,
   openAuthModal: () => openAuthSyncModal(),
+  jumpToNewsTab: () => {
+    if (!window.matchMedia("(min-width: 1024px)").matches) {
+      state.mobileTab = "news";
+      applyMobileTabVisibility();
+    }
+  },
 });
 
 function recomputeAndRenderAll() {

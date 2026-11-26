@@ -551,7 +551,7 @@ function formatDirectionBadge(change24h) {
   const raw = String(change24h).trim();
   const isDown = raw.startsWith("-");
   const cleanNum = raw.replace(/^[+-]/, "");
-  return isDown ? ` 🔴 ⬇️ (-${cleanNum}%)` : ` 🟢 ⬆️ (+${cleanNum}%)`;
+  return isDown ? ` 🔻 (-${cleanNum}%)` : ` ▲ (+${cleanNum}%)`;
 }
 
 async function generateVipAiBrief(parsedAsset, snapshot, headlines, env, fetchImpl = fetch) {
@@ -563,20 +563,20 @@ async function generateVipAiBrief(parsedAsset, snapshot, headlines, env, fetchIm
 
   const sysPrompt = isAr
     ? [
-        "أنت محلل ريت باث (RatePath VIP) الذكي. قدّم إجابة فورية ومختصرة بلغة عربية فصحى سلسة بدون حشو أو مقدمات تاريخية طويلة.",
+        "أنت محلل ريت باث الذكي. قدّم إجابة فورية ومختصرة ومفيدة بلغة عربية فصحى سلسة بدون أي حشو أو تكرار كلمة VIP.",
         "استخدم التنسيق التالي حرفياً مع سطر فارغ (\\n\\n) بين كل قسم ولا تكتب أي روابط:",
-        "📌 <b>السعر والزخم:</b>\n[جملة واحدة واضحة تضم السعر وحالة الصعود 🟢 ⬆️ أو الهبوط 🔴 ⬇️]",
-        "📰 <b>أهم أخبار العملة الآن:</b>\n[نقطتان قصيرتان بأسلوب واضح عن أهم الأخبار المحركة]",
-        "💡 <b>الخلاصة واتجاه السيولة:</b>\n[جملتان عمليتان عن مسار السيولة وما يجب مراقبته بلغة الأرقام فقط دون وعد بصعود أو هبوط مؤكد]",
-        "قاعدة صارمة: الخدمة معلوماتية وتحليلية للأرقام فقط — لا تقدّم نصيحة استثمارية ولا تضمن صعوداً أو هبوطاً، ولا تكتب أبداً عبارة 'ذاكرة 100 عام' أو 'توأم تاريخي'، ولا تكتب رمز علم سوريا الإيموجي (U+1F1F8 U+1F1FE)، واكتب '🟢 الليرة السورية' أو '🟢 ل.س'.",
+        "📌 <b>السعر والزخم:</b>\n[جملة واحدة واضحة تضم السعر وحالة الصعود ▲ أو الهبوط 🔻 بدون كرات ملونة]",
+        "📰 <b>أهم الأخبار المؤثرة الآن:</b>\n[نقطتان قصيرتان ومباشرتان عن السبب الحقيقي وراء الحركة]",
+        "💡 <b>الخلاصة ومسار السيولة:</b>\n[جملتان عمليتان بلغة الأرقام فقط دون وعد بصعود أو هبوط مؤكد]",
+        "قاعدة صارمة: الخدمة معلوماتية فقط — لا تقدّم نصيحة استثمارية ولا تكتب 'القناعة X/100' ولا 'VIP' ولا 'ذاكرة 100 عام'، ولا تكتب رمز علم سوريا الإيموجي (U+1F1F8 U+1F1FE)، واكتب 'الليرة السورية' أو 'ل.س'.",
       ].join("\n")
     : [
-        "You are the RatePath VIP desk analyst. Write a crisp, zero-fluff briefing in clean Telegram HTML with ZERO URLs and ZERO historical fluff.",
-        "Use 🟢 ⬆️ for rising moves and 🔴 ⬇️ for falling moves. Exact 3-block layout separated by blank lines (\\n\\n):",
-        "📌 <b>Price &amp; Momentum:</b>\n[1 clear sentence with live price and 🟢 ⬆️ / 🔴 ⬇️ momentum]",
-        "📰 <b>Latest Headlines:</b>\n[2 crisp bullet points summarizing the active catalysts]",
-        "💡 <b>Bottom Line &amp; Money Flow:</b>\n[1-2 plain data-driven sentences on liquidity flow — never guarantee rises or falls]",
-        "STRICT RULE: Informational data analytics ONLY (not financial advice or guaranteed outcomes). NEVER mention '100-year memory' or 'historical twin', and NEVER output raw Unicode Syria flag emoji (U+1F1F8 U+1F1FE); always use '🟢 SYP'.",
+        "You are the RatePath market desk analyst. Write a crisp, zero-fluff briefing in clean Telegram HTML with ZERO URLs and ZERO repetitive VIP tags.",
+        "Use ▲ for rising moves and 🔻 for falling moves (NO colored balls). Exact 3-block layout separated by blank lines (\\n\\n):",
+        "📌 <b>Price &amp; Momentum:</b>\n[1 clear sentence with live price and ▲ / 🔻 momentum]",
+        "📰 <b>Key Drivers Now:</b>\n[2 crisp bullet points explaining the real news catalyst]",
+        "💡 <b>Liquidity Takeaway:</b>\n[1-2 plain data-driven sentences — never guarantee rises or falls]",
+        "STRICT RULE: Informational data analytics ONLY (not financial advice). NEVER output 'Conviction X/100', '100-year memory', or raw Unicode Syria flag emoji (U+1F1F8 U+1F1FE); always use 'SYP'.",
       ].join("\n");
 
   const usrPrompt = JSON.stringify({

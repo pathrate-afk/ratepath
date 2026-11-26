@@ -273,7 +273,7 @@ async def process_personal_tracker_alerts(
                         item.get("alert_below"),
                     )
                     if trigger and _is_cooldown_elapsed(item.get("last_alerted_at"), now_dt):
-                        arrow = "🟢 ⬆️" if trigger == "above" else "🔴 ⬇️"
+                        arrow = "▲" if trigger == "above" else "🔻"
                         target_val = item.get("alert_above") if trigger == "above" else item.get("alert_below")
                         if lang == "ar":
                             alert_html = (
