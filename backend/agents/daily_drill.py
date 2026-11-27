@@ -54,6 +54,7 @@ from backend.evaluator import (
     normalize_supabase_rest_base,
 )
 from backend.math_engine import loads_decimal_json, parse_strict_decimal
+from backend.subscription_lifecycle import run_subscription_lifecycle_check
 from backend.telegram_bot import send_admin_watchdog_alert
 
 
@@ -413,8 +414,9 @@ async def run_daily_calibration_lab(
         else {"fastest_healthy_model": "skipped_offline", "providers": {}}
     )
 
-    # 5. 90-Day Transient Cleanup
+    # 5. 90-Day Transient Cleanup & Daily VIP/Pro Subscription Expiry Lifecycle
     cleanup = await cleanup_old_transient_rows(cfg, retention_days=90)
+    sub_lifecycle = await run_subscription_lifecycle_check(settings=cfg)
 
     # 6. Private Admin Readiness Scorecard to ADMIN_CHAT_ID
     admin_sent = False
@@ -427,7 +429,8 @@ async def run_daily_calibration_lab(
             f"Crisis={gauntlet['drills']['blind_crisis_replay_passed']})\n"
             f"24h Accuracy: {acc_label} (graded={len(graded_rows)}, lesson={lesson_status})\n"
             f"Fastest Healthy Model: {bench['fastest_healthy_model']}\n"
-            f"90d Transient Cleanup: ran={cleanup.get('ran')}"
+            f"90d Transient Cleanup: ran={cleanup.get('ran')}\n"
+            f"Subscriptions: reminded={sub_lifecycle.get('reminded', 0)}, downgraded={sub_lifecycle.get('downgraded', 0)}"
         )
         adm = await send_admin_watchdog_alert(
             "RatePath Morning Readiness Scorecard", scorecard_text, settings=cfg
@@ -443,6 +446,7 @@ async def run_daily_calibration_lab(
         "lesson_storage": lesson_status,
         "fastest_healthy_model": bench["fastest_healthy_model"],
         "cleanup_90d": cleanup,
+        "subscription_lifecycle": sub_lifecycle,
         "admin_scorecard_sent": admin_sent,
     }
 

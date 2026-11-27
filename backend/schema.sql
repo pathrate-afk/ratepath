@@ -306,3 +306,47 @@ CREATE POLICY "Allow service_role full access to user_tracker_profiles"
     TO service_role
     USING (true)
     WITH CHECK (true);
+
+-- 11. Standalone Telegram Bot Users & Watchlist State (`public.telegram_bot_users`)
+CREATE TABLE IF NOT EXISTS public.telegram_bot_users (
+    telegram_user_id TEXT PRIMARY KEY,
+    lang TEXT NOT NULL DEFAULT 'ar' CHECK (lang IN ('en', 'ar')),
+    plan_tier TEXT NOT NULL DEFAULT 'free' CHECK (
+        plan_tier IN ('free', 'monthly_business_vip', 'monthly_personal_bot')
+    ),
+    expires_at TIMESTAMPTZ DEFAULT NULL,
+    expiry_reminded_at TIMESTAMPTZ DEFAULT NULL,
+    alerts_paused BOOLEAN NOT NULL DEFAULT false,
+    watchlist JSONB NOT NULL DEFAULT '[]'::jsonb,
+    ui_state JSONB NOT NULL DEFAULT '{}'::jsonb,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_telegram_bot_users_active_alerts
+    ON public.telegram_bot_users (alerts_paused, plan_tier)
+    WHERE alerts_paused = false;
+
+CREATE INDEX IF NOT EXISTS idx_telegram_bot_users_expires
+    ON public.telegram_bot_users (plan_tier, expires_at)
+    WHERE expires_at IS NOT NULL;
+
+DROP TRIGGER IF EXISTS trg_telegram_bot_users_updated_at ON public.telegram_bot_users;
+CREATE TRIGGER trg_telegram_bot_users_updated_at
+BEFORE UPDATE ON public.telegram_bot_users
+FOR EACH ROW
+EXECUTE FUNCTION public.set_market_memory_updated_at();
+
+ALTER TABLE public.telegram_bot_users ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Allow service_role full access to telegram_bot_users" ON public.telegram_bot_users;
+CREATE POLICY "Allow service_role full access to telegram_bot_users"
+    ON public.telegram_bot_users
+    FOR ALL
+    TO service_role
+    USING (true)
+    WITH CHECK (true);
+
+-- Idempotent columns for existing deployments (403 auto-pause & 2-day expiry reminder tracking)
+ALTER TABLE public.user_tracker_profiles ADD COLUMN IF NOT EXISTS alerts_paused BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE public.vip_subscriptions ADD COLUMN IF NOT EXISTS expiry_reminded_at TIMESTAMPTZ DEFAULT NULL;

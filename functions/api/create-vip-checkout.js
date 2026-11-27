@@ -55,7 +55,13 @@ export function normalizePayCurrency(raw) {
   return ALLOWED_USDT_NETWORKS.has(cleaned) ? cleaned : "usdttrc20";
 }
 
-export function generateOrderId(prefix = "RPVIP") {
+export function generateOrderId(prefix = "RPVIP", telegramUserId = null, planTier = "monthly_business_vip") {
+  const unixTs = Math.floor(Date.now() / 1000);
+  const cleanTg = String(telegramUserId || "").trim().replace(/^@/, "");
+  if (/^\d{5,20}$/.test(cleanTg)) {
+    const planCode = planTier === "monthly_personal_bot" ? "pro19" : "vip10";
+    return `${cleanTg}_${planCode}_${unixTs}`;
+  }
   const rand = crypto.randomUUID().replace(/-/g, "").slice(0, 12).toUpperCase();
   return `${prefix}-${Date.now().toString(36).toUpperCase()}-${rand}`;
 }
@@ -94,7 +100,7 @@ export async function createVipCheckoutSession(body, env, fetchImpl = fetch) {
   const siteBase = String(env?.PUBLIC_SITE_URL || "https://ratepathlive.com")
     .trim()
     .replace(/\/+$/, "");
-  const orderId = generateOrderId(planSpec.orderPrefix);
+  const orderId = generateOrderId(planSpec.orderPrefix, telegramUserId, planTier);
 
   const invoiceReq = {
     price_amount: priceUsd,

@@ -1,17 +1,25 @@
 /**
- * RatePath (ريت باث) — 24/7 Interactive VIP-Only Custom Asset Telegram Webhook
+ * RatePath (ريت باث) — High-Speed Interactive @RatePathTerminalBot Webhook
  * Cloudflare Pages Function: `POST /api/telegram-webhook`
  *
- * Security & Capabilities:
+ * Production Capabilities & Architecture:
  * - Verifies `X-Telegram-Bot-Api-Secret-Token` against `env.TELEGRAM_WEBHOOK_SECRET`.
- * - Handles private 1-on-1 messages (`/start`, `/ask <coin>`, or natural AR/EN queries).
- * - Instant zero-friction VIP gating via Telegram `getChatMember` on `_AR`/`_EN` VIP channels,
- *   `ADMIN_CHAT_ID` bypass, and Supabase `public.vip_subscriptions` fallback.
- * - Non-VIP users receive live spot price + polite RatePath VIP lock notice.
- * - Verified VIP users get 25 requests/day Upstash rate limit, 15-minute shared Upstash cache
- *   (`ratepath:vip_ask:{SYMBOL}:{lang}`), live metrics + fresh coin RSS headlines, and
- *   Groq (`llama-3.3-70b-versatile`) with Gemini Flash fallback returning a crisp 3-part HTML briefing.
+ * - Handles BOTH `message` commands/queries AND `callback_query` inline button flows
+ *   with immediate `answerCallbackQuery` (<100ms) and in-place `editMessageText` (zero menu spam).
+ * - Decoupled 45s in-memory + Upstash Redis batch market price cache (FX, SYP, TRY, EGP,
+ *   Gold XAU, Silver XAG, Crypto) — never fans out external market APIs per user.
+ * - Strict per-user tier limits persisted across Upstash Redis + Supabase (`telegram_bot_users`
+ *   & `user_tracker_profiles`):
+ *     * Free: max 3 active assets -> triggers high-converting 3/3 Free Limit Paywall on 4th asset
+ *     * Business VIP ($10/mo USDT): max 10 active assets + VIP Channel + priority alerts
+ *     * Personal Bot Pro ($19/mo USDT): max 50 active assets + Stocks/News + VIP Channel
+ * - Bilingual UX (`ar` default + `en` toggle persisted per user) with exact high-converting
+ *   Welcome, Free Limit (3/3), Replace Asset, Target Price, and NOWPayments USDT Upgrade screens.
+ * - Preserves VIP AI Desk (`/ask <coin>` or natural AR/EN coin queries with 25/day quota & 15m cache).
+ * - Resilient Telegram API wrapper with exponential backoff on 429/5xx & 403 auto-pause.
  */
+
+import { createVipCheckoutSession } from "./create-vip-checkout.js";
 
 const LIVE_FEED_DEFAULT =
   "https://raw.githubusercontent.com/pathrate-afk/ratepath/live-data/live_feed.json";
@@ -20,8 +28,32 @@ const CATALOG_FEED_DEFAULT =
 
 const VIP_DAILY_LIMIT = 25;
 const VIP_CACHE_TTL_SECONDS = 900; // 15 minutes
+const BATCH_FEED_CACHE_TTL_MS = 45000; // 45s in-memory Edge isolate batch cache
 const VIP_MEMBER_STATUSES = new Set(["member", "administrator", "creator"]);
 const RAW_SYRIA_FLAG_EMOJI = "\uD83C\uDDF8\uD83C\uDDFE";
+const TG_USER_REDIS_PREFIX = "ratepath:tg_user:";
+const TG_USERS_INDEX_REDIS_KEY = "ratepath:tg_users:index";
+
+export const TIER_LIMITS = Object.freeze({
+  free: { maxAssets: 3, priceUsd: 0, labelAr: "المجانية", labelEn: "Free" },
+  monthly_business_vip: { maxAssets: 10, priceUsd: 10, labelAr: "Business VIP", labelEn: "Business VIP" },
+  monthly_personal_bot: { maxAssets: 50, priceUsd: 19, labelAr: "Personal Bot Pro", labelEn: "Personal Bot Pro" },
+});
+
+const POPULAR_ASSETS = Object.freeze([
+  { symbol: "XAU", category: "metal", en: "Gold (XAU)", ar: "الذهب XAU" },
+  { symbol: "XAG", category: "metal", en: "Silver (XAG)", ar: "الفضة XAG" },
+  { symbol: "BTC", category: "crypto", en: "Bitcoin (BTC)", ar: "بيتكوين BTC" },
+  { symbol: "ETH", category: "crypto", en: "Ethereum (ETH)", ar: "إيثيريوم ETH" },
+  { symbol: "SOL", category: "crypto", en: "Solana (SOL)", ar: "سولانا SOL" },
+  { symbol: "USDT", category: "crypto", en: "Tether (USDT)", ar: "تيثر USDT" },
+  { symbol: "EUR", category: "fiat", en: "Euro (EUR)", ar: "اليورو EUR" },
+  { symbol: "TRY", category: "fiat", en: "Turkish Lira (TRY)", ar: "الليرة التركية TRY" },
+  { symbol: "EGP", category: "fiat", en: "Egyptian Pound (EGP)", ar: "الجنيه المصري EGP" },
+  { symbol: "SYP", category: "fiat", en: "Syrian Pound (SYP)", ar: "الليرة السورية SYP" },
+  { symbol: "AAPL", category: "stock", en: "Apple (AAPL)", ar: "سهم أبل AAPL" },
+  { symbol: "TSLA", category: "stock", en: "Tesla (TSLA)", ar: "سهم تسلا TSLA" },
+]);
 
 const JSON_HEADERS = {
   "Content-Type": "application/json; charset=utf-8",
@@ -31,11 +63,23 @@ const JSON_HEADERS = {
 };
 const SUPABASE_SERVER_UA = "RatePath-Edge/2.0 (server)";
 
+// Shared in-memory isolate batch price cache (only used for real production `fetch`)
+const _memoryFeedCache = {
+  key: "",
+  fetchedAt: 0,
+  liveFeed: null,
+  catalogFeed: null,
+};
+
 function withTimeout(init = {}, ms = 8000) {
   if (typeof AbortSignal !== "undefined" && typeof AbortSignal.timeout === "function") {
     return { ...init, signal: AbortSignal.timeout(ms) };
   }
   return init;
+}
+
+function sleepMs(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 /**
@@ -46,7 +90,6 @@ function withTimeout(init = {}, ms = 8000) {
  */
 export function sanitizeTelegramHtml(raw) {
   let s = String(raw ?? "").replace(/<br\s*\/?>/gi, "\n");
-  // Strip any link/script/unknown tags while keeping inner text (except script/style bodies)
   s = s.replace(/<(script|style)[^>]*>[\s\S]*?<\/\1>/gi, "");
   const placeholders = [];
   s = s.replace(/<(\/?)(b|i|code)\s*>/gi, (_m, slash, tag) => {
@@ -54,23 +97,18 @@ export function sanitizeTelegramHtml(raw) {
     placeholders.push(`<${slash ? "/" : ""}${tag.toLowerCase()}>`);
     return `\u0000TAG${idx}\u0000`;
   });
-  // Drop all remaining HTML tags (such as <a href="...">, <div>, <p>, etc.)
   s = s.replace(/<\/?[a-zA-Z][^>]*>/g, "");
-  // Escape any unescaped special HTML entities (preserving existing safe entities)
   s = s
     .replace(/&(?!(?:amp|lt|gt|quot|#39);)/g, "&amp;")
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;");
-  // Restore whitelisted <b>, <i>, <code> tags
   s = s.replace(/\u0000TAG(\d+)\u0000/g, (_m, idxStr) => placeholders[Number(idxStr)] || "");
   return s;
 }
 
 const ASSET_ALIASES = [
-  // Precious Metals
   { symbol: "XAU", kind: "gold", en: "Gold (XAU)", ar: "الذهب الفوري (XAU)", terms: ["الذهب", "ذهب", "عيار 21", "عيار 24", "اونصة الذهب", "أونصة الذهب", "gold", "xau", "xau_oz", "xauusd"] },
   { symbol: "XAG", kind: "gold", en: "Silver (XAG)", ar: "الفضة الفورية (XAG)", terms: ["الفضة", "فضة", "silver", "xag", "xag_oz"] },
-  // Syrian Pound & Regional / World Fiat
   { symbol: "SYP", kind: "fiat", en: "SYP", ar: "الليرة السورية", terms: ["الليرة السورية", "ليرة سورية", "الليره السوريه", "ليره سوريه", "سوريا", "سوري", "دمشق", "syp", "syrian pound"] },
   { symbol: "TRY", kind: "fiat", en: "Turkish Lira (TRY)", ar: "الليرة التركية (TRY)", terms: ["الليرة التركية", "ليرة تركية", "تركيا", "turkish lira", "try"] },
   { symbol: "EGP", kind: "fiat", en: "Egyptian Pound (EGP)", ar: "الجنيه المصري (EGP)", terms: ["الجنيه المصري", "جنيه مصري", "مصر", "egyptian pound", "egp"] },
@@ -82,10 +120,10 @@ const ASSET_ALIASES = [
   { symbol: "KWD", kind: "fiat", en: "Kuwaiti Dinar (KWD)", ar: "الدينار الكويتي (KWD)", terms: ["الدينار الكويتي", "دينار كويتي", "الكويت", "kwd"] },
   { symbol: "IQD", kind: "fiat", en: "Iraqi Dinar (IQD)", ar: "الدينار العراقي (IQD)", terms: ["الدينار العراقي", "دينار عراقي", "العراق", "iqd"] },
   { symbol: "LBP", kind: "fiat", en: "Lebanese Pound (LBP)", ar: "الليرة اللبنانية (LBP)", terms: ["الليرة اللبنانية", "ليرة لبنانية", "لبنان", "lbp"] },
-  // Top Cryptocurrencies
   { symbol: "BTC", kind: "crypto", en: "Bitcoin (BTC)", ar: "بيتكوين (BTC)", terms: ["البيتكوين", "بيتكوين", "بتكوين", "bitcoin", "btc"] },
   { symbol: "ETH", kind: "crypto", en: "Ethereum (ETH)", ar: "إيثيريوم (ETH)", terms: ["الإيثيريوم", "إيثيريوم", "ايثيريوم", "ايثريوم", "ethereum", "eth"] },
   { symbol: "SOL", kind: "crypto", en: "Solana (SOL)", ar: "سولانا (SOL)", terms: ["سولانا", "السولانا", "solana", "sol"] },
+  { symbol: "USDT", kind: "crypto", en: "Tether (USDT)", ar: "تيثر (USDT)", terms: ["تيثر", "usdt", "tether"] },
   { symbol: "XRP", kind: "crypto", en: "XRP (Ripple)", ar: "ريبل (XRP)", terms: ["ريبل", "الريبل", "ripple", "xrp"] },
   { symbol: "BNB", kind: "crypto", en: "BNB", ar: "عملة BNB", terms: ["بينانس", "bnb"] },
   { symbol: "TON", kind: "crypto", en: "Toncoin (TON)", ar: "تون كوين (TON)", terms: ["تونكوين", "تون كوين", "toncoin", "ton"] },
@@ -98,7 +136,6 @@ const ASSET_ALIASES = [
   { symbol: "SUI", kind: "crypto", en: "Sui (SUI)", ar: "سوي (SUI)", terms: ["سوي", "sui"] },
   { symbol: "TRX", kind: "crypto", en: "TRON (TRX)", ar: "ترون (TRX)", terms: ["ترون", "tron", "trx"] },
   { symbol: "LTC", kind: "crypto", en: "Litecoin (LTC)", ar: "لايتكوين (LTC)", terms: ["لايتكوين", "litecoin", "ltc"] },
-  // Major Global Stocks & Companies
   { symbol: "AAPL", kind: "stock", en: "Apple Inc. (AAPL)", ar: "سهم أبل (AAPL)", terms: ["سهم أبل", "سهم ابل", "أبل", "apple", "aapl"] },
   { symbol: "TSLA", kind: "stock", en: "Tesla Inc. (TSLA)", ar: "سهم تسلا (TSLA)", terms: ["سهم تسلا", "تسلا", "tesla", "tsla"] },
   { symbol: "NVDA", kind: "stock", en: "NVIDIA Corp. (NVDA)", ar: "سهم إنفيديا (NVDA)", terms: ["إنفيديا", "انفيديا", "nvidia", "nvda"] },
@@ -113,7 +150,8 @@ const ASSET_ALIASES = [
 const IGNORE_TICKERS = new Set([
   "ASK", "START", "HELP", "NEWS", "PRICE", "ANALYSIS", "RATE", "COIN", "CRYPTO",
   "WHAT", "HOW", "ABOUT", "TODAY", "NOW", "THE", "FOR", "AND", "WITH", "STATUS",
-  "CHECK", "TELL", "GIVE", "SHOW", "UPDATE", "MARKET", "LIVE", "USD",
+  "CHECK", "TELL", "GIVE", "SHOW", "UPDATE", "MARKET", "LIVE", "USD", "UPGRADE",
+  "VIP", "PRO", "WATCHLIST", "MENU", "LANG", "SUPPORT", "ADD",
 ]);
 
 export function escapeHtml(str) {
@@ -156,24 +194,20 @@ export function detectQueryLang(text, userLangCode = "") {
   return "en";
 }
 
-/**
- * Extract normalized asset descriptor from `/ask <coin>` or natural AR/EN text.
- */
 export function parseUserAssetQuery(rawText, userLangCode = "") {
   const text = String(rawText || "").trim();
   const lang = detectQueryLang(text, userLangCode);
   const cleaned = text.replace(/^\/ask(@\w+)?\s*/i, "").trim();
   const low = cleaned.toLowerCase();
 
-  // 1. Check curated Arabic & English aliases first (longest term match first)
   let bestMatch = null;
   let bestLen = 0;
   for (const entry of ASSET_ALIASES) {
     for (const term of entry.terms) {
       const tLow = term.toLowerCase();
-      const isAsciiWord = /^[a-z0-9_]+$/.test(tLow);
+      const isAsciiWord = /^[a-z0-9_.]+$/.test(tLow);
       const matched = isAsciiWord
-        ? new RegExp(`(^|[^a-z0-9_])${tLow}([^a-z0-9_]|$)`, "i").test(low)
+        ? new RegExp(`(^|[^a-z0-9_.])${tLow.replace(/\./g, "\\.")}([^a-z0-9_.]|$)`, "i").test(low)
         : low.includes(tLow);
       if (matched && tLow.length > bestLen) {
         bestLen = tLow.length;
@@ -192,7 +226,6 @@ export function parseUserAssetQuery(rawText, userLangCode = "") {
     };
   }
 
-  // 2. Fallback: extract any explicit English ticker (e.g. "وضع ARB" or "/ask RENDER")
   const tickerMatches = cleaned.match(/\b[A-Za-z][A-Za-z0-9]{1,9}\b/g) || [];
   for (const rawTok of tickerMatches) {
     const sym = rawTok.toUpperCase();
@@ -212,7 +245,7 @@ export function parseUserAssetQuery(rawText, userLangCode = "") {
 }
 
 // ---------------------------------------------------------------------------
-// Upstash Redis REST Helpers (Rate Limit 25/day + 15m Shared Cache)
+// Upstash Redis + Supabase Per-User Profile Store (Tier, Lang, Watchlist, State)
 // ---------------------------------------------------------------------------
 
 async function upstashCmd(env, commandArray, fetchImpl = fetch) {
@@ -222,20 +255,207 @@ async function upstashCmd(env, commandArray, fetchImpl = fetch) {
     return null;
   }
   try {
-    const resp = await fetchImpl(url, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${token}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(commandArray),
-    });
+    const resp = await fetchImpl(
+      url,
+      withTimeout({
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(commandArray),
+      }, 5000)
+    );
     if (!resp.ok) return null;
     const body = await resp.json();
     return body?.result ?? null;
   } catch {
     return null;
   }
+}
+
+function getSupaConfig(env) {
+  const url = String(env?.SUPABASE_URL || "").trim().replace(/\/+$/, "");
+  const key = String(env?.SUPABASE_KEY || "").trim();
+  if (!url || !key || url.toLowerCase() === "placeholder" || key.toLowerCase() === "placeholder") {
+    return null;
+  }
+  const restBase = url.endsWith("/rest/v1") ? url : `${url}/rest/v1`;
+  return {
+    restBase,
+    headers: {
+      apikey: key,
+      Authorization: `Bearer ${key}`,
+      "User-Agent": SUPABASE_SERVER_UA,
+      "Content-Type": "application/json",
+    },
+  };
+}
+
+export function normalizePlanTier(rawTier) {
+  const t = String(rawTier || "free").trim().toLowerCase();
+  if (t === "monthly_personal_bot" || t === "pro19" || t === "pro") return "monthly_personal_bot";
+  if (t === "monthly_business_vip" || t === "vip10" || t === "vip" || t === "monthly") return "monthly_business_vip";
+  return "free";
+}
+
+export function getTierMeta(planTier) {
+  return TIER_LIMITS[normalizePlanTier(planTier)] || TIER_LIMITS.free;
+}
+
+export async function loadBotUserProfile(userId, env, fetchImpl = fetch, defaultLang = "ar") {
+  const uid = String(userId || "").trim();
+  const baseProfile = {
+    telegram_user_id: uid,
+    lang: defaultLang === "en" ? "en" : "ar",
+    plan_tier: "free",
+    expires_at: null,
+    alerts_paused: false,
+    watchlist: [],
+    ui_state: {},
+    _isNew: true,
+  };
+  if (!uid) return baseProfile;
+
+  // 1. Fast path: Upstash Redis hot user profile (<50ms)
+  const rawRedis = await upstashCmd(env, ["GET", `${TG_USER_REDIS_PREFIX}${uid}`], fetchImpl);
+  if (typeof rawRedis === "string" && rawRedis.trim()) {
+    try {
+      const parsed = JSON.parse(rawRedis);
+      if (parsed && typeof parsed === "object") {
+        const merged = {
+          ...baseProfile,
+          ...parsed,
+          telegram_user_id: uid,
+          lang: parsed.lang === "en" ? "en" : "ar",
+          plan_tier: normalizePlanTier(parsed.plan_tier),
+          watchlist: Array.isArray(parsed.watchlist) ? parsed.watchlist : [],
+          ui_state: parsed.ui_state && typeof parsed.ui_state === "object" ? parsed.ui_state : {},
+          _isNew: false,
+        };
+        // Enforce expiry cleanly if expires_at is in the past
+        if (merged.plan_tier !== "free" && merged.expires_at && Date.parse(merged.expires_at) <= Date.now()) {
+          merged.plan_tier = "free";
+        }
+        return merged;
+      }
+    } catch {
+      // Fall through to Supabase
+    }
+  }
+
+  // 2. Supabase fallback (`telegram_bot_users` + linked `user_tracker_profiles`)
+  const supa = getSupaConfig(env);
+  if (supa) {
+    try {
+      const [tgResp, webResp] = await Promise.all([
+        fetchImpl(
+          `${supa.restBase}/telegram_bot_users?telegram_user_id=eq.${encodeURIComponent(uid)}&select=*&limit=1`,
+          withTimeout({ headers: supa.headers }, 4000)
+        ).catch(() => null),
+        fetchImpl(
+          `${supa.restBase}/user_tracker_profiles?telegram_chat_id=eq.${encodeURIComponent(uid)}&select=email,plan_tier,lang,watchlist&limit=1`,
+          withTimeout({ headers: supa.headers }, 4000)
+        ).catch(() => null),
+      ]);
+      if (tgResp?.ok) {
+        const rows = await tgResp.json();
+        if (Array.isArray(rows) && rows.length > 0) {
+          const r = rows[0];
+          const prof = {
+            ...baseProfile,
+            lang: r.lang === "en" ? "en" : "ar",
+            plan_tier: normalizePlanTier(r.plan_tier),
+            expires_at: r.expires_at || null,
+            alerts_paused: Boolean(r.alerts_paused),
+            watchlist: Array.isArray(r.watchlist) ? r.watchlist : [],
+            ui_state: r.ui_state && typeof r.ui_state === "object" ? r.ui_state : {},
+            _isNew: false,
+          };
+          if (prof.plan_tier !== "free" && prof.expires_at && Date.parse(prof.expires_at) <= Date.now()) {
+            prof.plan_tier = "free";
+          }
+          return prof;
+        }
+      }
+      if (webResp?.ok) {
+        const rows = await webResp.json();
+        if (Array.isArray(rows) && rows.length > 0) {
+          const w = rows[0];
+          return {
+            ...baseProfile,
+            lang: w.lang === "en" ? "en" : "ar",
+            plan_tier: normalizePlanTier(w.plan_tier),
+            watchlist: Array.isArray(w.watchlist) ? w.watchlist : [],
+            _isNew: false,
+          };
+        }
+      }
+    } catch {
+      // Keep default profile
+    }
+  }
+
+  return baseProfile;
+}
+
+export async function saveBotUserProfile(profile, env, fetchImpl = fetch) {
+  const uid = String(profile?.telegram_user_id || "").trim();
+  if (!uid) return false;
+
+  const clean = {
+    telegram_user_id: uid,
+    lang: profile.lang === "en" ? "en" : "ar",
+    plan_tier: normalizePlanTier(profile.plan_tier),
+    expires_at: profile.expires_at || null,
+    alerts_paused: Boolean(profile.alerts_paused),
+    watchlist: Array.isArray(profile.watchlist) ? profile.watchlist : [],
+    ui_state: profile.ui_state && typeof profile.ui_state === "object" ? profile.ui_state : {},
+    updated_at: new Date().toISOString(),
+  };
+
+  const ops = [
+    upstashCmd(env, ["SET", `${TG_USER_REDIS_PREFIX}${uid}`, JSON.stringify(clean)], fetchImpl),
+    upstashCmd(env, ["SADD", TG_USERS_INDEX_REDIS_KEY, uid], fetchImpl),
+  ];
+
+  const supa = getSupaConfig(env);
+  if (supa) {
+    ops.push(
+      fetchImpl(
+        `${supa.restBase}/telegram_bot_users?on_conflict=telegram_user_id`,
+        withTimeout({
+          method: "POST",
+          headers: { ...supa.headers, Prefer: "resolution=merge-duplicates,return=minimal" },
+          body: JSON.stringify({
+            telegram_user_id: uid,
+            lang: clean.lang,
+            plan_tier: clean.plan_tier,
+            expires_at: clean.expires_at,
+            alerts_paused: clean.alerts_paused,
+            watchlist: clean.watchlist,
+            ui_state: clean.ui_state,
+          }),
+        }, 4000)
+      ).catch(() => null)
+    );
+    ops.push(
+      fetchImpl(
+        `${supa.restBase}/user_tracker_profiles?telegram_chat_id=eq.${encodeURIComponent(uid)}`,
+        withTimeout({
+          method: "PATCH",
+          headers: { ...supa.headers, Prefer: "return=minimal" },
+          body: JSON.stringify({
+            lang: clean.lang,
+            watchlist: clean.watchlist,
+          }),
+        }, 4000)
+      ).catch(() => null)
+    );
+  }
+
+  await Promise.allSettled(ops);
+  return true;
 }
 
 export async function checkAndIncrementVipRateLimit(userId, env, fetchImpl = fetch, nowDate = new Date()) {
@@ -269,91 +489,119 @@ export async function setVipCachedBrief(symbol, lang, htmlText, env, fetchImpl =
 
 export async function checkVipMembership(userId, env, fetchImpl = fetch) {
   const uidStr = String(userId || "").trim();
-  if (!uidStr) return { isVip: false, reason: "missing_user_id" };
+  if (!uidStr) return { isVip: false, planTier: "free", reason: "missing_user_id" };
 
   // 1. Admin bypass
   if (env?.ADMIN_CHAT_ID && uidStr === String(env.ADMIN_CHAT_ID).trim()) {
-    return { isVip: true, reason: "admin" };
+    return { isVip: true, planTier: "monthly_personal_bot", reason: "admin" };
   }
 
-  // 2. Telegram getChatMember on VIP AR & VIP EN channels
+  // 2. Supabase `public.vip_subscriptions` check (captures exact tier VIP $10 vs Pro $19!)
+  const supa = getSupaConfig(env);
+  if (supa) {
+    try {
+      const resp = await fetchImpl(
+        `${supa.restBase}/vip_subscriptions?telegram_user_id=eq.${encodeURIComponent(uidStr)}&payment_status=in.(finished,confirmed,active)&select=id,plan_tier,expires_at&order=created_at.desc&limit=5`,
+        withTimeout({ headers: supa.headers }, 4000)
+      );
+      if (resp.ok) {
+        const rows = await resp.json();
+        if (Array.isArray(rows) && rows.length > 0) {
+          let bestTier = null;
+          for (const r of rows) {
+            if (r?.expires_at && Date.parse(r.expires_at) <= Date.now()) continue;
+            const norm = normalizePlanTier(r?.plan_tier || "monthly_business_vip");
+            if (norm === "monthly_personal_bot") {
+              return { isVip: true, planTier: "monthly_personal_bot", reason: "supabase_vip_subscription" };
+            }
+            bestTier = "monthly_business_vip";
+          }
+          if (bestTier) {
+            return { isVip: true, planTier: bestTier, reason: "supabase_vip_subscription" };
+          }
+        }
+      }
+    } catch {
+      // Continue to Telegram channel membership fallback
+    }
+  }
+
+  // 3. Telegram getChatMember on VIP AR & VIP EN / VIP_CHANNEL_ID channels
   const botToken = String(env?.TELEGRAM_BOT_TOKEN || "").trim();
-  const vipChannels = [env?.TELEGRAM_VIP_CHANNEL_AR, env?.TELEGRAM_VIP_CHANNEL_EN]
+  const vipChannels = [env?.TELEGRAM_VIP_CHANNEL_AR, env?.TELEGRAM_VIP_CHANNEL_EN, env?.VIP_CHANNEL_ID]
     .map((c) => String(c || "").trim())
-    .filter((c) => c && c.toLowerCase() !== "placeholder");
+    .filter((c, i, arr) => c && c.toLowerCase() !== "placeholder" && arr.indexOf(c) === i);
 
   if (botToken && vipChannels.length > 0) {
     for (const chatId of vipChannels) {
       try {
         const resp = await fetchImpl(
-          `https://api.telegram.org/bot${botToken}/getChatMember?chat_id=${encodeURIComponent(chatId)}&user_id=${encodeURIComponent(uidStr)}`
+          `https://api.telegram.org/bot${botToken}/getChatMember?chat_id=${encodeURIComponent(chatId)}&user_id=${encodeURIComponent(uidStr)}`,
+          withTimeout({}, 4000)
         );
         if (!resp.ok) continue;
         const data = await resp.json();
         const status = String(data?.result?.status || "").toLowerCase();
         if (data?.ok && VIP_MEMBER_STATUSES.has(status)) {
-          return { isVip: true, reason: `telegram_channel:${chatId}` };
+          return { isVip: true, planTier: "monthly_business_vip", reason: `telegram_channel:${chatId}` };
         }
       } catch {
-        // Continue to next channel / Supabase fallback
+        // Continue safely
       }
     }
   }
 
-  // 3. Supabase `public.vip_subscriptions` fallback check
-  const supaUrl = String(env?.SUPABASE_URL || "").trim().replace(/\/+$/, "");
-  const supaKey = String(env?.SUPABASE_KEY || "").trim();
-  if (supaUrl && supaKey && supaUrl.toLowerCase() !== "placeholder" && supaKey.toLowerCase() !== "placeholder") {
-    const restBase = supaUrl.endsWith("/rest/v1") ? supaUrl : `${supaUrl}/rest/v1`;
-    try {
-      const resp = await fetchImpl(
-        `${restBase}/vip_subscriptions?telegram_user_id=eq.${encodeURIComponent(uidStr)}&payment_status=in.(finished,confirmed,active)&select=id,expires_at&limit=1`,
-        {
-          headers: {
-            apikey: supaKey,
-            Authorization: `Bearer ${supaKey}`,
-            "User-Agent": SUPABASE_SERVER_UA,
-          },
-        }
-      );
-      if (resp.ok) {
-        const rows = await resp.json();
-        if (Array.isArray(rows) && rows.length > 0) {
-          const exp = rows[0]?.expires_at;
-          if (!exp || Date.parse(exp) > Date.now()) {
-            return { isVip: true, reason: "supabase_vip_subscription" };
-          }
-        }
-      }
-    } catch {
-      // Fall through safely to non-VIP
-    }
-  }
-
-  return { isVip: false, reason: "non_vip" };
+  return { isVip: false, planTier: "free", reason: "non_vip" };
 }
 
 // ---------------------------------------------------------------------------
-// Live Asset Snapshot & Targeted RSS Headlines
+// Decoupled Batch Market Feed Cache (45s In-Memory Isolate Cache)
 // ---------------------------------------------------------------------------
 
-export async function resolveLiveAssetSnapshot(parsedAsset, env, fetchImpl = fetch) {
-  const sym = parsedAsset.symbol;
+async function getBatchMarketFeeds(env, fetchImpl = fetch) {
   const liveUrl = String(env?.LIVE_FEED_URL || LIVE_FEED_DEFAULT).trim();
   const catalogUrl = String(env?.CATALOG_FEED_URL || CATALOG_FEED_DEFAULT).trim();
+  const cacheKey = `${liveUrl}|${catalogUrl}`;
+  const isProdFetch = fetchImpl === fetch;
+
+  if (
+    isProdFetch &&
+    _memoryFeedCache.key === cacheKey &&
+    _memoryFeedCache.liveFeed &&
+    Date.now() - _memoryFeedCache.fetchedAt < BATCH_FEED_CACHE_TTL_MS
+  ) {
+    return { liveFeed: _memoryFeedCache.liveFeed, catalogFeed: _memoryFeedCache.catalogFeed };
+  }
 
   let liveFeed = null;
   let catalogFeed = null;
   try {
     const [rLive, rCat] = await Promise.all([
-      fetchImpl(liveUrl, { cf: { cacheTtl: 60, cacheEverything: true } }).catch(() => null),
-      fetchImpl(catalogUrl, { cf: { cacheTtl: 90, cacheEverything: true } }).catch(() => null),
+      fetchImpl(liveUrl, withTimeout({ cf: { cacheTtl: 45, cacheEverything: true } }, 5000)).catch(() => null),
+      fetchImpl(catalogUrl, withTimeout({ cf: { cacheTtl: 60, cacheEverything: true } }, 5000)).catch(() => null),
     ]);
     if (rLive?.ok) liveFeed = await rLive.json();
     if (rCat?.ok) catalogFeed = await rCat.json();
   } catch {
-    // Graceful fallback below
+    // Use stale cache if present
   }
+
+  if (isProdFetch && (liveFeed || catalogFeed)) {
+    _memoryFeedCache.key = cacheKey;
+    _memoryFeedCache.fetchedAt = Date.now();
+    _memoryFeedCache.liveFeed = liveFeed || _memoryFeedCache.liveFeed;
+    _memoryFeedCache.catalogFeed = catalogFeed || _memoryFeedCache.catalogFeed;
+  }
+
+  return {
+    liveFeed: liveFeed || (isProdFetch ? _memoryFeedCache.liveFeed : null),
+    catalogFeed: catalogFeed || (isProdFetch ? _memoryFeedCache.catalogFeed : null),
+  };
+}
+
+export async function resolveLiveAssetSnapshot(parsedAsset, env, fetchImpl = fetch) {
+  const sym = parsedAsset.symbol;
+  const { liveFeed, catalogFeed } = await getBatchMarketFeeds(env, fetchImpl);
 
   // Gold & Silver
   if (sym === "XAU") {
@@ -364,6 +612,7 @@ export async function resolveLiveAssetSnapshot(parsedAsset, env, fetchImpl = fet
       return {
         found: true,
         symbol: "XAU",
+        numericPrice: Number(oz),
         priceFormattedEn: `$${oz} / oz (21K: $${g21 || "-"} · 24K: $${g24 || "-"})`,
         priceFormattedAr: `$${oz} للأونصة (عيار 21: $${g21 || "-"} · عيار 24: $${g24 || "-"})`,
         change24h: null,
@@ -372,11 +621,12 @@ export async function resolveLiveAssetSnapshot(parsedAsset, env, fetchImpl = fet
     }
   }
   if (sym === "XAG") {
-    const xag = catalogFeed?.metals?.XAG_OZ?.price_usd;
+    const xag = catalogFeed?.metals?.XAG_OZ?.price_usd || liveFeed?.gold?.prices?.XAG_OZ;
     if (xag) {
       return {
         found: true,
         symbol: "XAG",
+        numericPrice: Number(xag),
         priceFormattedEn: `$${xag} / oz`,
         priceFormattedAr: `$${xag} للأونصة`,
         change24h: null,
@@ -405,6 +655,7 @@ export async function resolveLiveAssetSnapshot(parsedAsset, env, fetchImpl = fet
       return {
         found: true,
         symbol: sym,
+        numericPrice: Number(cleanRate),
         priceFormattedEn: sym === "SYP" ? `${cleanRate} SYP${sypExtraEn}` : `1 USD = ${cleanRate} ${sym}`,
         priceFormattedAr: sym === "SYP" ? `${cleanRate} ل.س${sypExtraAr}` : `1 دولار = ${cleanRate} ${sym}`,
         change24h: null,
@@ -418,12 +669,13 @@ export async function resolveLiveAssetSnapshot(parsedAsset, env, fetchImpl = fet
   const cmcCoin = Array.isArray(catalogFeed?.crypto)
     ? catalogFeed.crypto.find((c) => String(c.symbol || "").toUpperCase() === sym)
     : null;
-  if (cmcCoin || liveCrypto) {
-    const price = liveCrypto?.spot_price || cmcCoin?.price_usd;
+  if (cmcCoin || liveCrypto || sym === "USDT") {
+    const price = liveCrypto?.spot_price || cmcCoin?.price_usd || "1.0000";
     const chg = cmcCoin?.change_24h_pct || null;
     return {
       found: true,
       symbol: sym,
+      numericPrice: Number(price),
       name: cmcCoin?.name || parsedAsset.displayEn,
       rank: cmcCoin?.rank || null,
       priceFormattedEn: `$${price}`,
@@ -433,12 +685,12 @@ export async function resolveLiveAssetSnapshot(parsedAsset, env, fetchImpl = fet
     };
   }
 
-  // Long-tail Crypto fallback via CoinMarketCap public search / CoinGecko
+  // Long-tail Crypto fallback via CoinGecko
   if (parsedAsset.kind !== "stock") {
     try {
       const cgResp = await fetchImpl(
         `https://api.coingecko.com/api/v3/search?query=${encodeURIComponent(sym)}`,
-        { headers: { Accept: "application/json", "User-Agent": "RatePath-VIPBot/2.0" } }
+        withTimeout({ headers: { Accept: "application/json", "User-Agent": "RatePath-VIPBot/2.0" } }, 5000)
       );
       if (cgResp.ok) {
         const cgData = await cgResp.json();
@@ -447,7 +699,8 @@ export async function resolveLiveAssetSnapshot(parsedAsset, env, fetchImpl = fet
         ) || cgData?.coins?.[0];
         if (match?.id) {
           const pResp = await fetchImpl(
-            `https://api.coingecko.com/api/v3/simple/price?ids=${encodeURIComponent(match.id)}&vs_currencies=usd&include_24hr_change=true`
+            `https://api.coingecko.com/api/v3/simple/price?ids=${encodeURIComponent(match.id)}&vs_currencies=usd&include_24hr_change=true`,
+            withTimeout({}, 5000)
           );
           if (pResp.ok) {
             const pData = await pResp.json();
@@ -462,6 +715,7 @@ export async function resolveLiveAssetSnapshot(parsedAsset, env, fetchImpl = fet
               return {
                 found: true,
                 symbol: String(match.symbol || sym).toUpperCase(),
+                numericPrice: p,
                 name: match.name || sym,
                 rank: match.market_cap_rank || null,
                 priceFormattedEn: `$${pStr}`,
@@ -474,15 +728,15 @@ export async function resolveLiveAssetSnapshot(parsedAsset, env, fetchImpl = fet
         }
       }
     } catch {
-      // Fall through to global stock lookup
+      // Fall through to stock lookup
     }
   }
 
-  // Global Stocks, ETFs & Company Quotes fallback via Yahoo Finance public chart API
+  // Global Stocks via Yahoo Finance chart API
   try {
     const yResp = await fetchImpl(
       `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(sym)}?range=5d&interval=1d`,
-      { headers: { Accept: "application/json", "User-Agent": "Mozilla/5.0 RatePathBot/2.0" } }
+      withTimeout({ headers: { Accept: "application/json", "User-Agent": "Mozilla/5.0 RatePathBot/2.0" } }, 5000)
     );
     if (yResp.ok) {
       const yData = await yResp.json();
@@ -497,6 +751,7 @@ export async function resolveLiveAssetSnapshot(parsedAsset, env, fetchImpl = fet
         return {
           found: true,
           symbol: String(meta?.symbol || sym).toUpperCase(),
+          numericPrice: p,
           name: meta?.shortName || parsedAsset.displayEn || sym,
           rank: null,
           priceFormattedEn: `${pStr} ${curr}`,
@@ -510,7 +765,7 @@ export async function resolveLiveAssetSnapshot(parsedAsset, env, fetchImpl = fet
     // Graceful miss
   }
 
-  return { found: false, symbol: sym, priceFormattedEn: "N/A", priceFormattedAr: "غير متوفر حالياً", change24h: null, source: "none" };
+  return { found: false, symbol: sym, numericPrice: null, priceFormattedEn: "N/A", priceFormattedAr: "غير متوفر حالياً", change24h: null, source: "none" };
 }
 
 async function fetchTargetedAssetHeadlines(parsedAsset, fetchImpl = fetch) {
@@ -524,9 +779,9 @@ async function fetchTargetedAssetHeadlines(parsedAsset, fetchImpl = fetch) {
 
   const rssUrl = `https://news.google.com/rss/search?q=${encodeURIComponent(searchTopic)}&hl=en-US&gl=US&ceid=US:en`;
   try {
-    const resp = await fetchImpl(rssUrl, {
+    const resp = await fetchImpl(rssUrl, withTimeout({
       headers: { "User-Agent": "RatePath-VIPBot/2.0", Accept: "application/rss+xml, text/xml" },
-    });
+    }, 5000));
     if (!resp.ok) return [];
     const xml = await resp.text();
     const titles = [];
@@ -543,7 +798,7 @@ async function fetchTargetedAssetHeadlines(parsedAsset, fetchImpl = fetch) {
 }
 
 // ---------------------------------------------------------------------------
-// VIP AI Briefing Generator (Groq llama-3.3-70b-versatile -> Gemini Flash -> Fallback)
+// VIP AI Briefing Generator (Groq -> Gemini Flash -> Deterministic Fallback)
 // ---------------------------------------------------------------------------
 
 function formatDirectionBadge(change24h) {
@@ -587,7 +842,6 @@ async function generateVipAiBrief(parsedAsset, snapshot, headlines, env, fetchIm
     recent_headlines: headlines,
   });
 
-  // 1. Primary: Groq 3-key failover (`llama-3.3-70b-versatile` / `openai/gpt-oss-120b`)
   const groqKeys = [env?.GROQ_API_KEY_1, env?.GROQ_API_KEY_2, env?.GROQ_API_KEY_3, env?.GROQ_API_KEY]
     .map((k) => String(k || "").trim())
     .filter((k, i, arr) => k && k.toLowerCase() !== "placeholder" && arr.indexOf(k) === i);
@@ -620,12 +874,11 @@ async function generateVipAiBrief(parsedAsset, snapshot, headlines, env, fetchIm
           return sanitizeTelegramHtml(sanitizeSyriaEmoji(normalizePreserveNewlines(content), lang));
         }
       } catch {
-        // Try next model / key / Gemini fallback
+        // Try next key/model
       }
     }
   }
 
-  // 2. Secondary: Gemini 3-key Flash Fallback
   const geminiKeys = [env?.GEMINI_API_KEY_1, env?.GEMINI_API_KEY_2, env?.GEMINI_API_KEY_3, env?.GEMINI_API_KEY]
     .map((k) => String(k || "").trim())
     .filter((k, i, arr) => k && k.toLowerCase() !== "placeholder" && arr.indexOf(k) === i);
@@ -650,12 +903,11 @@ async function generateVipAiBrief(parsedAsset, snapshot, headlines, env, fetchIm
           return sanitizeTelegramHtml(sanitizeSyriaEmoji(normalizePreserveNewlines(textOut), lang));
         }
       } catch {
-        // Continue to next model / key / deterministic fallback
+        // Fallback
       }
     }
   }
 
-  // 3. Deterministic structured fallback (guaranteed 3-part HTML with \n\n spacing)
   const assetPrefix = snapshot.symbol === "SYP" ? "🟢 " : "";
   if (isAr) {
     const newsLines =
@@ -687,33 +939,462 @@ async function generateVipAiBrief(parsedAsset, snapshot, headlines, env, fetchIm
 }
 
 // ---------------------------------------------------------------------------
-// Message Formatters (Welcome / Non-VIP Lock / Quota)
+// Bilingual Conversion Views & Inline Keyboards (AR Default + EN Toggle)
 // ---------------------------------------------------------------------------
 
-export function buildWelcomeMessage(lang, isVip) {
+export function buildWelcomeView(profile, publicSiteUrl = "https://ratepathlive.com") {
+  const siteUrl = String(publicSiteUrl || "https://ratepathlive.com").replace(/\/+$/, "");
+  const lang = profile?.lang === "en" ? "en" : "ar";
+  const tierMeta = getTierMeta(profile?.plan_tier);
+  const currentCount = Array.isArray(profile?.watchlist) ? profile.watchlist.length : 0;
+  const maxLimit = tierMeta.maxAssets;
+  const isFree = normalizePlanTier(profile?.plan_tier) === "free";
+
   if (lang === "ar") {
-    const badge = isVip ? "✅ <b>حسابك مفعّل على باقة VIP</b>" : "🔒 <b>التحليل الفوري بالذكاء الاصطناعي متاح لمشتركي VIP</b>";
-    return normalizePreserveNewlines(
-      `👋 <b>أهلاً بك في بوت ريت باث (RatePath)</b>\n\n` +
-        `${badge}\n\n` +
-        `💬 اكتب اسم أي عملة أو معدن مباشرة، مثل:\n` +
-        `• اخبار عملة سولانا\n` +
-        `• وضع XRP\n` +
-        `• تحليل الذهب\n` +
-        `• الليرة السورية\n` +
-        `• /ask BTC`
-    );
+    const planLabel = isFree ? "المجانية" : tierMeta.labelAr;
+    const text =
+      `أهلاً بك في RatePath Terminal ⚡\n\n` +
+      `منصّتك الفورية لمتابعة أسعار الصرف، الذهب، والكريبتو وتلقي تنبيهات الأسعار مباشرة على تيليجرام — بدون ضوضاء أو إعلانات مزعجة.\n\n` +
+      `📊 باقتك الحالية: ${planLabel} (${currentCount} / ${maxLimit} أصول)\n\n` +
+      `ابدأ الآن بضغطة واحدة:\n` +
+      `• اختر 3 أصول مجانية لمتابعتها (مثل: الذهب XAU، البيتكوين BTC، الدولار مقابل الليرة).\n` +
+      `• اضبط السعر المستهدف ليصلك تنبيه فوري لحظة الاختراق أو الهبوط.\n\n` +
+      `🌐 لوحة الأسعار والمحوّل المباشر:\n` +
+      `${siteUrl}`;
+
+    const addBtnLabel =
+      currentCount === 0
+        ? "➕ إضافة أول أصل (مجاني)"
+        : `➕ إضافة أصل جديد (${currentCount}/${maxLimit})`;
+
+    return {
+      text,
+      replyMarkup: {
+        inline_keyboard: [
+          [{ text: addBtnLabel, callback_data: "cb:add_menu" }],
+          [
+            { text: `📊 قائمة متابعتي (${currentCount}/${maxLimit})`, callback_data: "cb:watchlist" },
+            { text: "🌐 فتح الموقع المباشر", url: siteUrl },
+          ],
+          [
+            { text: "💎 مزايا باقة VIP ($10/شهر)", callback_data: "cb:upgrade_vip" },
+            { text: "🇬🇧 English", callback_data: "cb:lang:en" },
+          ],
+        ],
+      },
+    };
   }
-  const badgeEn = isVip ? "✅ <b>Your RatePath VIP access is active</b>" : "🔒 <b>On-demand AI news &amp; flow briefings are exclusive to RatePath VIP</b>";
-  return normalizePreserveNewlines(
-    `👋 <b>Welcome to the RatePath Interactive Desk</b>\n\n` +
-      `${badgeEn}\n\n` +
-      `💬 Send any asset name or ticker directly, such as:\n` +
-      `• /ask SOL\n` +
-      `• XRP outlook\n` +
-      `• Gold analysis\n` +
-      `• SYP rate`
-  );
+
+  const textEn =
+    `Welcome to RatePath Terminal ⚡\n\n` +
+    `Your instant desk to track live FX, Gold, Silver & Crypto and receive real-time price alerts right on Telegram — zero noise, zero intrusive ads.\n\n` +
+    `📊 Current Plan: ${tierMeta.labelEn} (${currentCount} / ${maxLimit} assets)\n\n` +
+    `Get started in one tap:\n` +
+    `• Pick 3 free assets to track (e.g., Gold XAU, Bitcoin BTC, USD to TRY/SYP/EGP).\n` +
+    `• Set a target price for instant breakout or drop alerts.\n\n` +
+    `🌐 Live Rates & Instant Converter:\n` +
+    `${siteUrl}`;
+
+  const addBtnLabelEn =
+    currentCount === 0
+      ? "➕ Add First Asset (Free)"
+      : `➕ Add New Asset (${currentCount}/${maxLimit})`;
+
+  return {
+    text: textEn,
+    replyMarkup: {
+      inline_keyboard: [
+        [{ text: addBtnLabelEn, callback_data: "cb:add_menu" }],
+        [
+          { text: `📊 My Watchlist (${currentCount}/${maxLimit})`, callback_data: "cb:watchlist" },
+          { text: "🌐 Open Live Site", url: siteUrl },
+        ],
+        [
+          { text: "💎 VIP Plan Perks ($10/mo)", callback_data: "cb:upgrade_vip" },
+          { text: "🇸🇦 العربية", callback_data: "cb:lang:ar" },
+        ],
+      ],
+    },
+  };
+}
+
+export function buildWelcomeMessage(lang, isVip) {
+  const view = buildWelcomeView({
+    lang: lang === "en" ? "en" : "ar",
+    plan_tier: isVip ? "monthly_business_vip" : "free",
+    watchlist: [],
+  });
+  return view.text;
+}
+
+export function buildFreeLimitPaywallView(profile) {
+  const lang = profile?.lang === "en" ? "en" : "ar";
+  const wl = Array.isArray(profile?.watchlist) ? profile.watchlist : [];
+  const labelOf = (idx) => {
+    const it = wl[idx];
+    if (!it) return "—";
+    const nm = lang === "ar" ? it.name_ar || it.symbol : it.name_en || it.symbol;
+    return nm.includes(it.symbol) ? nm : `${nm} (${it.symbol})`;
+  };
+
+  if (lang === "ar") {
+    const text =
+      `🔒 وصلت للحد الأقصى للباقة المجانية (3 / 3 أصول)\n\n` +
+      `الأصول النشطة في قائمتك حالياً:\n` +
+      `1️⃣ ${escapeHtml(labelOf(0))}\n` +
+      `2️⃣ ${escapeHtml(labelOf(1))}\n` +
+      `3️⃣ ${escapeHtml(labelOf(2))}\n\n` +
+      `تحتاج لمتابعة المزيد من العملات، الذهب، أو الكريبتو؟\n` +
+      `بترقية حسابك إلى باقة Business VIP (+ البوت الشخصي) ستحصل فوراً على:\n\n` +
+      `✅ متابعة حتى 10 أصول مخصّصة بتنبيهات لحظية.\n` +
+      `✅ دخول مباشر لقناة RatePath VIP الخاصة (تحليلات كمّية + فروقات التمويل Funding).\n` +
+      `✅ أولوية سرعة في إرسال تنبيهات كسر الأسعار.\n\n` +
+      `💰 الاشتراك الشهري: 10$ فقط بعملة USDT (تفعيل فوري).`;
+
+    return {
+      text,
+      replyMarkup: {
+        inline_keyboard: [
+          [{ text: "🚀 الترقية الآن — 10$ USDT", callback_data: "cb:upgrade_vip" }],
+          [{ text: "🔄 استبدال أصل من قائمتي الحالية", callback_data: "cb:replace_menu" }],
+          [{ text: "👑 مقارنة مع باقة Pro (50 أصل — 19$)", callback_data: "cb:upgrade_pro" }],
+        ],
+      },
+    };
+  }
+
+  const textEn =
+    `🔒 You've Reached the Free Plan Limit (3 / 3 assets)\n\n` +
+    `Your active watchlist right now:\n` +
+    `1️⃣ ${escapeHtml(labelOf(0))}\n` +
+    `2️⃣ ${escapeHtml(labelOf(1))}\n` +
+    `3️⃣ ${escapeHtml(labelOf(2))}\n\n` +
+    `Need to track more currencies, Gold, Silver, or Crypto?\n` +
+    `Upgrade to Business VIP (+ Personal Bot) and unlock immediately:\n\n` +
+    `✅ Track up to 10 custom assets with real-time alerts.\n` +
+    `✅ Instant access to the private RatePath VIP Channel (Quant models + 8h Funding spreads).\n` +
+    `✅ Priority alert delivery speed on breakout levels.\n\n` +
+    `💰 Monthly Plan: Just $10 USDT (instant activation).`;
+
+  return {
+    text: textEn,
+    replyMarkup: {
+      inline_keyboard: [
+        [{ text: "🚀 Upgrade Now — $10 USDT", callback_data: "cb:upgrade_vip" }],
+        [{ text: "🔄 Replace an Existing Asset", callback_data: "cb:replace_menu" }],
+        [{ text: "👑 Compare with Pro Plan (50 Assets — $19)", callback_data: "cb:upgrade_pro" }],
+      ],
+    },
+  };
+}
+
+async function resolveUsdtCheckoutUrl(userId, planTier, lang, env, fetchImpl = fetch) {
+  const siteBase = String(env?.PUBLIC_SITE_URL || "https://ratepathlive.com").replace(/\/+$/, "");
+  try {
+    const session = await createVipCheckoutSession(
+      {
+        plan_tier: planTier,
+        lang,
+        pay_currency: "usdttrc20",
+        telegram_user_id: String(userId || ""),
+      },
+      env,
+      fetchImpl
+    );
+    if (session?.status === 200 && session?.payload?.invoice_url) {
+      return {
+        url: session.payload.invoice_url,
+        orderId: session.payload.order_id,
+        liveInvoice: true,
+      };
+    }
+  } catch {
+    // Graceful fallback below
+  }
+
+  const staticFallback =
+    planTier === "monthly_personal_bot"
+      ? String(env?.NOWPAYMENTS_PRO_URL || env?.NOWPAYMENTS_VIP_URL || "").trim()
+      : String(env?.NOWPAYMENTS_VIP_URL || "").trim();
+  if (/^https:\/\//i.test(staticFallback) && !/placeholder|your_/i.test(staticFallback)) {
+    return { url: staticFallback, orderId: null, liveInvoice: false };
+  }
+  return {
+    url: `${siteBase}/?lang=${lang}#personal-bot-hub`,
+    orderId: null,
+    liveInvoice: false,
+  };
+}
+
+export async function buildUpgradeVipView(userId, lang, env, fetchImpl = fetch) {
+  const isAr = lang !== "en";
+  const checkout = await resolveUsdtCheckoutUrl(userId, "monthly_business_vip", isAr ? "ar" : "en", env, fetchImpl);
+
+  if (isAr) {
+    const text =
+      `💎 باقة Business VIP + البوت الشخصي\n` +
+      `السعر: 10$ USDT / شهرياً — بدون تجديد تلقائي إجباري\n\n` +
+      `ماذا يُفتح لك فور إتمام الدفع؟\n` +
+      `━━━━━━━━━━━━━━━━━━\n` +
+      `🤖 البوت الشخصي: متابعة وتنبيهات فورية لـ 10 أصول (عملات، ذهب، كريبتو).\n` +
+      `📡 قناة VIP الخاصة: ملخصات السوق اليومية، محفّزات الاقتصاد الكلي، وفروقات التمويل (8h Funding).\n` +
+      `⚡ تنبيهات كسر السعر: إشعار لحظي عند صعود أو هبوط الأصل عن السعر الذي تحدده.\n` +
+      `━━━━━━━━━━━━━━━━━━\n\n` +
+      `💳 الشبكات المدعومة للدفع المباشر (NOWPayments):\n` +
+      `• USDT (TRC-20 • TRON)\n` +
+      `• USDT (BEP-20 • BSC)\n` +
+      `• USDT (TON • Telegram)\n` +
+      `• USDT (Solana / Arbitrum)\n\n` +
+      `📌 خطوات التفعيل (أقل من دقيقتين):\n` +
+      `1. اضغط على زر "ادفع 10$ USDT الآن".\n` +
+      `2. اختر الشبكة المفضّلة لديك وأرسل المبلغ.\n` +
+      `3. يتم تفعيل حسابك وإرسال رابط قناة VIP تلقائياً فور تأكيد الشبكة.\n\n` +
+      `⚖️ ملاحظة شفافة: الاشتراك هو لخدمة برمجية لمتابعة البيانات وتنبيهات الأسعار فقط، ولا يُعد نصيحة استثمارية أو ضماناً للربح.`;
+
+    return {
+      text,
+      checkoutUrl: checkout.url,
+      orderId: checkout.orderId,
+      replyMarkup: {
+        inline_keyboard: [
+          [{ text: "💳 ادفع 10$ USDT الآن (تفعيل فوري)", url: checkout.url }],
+          [{ text: "👑 أريد باقة Pro — 50 أصل + أسهم وأخبار (19$)", callback_data: "cb:upgrade_pro" }],
+          [
+            { text: "💬 تواصل مع الدعم", callback_data: "cb:support" },
+            { text: "🔙 رجوع", callback_data: "cb:home" },
+          ],
+        ],
+      },
+    };
+  }
+
+  const textEn =
+    `💎 Business VIP + Personal Bot\n` +
+    `Price: $10 USDT / month — no forced auto-renewal\n\n` +
+    `What unlocks immediately after payment?\n` +
+    `━━━━━━━━━━━━━━━━━━\n` +
+    `🤖 Personal Bot: Instant tracking & alerts for 10 custom assets (FX, Gold, Crypto).\n` +
+    `📡 Private VIP Channel: Daily market summaries, macro catalysts & 8h Funding spreads.\n` +
+    `⚡ Breakout Alerts: Instant ping the moment your target price is crossed.\n` +
+    `━━━━━━━━━━━━━━━━━━\n\n` +
+    `💳 Supported Direct USDT Networks (NOWPayments):\n` +
+    `• USDT (TRC-20 • TRON)\n` +
+    `• USDT (BEP-20 • BSC)\n` +
+    `• USDT (TON • Telegram)\n` +
+    `• USDT (Solana / Arbitrum)\n\n` +
+    `📌 Activation Steps (under 2 minutes):\n` +
+    `1. Tap "Pay $10 USDT Now".\n` +
+    `2. Choose your preferred network and send USDT.\n` +
+    `3. Your account upgrades and your single-use VIP invite link arrives automatically once confirmed.\n\n` +
+    `⚖️ Transparent Notice: Subscription covers market data tracking & price alert software only — not financial advice or profit guarantees.`;
+
+  return {
+    text: textEn,
+    checkoutUrl: checkout.url,
+    orderId: checkout.orderId,
+    replyMarkup: {
+      inline_keyboard: [
+        [{ text: "💳 Pay $10 USDT Now (Instant Activation)", url: checkout.url }],
+        [{ text: "👑 Upgrade to Pro — 50 Assets + Stocks & News ($19)", callback_data: "cb:upgrade_pro" }],
+        [
+          { text: "💬 Contact Support", callback_data: "cb:support" },
+          { text: "🔙 Back", callback_data: "cb:home" },
+        ],
+      ],
+    },
+  };
+}
+
+export async function buildUpgradeProView(userId, lang, env, fetchImpl = fetch) {
+  const isAr = lang !== "en";
+  const checkout = await resolveUsdtCheckoutUrl(userId, "monthly_personal_bot", isAr ? "ar" : "en", env, fetchImpl);
+
+  if (isAr) {
+    const text =
+      `👑 باقة Personal Bot Pro + قناة VIP\n` +
+      `السعر: 19$ USDT / شهرياً — بدون تجديد تلقائي إجباري\n\n` +
+      `الفرق بين الباقتين:\n` +
+      `━━━━━━━━━━━━━━━━━━\n` +
+      `💎 Business VIP (10$): 10 أصول + قناة VIP + تنبيهات فورية.\n` +
+      `👑 Personal Bot Pro (19$): 50 أصلاً + أسهم الشركات العالمية (AAPL/TSLA/NVDA/أرامكو) + أخبار الشركات + دخول كامل لقناة VIP + أعلى أولوية سرعة.\n` +
+      `━━━━━━━━━━━━━━━━━━\n\n` +
+      `💳 الدفع المباشر عبر NOWPayments (TRC-20 / BEP-20 / TON / SOL / ARB) والتفعيل تلقائي فور تأكيد الشبكة.\n\n` +
+      `⚖️ ملاحظة شفافة: خدمة برمجية لمتابعة البيانات وتنبيهات الأسعار فقط وليست نصيحة استثمارية.`;
+
+    return {
+      text,
+      checkoutUrl: checkout.url,
+      orderId: checkout.orderId,
+      replyMarkup: {
+        inline_keyboard: [
+          [{ text: "💳 ادفع 19$ USDT الآن (تفعيل Pro فوري)", url: checkout.url }],
+          [{ text: "💎 العودة لباقة Business VIP (10$ USDT)", callback_data: "cb:upgrade_vip" }],
+          [
+            { text: "💬 تواصل مع الدعم", callback_data: "cb:support" },
+            { text: "🔙 رجوع", callback_data: "cb:home" },
+          ],
+        ],
+      },
+    };
+  }
+
+  const textEn =
+    `👑 Personal Bot Pro + VIP Channel\n` +
+    `Price: $19 USDT / month — no forced auto-renewal\n\n` +
+    `Plan Comparison:\n` +
+    `━━━━━━━━━━━━━━━━━━\n` +
+    `💎 Business VIP ($10): 10 assets + VIP Channel + priority alerts.\n` +
+    `👑 Personal Bot Pro ($19): 50 assets + Global Stocks (AAPL/TSLA/NVDA/Aramco) + Company News + full VIP Channel + top alert priority.\n` +
+    `━━━━━━━━━━━━━━━━━━\n\n` +
+    `💳 Direct USDT checkout via NOWPayments (TRC-20 / BEP-20 / TON / SOL / ARB) with automatic activation.\n\n` +
+    `⚖️ Transparent Notice: Data monitoring & alert software only — not investment advice.`;
+
+  return {
+    text: textEn,
+    checkoutUrl: checkout.url,
+    orderId: checkout.orderId,
+    replyMarkup: {
+      inline_keyboard: [
+        [{ text: "💳 Pay $19 USDT Now (Instant Pro)", url: checkout.url }],
+        [{ text: "💎 Switch to Business VIP ($10 USDT)", callback_data: "cb:upgrade_vip" }],
+        [
+          { text: "💬 Contact Support", callback_data: "cb:support" },
+          { text: "🔙 Back", callback_data: "cb:home" },
+        ],
+      ],
+    },
+  };
+}
+
+function buildAddAssetPickerView(profile) {
+  const isAr = profile.lang !== "en";
+  const tierMeta = getTierMeta(profile.plan_tier);
+  const existingSyms = new Set((profile.watchlist || []).map((w) => String(w.symbol).toUpperCase()));
+  const count = existingSyms.size;
+
+  const buttons = [];
+  let row = [];
+  for (const a of POPULAR_ASSETS) {
+    const label = `${existingSyms.has(a.symbol) ? "✓ " : ""}${isAr ? a.ar : a.en}`;
+    row.push({ text: label, callback_data: `cb:add_pick:${a.symbol}` });
+    if (row.length === 2) {
+      buttons.push(row);
+      row = [];
+    }
+  }
+  if (row.length) buttons.push(row);
+  buttons.push([
+    { text: isAr ? "✏️ إدخال رمز عملة/سهم مخصص" : "✏️ Enter Custom Symbol", callback_data: "cb:add_custom" },
+  ]);
+  buttons.push([
+    { text: isAr ? `📊 قائمتي (${count}/${tierMeta.maxAssets})` : `📊 My Watchlist (${count}/${tierMeta.maxAssets})`, callback_data: "cb:watchlist" },
+    { text: isAr ? "🔙 الرئيسية" : "🔙 Home", callback_data: "cb:home" },
+  ]);
+
+  const text = isAr
+    ? `➕ <b>اختر أصلاً لإضافته إلى قائمة المتابعة (${count}/${tierMeta.maxAssets})</b>\n\nاضغط على أي عملة أو معدن أدناه لإضافته فوراً وضبط سعر التنبيه:`
+    : `➕ <b>Pick an Asset to Track (${count}/${tierMeta.maxAssets})</b>\n\nTap any currency, metal, crypto, or stock below to add it and set a price alert:`;
+
+  return { text, replyMarkup: { inline_keyboard: buttons } };
+}
+
+function buildWatchlistView(profile, liveFeed, catalogFeed) {
+  const isAr = profile.lang !== "en";
+  const tierMeta = getTierMeta(profile.plan_tier);
+  const items = Array.isArray(profile.watchlist) ? profile.watchlist : [];
+
+  const lines = items.map((it, idx) => {
+    const sym = String(it.symbol || "").toUpperCase();
+    const hi = it.alert_above ? ` ▲≥<code>${escapeHtml(it.alert_above)}</code>` : "";
+    const lo = it.alert_below ? ` 🔻≤<code>${escapeHtml(it.alert_below)}</code>` : "";
+    let spotTag = "";
+    if (sym === "XAU" && liveFeed?.gold?.prices?.XAU_OZ) spotTag = ` ($${liveFeed.gold.prices.XAU_OZ})`;
+    else if (sym === "XAG" && catalogFeed?.metals?.XAG_OZ?.price_usd) spotTag = ` ($${catalogFeed.metals.XAG_OZ.price_usd})`;
+    else if (liveFeed?.crypto?.assets?.[sym]?.spot_price) spotTag = ` ($${liveFeed.crypto.assets[sym].spot_price})`;
+    else if (catalogFeed?.fiat?.[sym]?.units_per_usd) spotTag = ` (${catalogFeed.fiat[sym].units_per_usd})`;
+    else if (liveFeed?.fiat?.rates?.[sym]?.units_per_usd) spotTag = ` (${liveFeed.fiat.rates[sym].units_per_usd})`;
+    else if (sym === "USDT") spotTag = " ($1.00)";
+    return `${idx + 1}. <b>${escapeHtml(sym)}</b>${spotTag}${hi}${lo}`;
+  });
+
+  const rows = [];
+  for (const it of items.slice(0, 8)) {
+    const sym = String(it.symbol || "").toUpperCase();
+    rows.push([
+      { text: isAr ? `🎯 ضبط تنبيه ${sym}` : `🎯 Set ${sym} Alert`, callback_data: `cb:set_alert:${sym}` },
+      { text: isAr ? `🗑 حذف ${sym}` : `🗑 Remove ${sym}`, callback_data: `cb:del:${sym}` },
+    ]);
+  }
+  rows.push([
+    { text: isAr ? "➕ إضافة أصل" : "➕ Add Asset", callback_data: "cb:add_menu" },
+    { text: isAr ? "💎 ترقية الباقة" : "💎 Upgrade", callback_data: "cb:upgrade_vip" },
+  ]);
+  rows.push([{ text: isAr ? "🔙 الرئيسية" : "🔙 Home", callback_data: "cb:home" }]);
+
+  const text = isAr
+    ? `📊 <b>قائمة متابعتك (${items.length} / ${tierMeta.maxAssets} أصول)</b>\n` +
+      `الباقة: <b>${tierMeta.labelAr}</b>\n\n` +
+      `${lines.length ? lines.join("\n") : "قائمتك فارغة حالياً — اضغط «➕ إضافة أصل» للبدء مجاناً."}\n\n` +
+      `⚖️ <i>تنبيهات معلوماتية لمتابعة الأرقام فقط وليست نصيحة استثمارية.</i>`
+    : `📊 <b>Your Watchlist (${items.length} / ${tierMeta.maxAssets} assets)</b>\n` +
+      `Plan: <b>${tierMeta.labelEn}</b>\n\n` +
+      `${lines.length ? lines.join("\n") : "Your watchlist is empty — tap «➕ Add Asset» to start free."}\n\n` +
+      `⚖️ <i>Informational price alerts only — not financial advice.</i>`;
+
+  return { text, replyMarkup: { inline_keyboard: rows } };
+}
+
+function buildReplaceAssetView(profile) {
+  const isAr = profile.lang !== "en";
+  const items = Array.isArray(profile.watchlist) ? profile.watchlist : [];
+  const rows = items.slice(0, 10).map((it) => {
+    const sym = String(it.symbol || "").toUpperCase();
+    const nm = isAr ? it.name_ar || sym : it.name_en || sym;
+    return [{ text: `🗑 ${nm} (${sym})`, callback_data: `cb:replace_del:${sym}` }];
+  });
+  rows.push([
+    { text: isAr ? "🚀 الترقية إلى 10 أصول (10$)" : "🚀 Upgrade to 10 Assets ($10)", callback_data: "cb:upgrade_vip" },
+  ]);
+  rows.push([{ text: isAr ? "🔙 رجوع" : "🔙 Back", callback_data: "cb:home" }]);
+
+  const text = isAr
+    ? "🔄 <b>استبدال أصل من قائمتك</b>\n\nاختر الأصل الذي تريد حذفه لإفساح مكان لأصل جديد:"
+    : "🔄 <b>Replace an Asset in Your Watchlist</b>\n\nSelect an asset to remove and free up a slot:";
+  return { text, replyMarkup: { inline_keyboard: rows } };
+}
+
+function buildTargetPricePromptView(symbol, currentPriceNum, lang) {
+  const isAr = lang !== "en";
+  const hasPrice = Number.isFinite(currentPriceNum) && currentPriceNum > 0;
+  const priceLine = hasPrice
+    ? isAr
+      ? `📌 السعر الحالي لـ <b>${escapeHtml(symbol)}</b>: <code>${currentPriceNum}</code>`
+      : `📌 Current price for <b>${escapeHtml(symbol)}</b>: <code>${currentPriceNum}</code>`
+    : isAr
+    ? `🎯 ضبط تنبيه السعر لأصل <b>${escapeHtml(symbol)}</b>`
+    : `🎯 Set target price alert for <b>${escapeHtml(symbol)}</b>`;
+
+  const rows = [];
+  if (hasPrice) {
+    rows.push([
+      { text: isAr ? "▲ صعود +2%" : "▲ Breakout +2%", callback_data: `cb:qalert:${symbol}:+2` },
+      { text: isAr ? "🔻 هبوط -2%" : "🔻 Drop -2%", callback_data: `cb:qalert:${symbol}:-2` },
+    ]);
+    rows.push([
+      { text: isAr ? "▲ صعود +5%" : "▲ Breakout +5%", callback_data: `cb:qalert:${symbol}:+5` },
+      { text: isAr ? "🔻 هبوط -5%" : "🔻 Drop -5%", callback_data: `cb:qalert:${symbol}:-5` },
+    ]);
+  }
+  rows.push([
+    { text: isAr ? "📊 قائمة متابعتي" : "📊 My Watchlist", callback_data: "cb:watchlist" },
+    { text: isAr ? "🔙 الرئيسية" : "🔙 Home", callback_data: "cb:home" },
+  ]);
+
+  const text = isAr
+    ? `✅ <b>${escapeHtml(symbol)} جاهز للمتابعة!</b>\n\n${priceLine}\n\nاختر تنبيهاً سريعاً أدناه، أو <b>أرسل السعر المستهدف كرقم</b> في رسالة (مثال: <code>${hasPrice ? (currentPriceNum * 1.02).toFixed(currentPriceNum >= 100 ? 2 : 4) : "3700"}</code>):`
+    : `✅ <b>${escapeHtml(symbol)} is ready!</b>\n\n${priceLine}\n\nPick a quick alert below, or <b>reply with your exact target number</b> (e.g. <code>${hasPrice ? (currentPriceNum * 1.02).toFixed(currentPriceNum >= 100 ? 2 : 4) : "3700"}</code>):`;
+
+  return { text, replyMarkup: { inline_keyboard: rows } };
 }
 
 export function buildNonVipPriceLockMessage(parsedAsset, snapshot, publicSiteUrl = "https://ratepathlive.com") {
@@ -747,56 +1428,121 @@ export function buildNonVipPriceLockMessage(parsedAsset, snapshot, publicSiteUrl
   );
 }
 
-async function sendTelegramReply(chatId, htmlText, env, fetchImpl = fetch) {
+// ---------------------------------------------------------------------------
+// Resilient Telegram Bot API Transport (Backoff on 429/5xx, 403 Detection)
+// ---------------------------------------------------------------------------
+
+async function tgApiPost(method, bodyObj, env, fetchImpl = fetch, maxAttempts = 3) {
   const botToken = String(env?.TELEGRAM_BOT_TOKEN || "").trim();
-  if (!botToken) return false;
+  if (!botToken) return { ok: false, status: 0, blocked: false };
+
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    try {
+      const resp = await fetchImpl(
+        `https://api.telegram.org/bot${botToken}/${method}`,
+        withTimeout({
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(bodyObj),
+        }, 8000)
+      );
+      if (resp.ok) {
+        const data = await resp.json().catch(() => ({ ok: true }));
+        return { ok: true, status: resp.status, blocked: false, data };
+      }
+      if (resp.status === 403) {
+        return { ok: false, status: 403, blocked: true };
+      }
+      if (resp.status === 429 && attempt < maxAttempts - 1) {
+        let waitSec = 1 << attempt;
+        try {
+          const j = await resp.json();
+          const ra = Number(j?.parameters?.retry_after);
+          if (Number.isFinite(ra) && ra > 0) waitSec = Math.min(ra, 5);
+        } catch {
+          // Use backoff
+        }
+        await sleepMs(waitSec * 1000);
+        continue;
+      }
+      if (resp.status >= 500 && attempt < maxAttempts - 1) {
+        await sleepMs((1 << attempt) * 500);
+        continue;
+      }
+      return { ok: false, status: resp.status, blocked: false };
+    } catch {
+      if (attempt < maxAttempts - 1) {
+        await sleepMs((1 << attempt) * 500);
+        continue;
+      }
+      return { ok: false, status: 0, blocked: false };
+    }
+  }
+  return { ok: false, status: 0, blocked: false };
+}
+
+async function answerCallbackQuery(callbackQueryId, env, fetchImpl = fetch, text = "") {
+  if (!callbackQueryId) return false;
+  const payload = { callback_query_id: callbackQueryId };
+  if (text) payload.text = text.slice(0, 180);
+  const res = await tgApiPost("answerCallbackQuery", payload, env, fetchImpl, 1);
+  return res.ok;
+}
+
+async function sendTelegramReply(chatId, htmlText, env, fetchImpl = fetch, replyMarkup = null) {
   const normalized = normalizePreserveNewlines(htmlText);
-  const resp = await fetchImpl(`https://api.telegram.org/bot${botToken}/sendMessage`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      chat_id: chatId,
-      text: normalized,
-      parse_mode: "HTML",
-      disable_web_page_preview: true,
-    }),
-  });
-  if (resp.ok) return true;
-  // Automatic plain-text retry if Telegram rejects HTML entities so VIP users never receive silence
-  const plainFallback = normalized.replace(/<\/?[a-zA-Z][^>]*>/g, "");
-  const retryResp = await fetchImpl(`https://api.telegram.org/bot${botToken}/sendMessage`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      chat_id: chatId,
-      text: plainFallback,
-      disable_web_page_preview: true,
-    }),
-  });
-  return retryResp.ok;
+  const payload = {
+    chat_id: chatId,
+    text: normalized,
+    parse_mode: "HTML",
+    disable_web_page_preview: true,
+  };
+  if (replyMarkup) payload.reply_markup = replyMarkup;
+
+  const res = await tgApiPost("sendMessage", payload, env, fetchImpl);
+  if (res.ok || res.blocked) return res;
+
+  // Plain-text fallback if HTML formatting failed
+  const plainPayload = {
+    chat_id: chatId,
+    text: normalized.replace(/<\/?[a-zA-Z][^>]*>/g, ""),
+    disable_web_page_preview: true,
+  };
+  if (replyMarkup) plainPayload.reply_markup = replyMarkup;
+  return tgApiPost("sendMessage", plainPayload, env, fetchImpl, 1);
+}
+
+async function editOrSendTelegram(chatId, messageId, htmlText, env, fetchImpl = fetch, replyMarkup = null) {
+  if (!messageId) {
+    return sendTelegramReply(chatId, htmlText, env, fetchImpl, replyMarkup);
+  }
+  const normalized = normalizePreserveNewlines(htmlText);
+  const payload = {
+    chat_id: chatId,
+    message_id: messageId,
+    text: normalized,
+    parse_mode: "HTML",
+    disable_web_page_preview: true,
+  };
+  if (replyMarkup) payload.reply_markup = replyMarkup;
+
+  const res = await tgApiPost("editMessageText", payload, env, fetchImpl, 2);
+  if (res.ok || res.blocked) return res;
+  // Fallback to sendMessage if message was too old or deleted
+  return sendTelegramReply(chatId, htmlText, env, fetchImpl, replyMarkup);
 }
 
 // ---------------------------------------------------------------------------
-// Core Update Processor (Exported for direct unit testing & Cloudflare runtime)
+// Account Linking & Watchlist Mutation Helpers
 // ---------------------------------------------------------------------------
 
 async function linkPersonalTrackerAccount(linkToken, chatId, env, fetchImpl = fetch) {
-  const supaUrl = String(env?.SUPABASE_URL || "").trim().replace(/\/+$/, "");
-  const supaKey = String(env?.SUPABASE_KEY || "").trim();
-  if (!supaUrl || !supaKey || supaUrl.toLowerCase() === "placeholder" || supaKey.toLowerCase() === "placeholder") {
-    return { linked: false, reason: "supabase_unconfigured" };
-  }
-  const restBase = supaUrl.endsWith("/rest/v1") ? supaUrl : `${supaUrl}/rest/v1`;
-  const headers = {
-    apikey: supaKey,
-    Authorization: `Bearer ${supaKey}`,
-    "User-Agent": SUPABASE_SERVER_UA,
-    "Content-Type": "application/json",
-  };
+  const supa = getSupaConfig(env);
+  if (!supa) return { linked: false, reason: "supabase_unconfigured" };
   try {
     const getResp = await fetchImpl(
-      `${restBase}/user_tracker_profiles?link_token=eq.${encodeURIComponent(linkToken)}&select=user_id,email,lang,plan_tier,watchlist&limit=1`,
-      { headers }
+      `${supa.restBase}/user_tracker_profiles?link_token=eq.${encodeURIComponent(linkToken)}&select=user_id,email,lang,plan_tier,watchlist&limit=1`,
+      { headers: supa.headers }
     );
     if (!getResp.ok) return { linked: false, reason: "lookup_failed" };
     const rows = await getResp.json();
@@ -805,10 +1551,10 @@ async function linkPersonalTrackerAccount(linkToken, chatId, env, fetchImpl = fe
     }
     const row = rows[0];
     const patchResp = await fetchImpl(
-      `${restBase}/user_tracker_profiles?user_id=eq.${encodeURIComponent(row.user_id)}`,
+      `${supa.restBase}/user_tracker_profiles?user_id=eq.${encodeURIComponent(row.user_id)}`,
       {
         method: "PATCH",
-        headers: { ...headers, Prefer: "return=minimal" },
+        headers: { ...supa.headers, Prefer: "return=minimal" },
         body: JSON.stringify({
           telegram_chat_id: String(chatId),
           link_token: null,
@@ -822,33 +1568,306 @@ async function linkPersonalTrackerAccount(linkToken, chatId, env, fetchImpl = fe
   }
 }
 
-async function fetchPersonalWatchlistByChatId(chatId, env, fetchImpl = fetch) {
-  const supaUrl = String(env?.SUPABASE_URL || "").trim().replace(/\/+$/, "");
-  const supaKey = String(env?.SUPABASE_KEY || "").trim();
-  if (!supaUrl || !supaKey || supaUrl.toLowerCase() === "placeholder" || supaKey.toLowerCase() === "placeholder") {
-    return null;
+function tryAddAssetToProfile(profile, assetSpec) {
+  const tierMeta = getTierMeta(profile.plan_tier);
+  const wl = Array.isArray(profile.watchlist) ? [...profile.watchlist] : [];
+  const sym = String(assetSpec.symbol || "").trim().toUpperCase();
+  const existsIdx = wl.findIndex((it) => String(it.symbol || "").toUpperCase() === sym);
+
+  if (existsIdx !== -1) {
+    return { added: false, alreadyExists: true, limitReached: false, profile };
   }
-  const restBase = supaUrl.endsWith("/rest/v1") ? supaUrl : `${supaUrl}/rest/v1`;
-  try {
-    const resp = await fetchImpl(
-      `${restBase}/user_tracker_profiles?telegram_chat_id=eq.${encodeURIComponent(String(chatId))}&select=email,plan_tier,lang,watchlist&limit=1`,
-      {
-        headers: {
-          apikey: supaKey,
-          Authorization: `Bearer ${supaKey}`,
-          "User-Agent": SUPABASE_SERVER_UA,
-        },
-      }
-    );
-    if (!resp.ok) return null;
-    const rows = await resp.json();
-    return Array.isArray(rows) && rows.length > 0 ? rows[0] : null;
-  } catch {
-    return null;
+  if (wl.length >= tierMeta.maxAssets) {
+    return { added: false, alreadyExists: false, limitReached: true, profile };
   }
+
+  wl.push({
+    symbol: sym,
+    category: assetSpec.category || "crypto",
+    name_en: assetSpec.en || assetSpec.name_en || sym,
+    name_ar: assetSpec.ar || assetSpec.name_ar || sym,
+    alert_above: null,
+    alert_below: null,
+    one_time: true,
+    news_alerts: true,
+    added_at: new Date().toISOString(),
+  });
+
+  return {
+    added: true,
+    alreadyExists: false,
+    limitReached: false,
+    profile: { ...profile, watchlist: wl, alerts_paused: false },
+  };
 }
 
+// ---------------------------------------------------------------------------
+// Callback Query Handler (Instant <300ms Inline Keyboard Interactions)
+// ---------------------------------------------------------------------------
+
+async function handleCallbackQuery(cbq, env, fetchImpl = fetch) {
+  const cbId = cbq.id;
+  const chatId = cbq.message?.chat?.id || cbq.from?.id;
+  const messageId = cbq.message?.message_id;
+  const userId = cbq.from?.id;
+  const data = String(cbq.data || "").trim();
+
+  // 1. Answer callback immediately to eliminate Telegram loading spinner (<100ms)
+  await answerCallbackQuery(cbId, env, fetchImpl);
+
+  if (!chatId || !userId) {
+    return { handled: false, reason: "missing_callback_chat" };
+  }
+
+  const defaultLang = String(cbq.from?.language_code || "").toLowerCase().startsWith("en") ? "en" : "ar";
+  let profile = await loadBotUserProfile(userId, env, fetchImpl, defaultLang);
+
+  // Sync live tier status if free in cache
+  if (profile.plan_tier === "free") {
+    const vip = await checkVipMembership(userId, env, fetchImpl);
+    if (vip.isVip) {
+      profile.plan_tier = vip.planTier;
+    }
+  }
+
+  // Language switch (`cb:lang:en` / `cb:lang:ar`)
+  if (data === "cb:lang:en" || data === "cb:lang:ar") {
+    profile.lang = data === "cb:lang:en" ? "en" : "ar";
+    profile.ui_state = {};
+    await saveBotUserProfile(profile, env, fetchImpl);
+    const view = buildWelcomeView(profile, env?.PUBLIC_SITE_URL);
+    await editOrSendTelegram(chatId, messageId, view.text, env, fetchImpl, view.replyMarkup);
+    return { handled: true, mode: "lang_switched", lang: profile.lang };
+  }
+
+  // Home menu
+  if (data === "cb:home") {
+    profile.ui_state = {};
+    await saveBotUserProfile(profile, env, fetchImpl);
+    const view = buildWelcomeView(profile, env?.PUBLIC_SITE_URL);
+    await editOrSendTelegram(chatId, messageId, view.text, env, fetchImpl, view.replyMarkup);
+    return { handled: true, mode: "home" };
+  }
+
+  // Add Asset Menu -> Immediately check Free Limit (3/3) Paywall!
+  if (data === "cb:add_menu") {
+    const tierMeta = getTierMeta(profile.plan_tier);
+    if (profile.watchlist.length >= tierMeta.maxAssets && profile.plan_tier === "free") {
+      const paywall = buildFreeLimitPaywallView(profile);
+      await editOrSendTelegram(chatId, messageId, paywall.text, env, fetchImpl, paywall.replyMarkup);
+      return { handled: true, mode: "free_limit_paywall", count: profile.watchlist.length };
+    }
+    const picker = buildAddAssetPickerView(profile);
+    await editOrSendTelegram(chatId, messageId, picker.text, env, fetchImpl, picker.replyMarkup);
+    return { handled: true, mode: "add_menu" };
+  }
+
+  // Pick a specific asset (`cb:add_pick:BTC`)
+  if (data.startsWith("cb:add_pick:")) {
+    const sym = data.slice("cb:add_pick:".length).trim().toUpperCase();
+    const spec =
+      POPULAR_ASSETS.find((a) => a.symbol === sym) ||
+      (() => {
+        const al = ASSET_ALIASES.find((a) => a.symbol === sym);
+        return al
+          ? { symbol: al.symbol, category: al.kind === "gold" ? "metal" : al.kind, en: al.en, ar: al.ar }
+          : { symbol: sym, category: "crypto", en: sym, ar: sym };
+      })();
+
+    const res = tryAddAssetToProfile(profile, spec);
+    if (res.limitReached) {
+      if (profile.plan_tier === "free") {
+        const paywall = buildFreeLimitPaywallView(profile);
+        await editOrSendTelegram(chatId, messageId, paywall.text, env, fetchImpl, paywall.replyMarkup);
+        return { handled: true, mode: "free_limit_paywall", attempted: sym };
+      }
+      const maxLim = getTierMeta(profile.plan_tier).maxAssets;
+      const capMsg =
+        profile.lang === "ar"
+          ? `⚠️ وصلت للحد الأقصى لباقتك (${maxLim} أصول). احذف أصلاً أو ترقّ لباقة Pro (50 أصلاً).`
+          : `⚠️ You reached your plan limit (${maxLim} assets). Remove one or upgrade to Pro (50 assets).`;
+      await editOrSendTelegram(chatId, messageId, capMsg, env, fetchImpl, {
+        inline_keyboard: [[{ text: profile.lang === "ar" ? "👑 باقة Pro (50 أصل)" : "👑 Pro Plan (50 Assets)", callback_data: "cb:upgrade_pro" }]],
+      });
+      return { handled: true, mode: "tier_limit_reached", attempted: sym };
+    }
+
+    profile = res.profile;
+    profile.ui_state = { awaiting: "target_price", symbol: sym };
+    await saveBotUserProfile(profile, env, fetchImpl);
+
+    const snap = await resolveLiveAssetSnapshot(
+      { symbol: sym, kind: spec.category === "metal" ? "gold" : spec.category, displayEn: spec.en, displayAr: spec.ar, lang: profile.lang },
+      env,
+      fetchImpl
+    );
+    const promptView = buildTargetPricePromptView(sym, snap.numericPrice, profile.lang);
+    await editOrSendTelegram(chatId, messageId, promptView.text, env, fetchImpl, promptView.replyMarkup);
+    return { handled: true, mode: "asset_added", symbol: sym, count: profile.watchlist.length };
+  }
+
+  // Custom asset text prompt
+  if (data === "cb:add_custom") {
+    const tierMeta = getTierMeta(profile.plan_tier);
+    if (profile.watchlist.length >= tierMeta.maxAssets && profile.plan_tier === "free") {
+      const paywall = buildFreeLimitPaywallView(profile);
+      await editOrSendTelegram(chatId, messageId, paywall.text, env, fetchImpl, paywall.replyMarkup);
+      return { handled: true, mode: "free_limit_paywall" };
+    }
+    profile.ui_state = { awaiting: "custom_symbol" };
+    await saveBotUserProfile(profile, env, fetchImpl);
+    const txt =
+      profile.lang === "ar"
+        ? "✏️ أرسل الآن رمز أو اسم العملة أو السهم الذي تريد متابعته (مثال: <code>XRP</code> أو <code>NVDA</code> أو <code>الذهب</code> أو <code>الليرة التركية</code>):"
+        : "✏️ Send the currency, metal, crypto, or stock symbol to track (e.g. <code>XRP</code>, <code>NVDA</code>, <code>Gold</code>, or <code>TRY</code>):";
+    await editOrSendTelegram(chatId, messageId, txt, env, fetchImpl, {
+      inline_keyboard: [[{ text: profile.lang === "ar" ? "🔙 رجوع" : "🔙 Back", callback_data: "cb:add_menu" }]],
+    });
+    return { handled: true, mode: "awaiting_custom_symbol" };
+  }
+
+  // Watchlist screen
+  if (data === "cb:watchlist") {
+    profile.ui_state = {};
+    await saveBotUserProfile(profile, env, fetchImpl);
+    const { liveFeed, catalogFeed } = await getBatchMarketFeeds(env, fetchImpl);
+    const view = buildWatchlistView(profile, liveFeed, catalogFeed);
+    await editOrSendTelegram(chatId, messageId, view.text, env, fetchImpl, view.replyMarkup);
+    return { handled: true, mode: "watchlist_shown", count: profile.watchlist.length };
+  }
+
+  // Replace menu (from 3/3 paywall)
+  if (data === "cb:replace_menu") {
+    const view = buildReplaceAssetView(profile);
+    await editOrSendTelegram(chatId, messageId, view.text, env, fetchImpl, view.replyMarkup);
+    return { handled: true, mode: "replace_menu" };
+  }
+
+  // Delete an asset (`cb:del:BTC` or `cb:replace_del:BTC`)
+  if (data.startsWith("cb:del:") || data.startsWith("cb:replace_del:")) {
+    const isReplace = data.startsWith("cb:replace_del:");
+    const sym = data.split(":")[2]?.trim().toUpperCase();
+    profile.watchlist = (profile.watchlist || []).filter(
+      (it) => String(it.symbol || "").toUpperCase() !== sym
+    );
+    profile.ui_state = {};
+    await saveBotUserProfile(profile, env, fetchImpl);
+
+    if (isReplace) {
+      const picker = buildAddAssetPickerView(profile);
+      await editOrSendTelegram(chatId, messageId, picker.text, env, fetchImpl, picker.replyMarkup);
+      return { handled: true, mode: "asset_replaced_open_add", removed: sym };
+    }
+    const { liveFeed, catalogFeed } = await getBatchMarketFeeds(env, fetchImpl);
+    const view = buildWatchlistView(profile, liveFeed, catalogFeed);
+    await editOrSendTelegram(chatId, messageId, view.text, env, fetchImpl, view.replyMarkup);
+    return { handled: true, mode: "asset_removed", removed: sym };
+  }
+
+  // Set target price for existing watched asset (`cb:set_alert:BTC`)
+  if (data.startsWith("cb:set_alert:")) {
+    const sym = data.slice("cb:set_alert:".length).trim().toUpperCase();
+    profile.ui_state = { awaiting: "target_price", symbol: sym };
+    await saveBotUserProfile(profile, env, fetchImpl);
+    const item = (profile.watchlist || []).find((w) => String(w.symbol).toUpperCase() === sym);
+    const snap = await resolveLiveAssetSnapshot(
+      { symbol: sym, kind: item?.category === "metal" ? "gold" : item?.category || "crypto", displayEn: sym, displayAr: sym, lang: profile.lang },
+      env,
+      fetchImpl
+    );
+    const view = buildTargetPricePromptView(sym, snap.numericPrice, profile.lang);
+    await editOrSendTelegram(chatId, messageId, view.text, env, fetchImpl, view.replyMarkup);
+    return { handled: true, mode: "awaiting_target_price", symbol: sym };
+  }
+
+  // Quick % alert (`cb:qalert:XAU:+2`)
+  if (data.startsWith("cb:qalert:")) {
+    const parts = data.split(":");
+    const sym = String(parts[2] || "").toUpperCase();
+    const pct = Number(parts[3] || 0);
+    const item = (profile.watchlist || []).find((w) => String(w.symbol).toUpperCase() === sym);
+    if (item && Number.isFinite(pct) && pct !== 0) {
+      const snap = await resolveLiveAssetSnapshot(
+        { symbol: sym, kind: item.category === "metal" ? "gold" : item.category || "crypto", displayEn: sym, displayAr: sym, lang: profile.lang },
+        env,
+        fetchImpl
+      );
+      if (Number.isFinite(snap.numericPrice) && snap.numericPrice > 0) {
+        const target = snap.numericPrice * (1 + pct / 100);
+        const decimals = target >= 100 ? 2 : target >= 1 ? 4 : 6;
+        const targetStr = target.toFixed(decimals);
+        if (pct > 0) {
+          item.alert_above = targetStr;
+          item.triggered_above_target = null;
+        } else {
+          item.alert_below = targetStr;
+          item.triggered_below_target = null;
+        }
+        item.one_time = true;
+        profile.ui_state = {};
+        await saveBotUserProfile(profile, env, fetchImpl);
+
+        const confirmTxt =
+          profile.lang === "ar"
+            ? `✅ <b>تم ضبط التنبيه الفوري بنجاح!</b>\n\n🎯 <b>${escapeHtml(sym)}</b> (${pct > 0 ? "اختراق صعودي ▲ ≥" : "هبوط 🔻 ≤"} <code>${targetStr}</code>)\n\nسيصلك إشعار لحظي فور وصول السعر لهذا المستوى.`
+            : `✅ <b>Instant Alert Armed!</b>\n\n🎯 <b>${escapeHtml(sym)}</b> (${pct > 0 ? "Crosses Above ▲ ≥" : "Drops Below 🔻 ≤"} <code>${targetStr}</code>)\n\nYou'll get an instant Telegram alert the moment price hits this level.`;
+        await editOrSendTelegram(chatId, messageId, confirmTxt, env, fetchImpl, {
+          inline_keyboard: [
+            [
+              { text: profile.lang === "ar" ? "📊 قائمة متابعتي" : "📊 My Watchlist", callback_data: "cb:watchlist" },
+              { text: profile.lang === "ar" ? "➕ إضافة أصل" : "➕ Add Asset", callback_data: "cb:add_menu" },
+            ],
+            [{ text: profile.lang === "ar" ? "🔙 الرئيسية" : "🔙 Home", callback_data: "cb:home" }],
+          ],
+        });
+        return { handled: true, mode: "alert_set", symbol: sym, target: targetStr };
+      }
+    }
+  }
+
+  // Upgrade VIP ($10/mo USDT)
+  if (data === "cb:upgrade_vip") {
+    const view = await buildUpgradeVipView(userId, profile.lang, env, fetchImpl);
+    await editOrSendTelegram(chatId, messageId, view.text, env, fetchImpl, view.replyMarkup);
+    return { handled: true, mode: "upgrade_vip_shown", orderId: view.orderId };
+  }
+
+  // Upgrade Pro ($19/mo USDT)
+  if (data === "cb:upgrade_pro") {
+    const view = await buildUpgradeProView(userId, profile.lang, env, fetchImpl);
+    await editOrSendTelegram(chatId, messageId, view.text, env, fetchImpl, view.replyMarkup);
+    return { handled: true, mode: "upgrade_pro_shown", orderId: view.orderId };
+  }
+
+  // Support screen
+  if (data === "cb:support") {
+    const supportHandle = String(env?.SUPPORT_TELEGRAM_USERNAME || "@RatePath_AR").trim();
+    const isAr = profile.lang !== "en";
+    const txt = isAr
+      ? `💬 <b>الدعم الفني — RatePath Terminal</b>\n\nلأي استفسار حول الدفع بـ USDT أو تفعيل الباقة أو الربط مع الموقع:\n• القناة العربية: @RatePath_AR\n• القناة الإنجليزية: @RatePathLive\n• رقم حسابك (أرسله للدعم عند الحاجة): <code>${escapeHtml(String(userId))}</code>\n• الموقع: https://ratepathlive.com`
+      : `💬 <b>Support — RatePath Terminal</b>\n\nFor USDT payment or activation assistance:\n• English Channel: @RatePathLive\n• Arabic Channel: @RatePath_AR\n• Your Telegram ID: <code>${escapeHtml(String(userId))}</code>\n• Website: https://ratepathlive.com`;
+    await editOrSendTelegram(chatId, messageId, txt, env, fetchImpl, {
+      inline_keyboard: [
+        [{ text: isAr ? "💎 العودة للترقية" : "💎 Back to Upgrade", callback_data: "cb:upgrade_vip" }],
+        [{ text: isAr ? "🔙 الرئيسية" : "🔙 Home", callback_data: "cb:home" }],
+      ],
+    });
+    return { handled: true, mode: "support_shown", support: supportHandle };
+  }
+
+  return { handled: false, reason: "unknown_callback_data" };
+}
+
+// ---------------------------------------------------------------------------
+// Core Update Processor (Messages + Callback Queries)
+// ---------------------------------------------------------------------------
+
 export async function processTelegramUpdate(update, env, fetchImpl = fetch) {
+  // Fast path: Inline button callback query
+  if (update?.callback_query) {
+    return handleCallbackQuery(update.callback_query, env, fetchImpl);
+  }
+
   const msg = update?.message;
   if (!msg || !msg.text || msg.chat?.type !== "private") {
     return { handled: false, reason: "ignored_non_private_or_empty" };
@@ -858,73 +1877,163 @@ export async function processTelegramUpdate(update, env, fetchImpl = fetch) {
   const userId = msg.from?.id;
   const userLang = msg.from?.language_code || "";
   const rawText = String(msg.text || "").trim();
-  const lang = detectQueryLang(rawText, userLang);
+  const inferredLang = detectQueryLang(rawText, userLang);
 
-  // 1-Click Personal Bot Account Pairing (`/start link_<TOKEN>`)
+  // 1. 1-Click Personal Bot Account Pairing (`/start link_<TOKEN>`)
   const linkMatch = rawText.match(/^\/start(?:@\w+)?\s+link_([A-Za-z0-9_-]{8,40})$/i);
   if (linkMatch) {
     const pairRes = await linkPersonalTrackerAccount(linkMatch[1], chatId, env, fetchImpl);
-    const prefLang = pairRes.profile?.lang === "en" ? "en" : lang;
+    const prefLang = pairRes.profile?.lang === "en" ? "en" : inferredLang;
     const replyText = pairRes.linked
       ? prefLang === "ar"
         ? `✅ <b>تم ربط حسابك ببوت المتابعة الشخصي بنجاح!</b>\n\n🔔 ستصلك هنا تنبيهات الأسعار وملخصات الأخبار المخصصة للعملات والذهب والأسهم التي تضيفها من حسابك في https://ratepathlive.com.\n\n📋 أرسل <code>/watchlist</code> في أي وقت لعرض قائمتك.\n\nℹ️ <i>خدمة معلوماتية لمتابعة البيانات فقط وليست توصية استثمارية.</i>`
         : `✅ <b>Your RatePath Personal Tracker Bot is Now Linked!</b>\n\n🔔 You will receive private price &amp; company-news alerts here for every currency, metal, crypto, or stock in your https://ratepathlive.com watchlist.\n\n📋 Send <code>/watchlist</code> anytime to inspect your tracked items.\n\nℹ️ <i>Informational market monitoring only — not investment advice.</i>`
-      : lang === "ar"
+      : inferredLang === "ar"
       ? "⚠️ رابط الربط غير صالح أو تم استخدامه مسبقاً. افتح نافذة «البوت الشخصي» في https://ratepathlive.com لإنشاء رابط جديد."
       : "⚠️ This pairing link is invalid or already used. Open the Personal Bot modal on https://ratepathlive.com to generate a fresh link.";
     await sendTelegramReply(chatId, replyText, env, fetchImpl);
     return { handled: true, mode: "personal_bot_linked", linked: pairRes.linked };
   }
 
-  // Personal Watchlist Inspection (`/watchlist`, `/my`, `قائمتي`)
-  if (/^(\/(?:watchlist|my)\b|قائمتي\s*$)/i.test(rawText)) {
-    const prof = await fetchPersonalWatchlistByChatId(chatId, env, fetchImpl);
-    if (!prof) {
-      const unlinked =
-        lang === "ar"
-          ? "🤖 حسابك غير مربوط بعد بالبوت الشخصي.\n\nسجّل دخولك بالإيميل في https://ratepathlive.com واضغط «🤖 البوت الشخصي» لربط تلغرامك وإضافة العملات والأسهم التي تريد متابعتها."
-          : "🤖 Your Telegram is not linked to a Personal Tracker account yet.\n\nSign in at https://ratepathlive.com and tap «🤖 Personal Bot» to link your watchlist.";
-      await sendTelegramReply(chatId, unlinked, env, fetchImpl);
-      return { handled: true, mode: "watchlist_unlinked" };
+  // 2. Deep-link direct upgrade (`/start vip_ar`, `/start vip_en`, `/upgrade`)
+  const vipStartMatch = rawText.match(/^\/start(?:@\w+)?\s+vip_(ar|en)$/i);
+  if (vipStartMatch || /^\/upgrade(?:@\w+)?\b/i.test(rawText)) {
+    const profile = await loadBotUserProfile(userId, env, fetchImpl, vipStartMatch ? vipStartMatch[1].toLowerCase() : "ar");
+    const targetLang = vipStartMatch ? vipStartMatch[1].toLowerCase() : profile.lang;
+    profile.lang = targetLang;
+    await saveBotUserProfile(profile, env, fetchImpl);
+    const view = await buildUpgradeVipView(userId, targetLang, env, fetchImpl);
+    await sendTelegramReply(chatId, view.text, env, fetchImpl, view.replyMarkup);
+    return { handled: true, mode: "upgrade_vip_shown", orderId: view.orderId };
+  }
+
+  // 3. `/start`, `/menu`, `/help` -> Exact Bilingual Welcome + Inline Keyboard
+  if (/^\/(start|menu|help)\b/i.test(rawText)) {
+    const profile = await loadBotUserProfile(userId, env, fetchImpl, "ar");
+    const vipStatus = await checkVipMembership(userId, env, fetchImpl);
+    if (vipStatus.isVip && profile.plan_tier === "free") {
+      profile.plan_tier = vipStatus.planTier;
     }
-    const items = Array.isArray(prof.watchlist) ? prof.watchlist : [];
-    const lines = items.map((it) => {
-      const hi = it.alert_above ? ` 🟢≥${escapeHtml(it.alert_above)}` : "";
-      const lo = it.alert_below ? ` 🔴≤${escapeHtml(it.alert_below)}` : "";
-      return `• <b>${escapeHtml(it.symbol)}</b> (${escapeHtml(it.category || "asset")})${hi}${lo}`;
-    });
-    const listHtml =
-      lang === "ar"
-        ? `🤖 <b>قائمة المتابعة الخاصة بك (${items.length}):</b>\n\n${lines.length ? lines.join("\n") : "القائمة فارغة حالياً — أضف عملات أو أسهماً من https://ratepathlive.com."}\n\nℹ️ <i>تنبيهات معلوماتية للأرقام فقط وليست نصيحة استثمارية.</i>`
-        : `🤖 <b>Your Personal Watchlist (${items.length}):</b>\n\n${lines.length ? lines.join("\n") : "Your watchlist is empty — add currencies, metals, crypto, or stocks at https://ratepathlive.com."}\n\nℹ️ <i>Informational alerts only — not financial advice.</i>`;
-    await sendTelegramReply(chatId, listHtml, env, fetchImpl);
-    return { handled: true, mode: "watchlist_shown", count: items.length };
+    profile.alerts_paused = false;
+    profile.ui_state = {};
+    await saveBotUserProfile(profile, env, fetchImpl);
+
+    const view = buildWelcomeView(profile, env?.PUBLIC_SITE_URL);
+    await sendTelegramReply(chatId, view.text, env, fetchImpl, view.replyMarkup);
+    return { handled: true, mode: "welcome", isVip: vipStatus.isVip, lang: profile.lang };
   }
 
-  // Check VIP membership
+  // 4. `/watchlist`, `/my`, `قائمتي`
+  if (/^(\/(?:watchlist|my)\b|قائمتي\s*$)/i.test(rawText)) {
+    const profile = await loadBotUserProfile(userId, env, fetchImpl, inferredLang);
+    const { liveFeed, catalogFeed } = await getBatchMarketFeeds(env, fetchImpl);
+    const view = buildWatchlistView(profile, liveFeed, catalogFeed);
+    await sendTelegramReply(chatId, view.text, env, fetchImpl, view.replyMarkup);
+    return { handled: true, mode: "watchlist_shown", count: profile.watchlist.length };
+  }
+
+  // 5. Interactive Wizard State Handling (awaiting custom symbol or target price number)
+  const profile = await loadBotUserProfile(userId, env, fetchImpl, inferredLang);
+  if (profile.ui_state?.awaiting === "target_price" && profile.ui_state?.symbol) {
+    const cleanedNum = rawText
+      .replace(/,/g, "")
+      .replace(/[\u0660-\u0669]/g, (d) => String(d.charCodeAt(0) - 0x0660))
+      .replace(/\u066B/g, ".")
+      .trim();
+    const numVal = Number(cleanedNum);
+    if (Number.isFinite(numVal) && numVal > 0) {
+      const sym = String(profile.ui_state.symbol).toUpperCase();
+      const item = (profile.watchlist || []).find((w) => String(w.symbol).toUpperCase() === sym);
+      if (item) {
+        const snap = await resolveLiveAssetSnapshot(
+          { symbol: sym, kind: item.category === "metal" ? "gold" : item.category || "crypto", displayEn: sym, displayAr: sym, lang: profile.lang },
+          env,
+          fetchImpl
+        );
+        const isAbove = !Number.isFinite(snap.numericPrice) || numVal >= snap.numericPrice;
+        if (isAbove) {
+          item.alert_above = cleanedNum;
+          item.triggered_above_target = null;
+        } else {
+          item.alert_below = cleanedNum;
+          item.triggered_below_target = null;
+        }
+        item.one_time = true;
+        profile.ui_state = {};
+        await saveBotUserProfile(profile, env, fetchImpl);
+
+        const msgTxt =
+          profile.lang === "ar"
+            ? `✅ <b>تم حفظ تنبيه السعر لأصل ${escapeHtml(sym)}!</b>\n🎯 المستوى: <code>${escapeHtml(cleanedNum)}</code> (${isAbove ? "اختراق صعودي ▲ ≥" : "هبوط 🔻 ≤"})`
+            : `✅ <b>Target Price Saved for ${escapeHtml(sym)}!</b>\n🎯 Target: <code>${escapeHtml(cleanedNum)}</code> (${isAbove ? "Crosses Above ▲ ≥" : "Drops Below 🔻 ≤"})`;
+        await sendTelegramReply(chatId, msgTxt, env, fetchImpl, {
+          inline_keyboard: [[{ text: profile.lang === "ar" ? "📊 قائمة متابعتي" : "📊 My Watchlist", callback_data: "cb:watchlist" }]],
+        });
+        return { handled: true, mode: "alert_set", symbol: sym, target: cleanedNum };
+      }
+    }
+    // Clear wizard state if user sent a non-number query and proceed normally
+    profile.ui_state = {};
+    await saveBotUserProfile(profile, env, fetchImpl);
+  }
+
+  if (profile.ui_state?.awaiting === "custom_symbol") {
+    profile.ui_state = {};
+    const parsedCustom = parseUserAssetQuery(rawText, profile.lang);
+    if (parsedCustom) {
+      const addRes = tryAddAssetToProfile(profile, {
+        symbol: parsedCustom.symbol,
+        category: parsedCustom.kind === "gold" ? "metal" : parsedCustom.kind,
+        en: parsedCustom.displayEn,
+        ar: parsedCustom.displayAr,
+      });
+      if (addRes.limitReached && profile.plan_tier === "free") {
+        const paywall = buildFreeLimitPaywallView(profile);
+        await sendTelegramReply(chatId, paywall.text, env, fetchImpl, paywall.replyMarkup);
+        return { handled: true, mode: "free_limit_paywall", attempted: parsedCustom.symbol };
+      }
+      const nextProf = addRes.profile;
+      nextProf.ui_state = { awaiting: "target_price", symbol: parsedCustom.symbol };
+      await saveBotUserProfile(nextProf, env, fetchImpl);
+      const snap = await resolveLiveAssetSnapshot(parsedCustom, env, fetchImpl);
+      const view = buildTargetPricePromptView(parsedCustom.symbol, snap.numericPrice, nextProf.lang);
+      await sendTelegramReply(chatId, view.text, env, fetchImpl, view.replyMarkup);
+      return { handled: true, mode: "asset_added", symbol: parsedCustom.symbol, count: nextProf.watchlist.length };
+    }
+    await saveBotUserProfile(profile, env, fetchImpl);
+  }
+
+  // 6. On-Demand Coin / Currency / Stock Query (`/ask <coin>` or natural AR/EN query)
   const vipStatus = await checkVipMembership(userId, env, fetchImpl);
-
-  if (/^\/(start|help)\b/i.test(rawText)) {
-    const welcome = buildWelcomeMessage(lang, vipStatus.isVip);
-    await sendTelegramReply(chatId, welcome, env, fetchImpl);
-    return { handled: true, mode: "welcome", isVip: vipStatus.isVip };
-  }
-
   const parsed = parseUserAssetQuery(rawText, userLang);
   if (!parsed) {
     const hint =
-      lang === "ar"
-        ? "💬 اكتب اسم العملة أو الرمز المطلوب (مثل: <code>سولانا</code> أو <code>XRP</code> أو <code>الذهب</code> أو <code>الليرة السورية</code>)."
-        : "💬 Please include a coin or currency symbol (e.g. <code>SOL</code>, <code>XRP</code>, <code>Gold</code>, or <code>SYP</code>).";
+      inferredLang === "ar"
+        ? "💬 اكتب اسم العملة أو الرمز المطلوب (مثل: <code>سولانا</code> أو <code>XRP</code> أو <code>الذهب</code> أو <code>الليرة السورية</code>)، أو اضغط /start لعرض القائمة."
+        : "💬 Send a coin or currency symbol (e.g. <code>SOL</code>, <code>XRP</code>, <code>Gold</code>, or <code>SYP</code>), or tap /start for the main menu.";
     await sendTelegramReply(chatId, hint, env, fetchImpl);
     return { handled: true, mode: "unknown_asset", isVip: vipStatus.isVip };
   }
 
-  // Non-VIP path: Live spot price + polite VIP lock notice
+  // Non-VIP path: Live spot price + polite VIP lock notice + quick Add/Upgrade inline buttons
   if (!vipStatus.isVip) {
     const snap = await resolveLiveAssetSnapshot(parsed, env, fetchImpl);
     const lockMsg = buildNonVipPriceLockMessage(parsed, snap, env?.PUBLIC_SITE_URL);
-    await sendTelegramReply(chatId, lockMsg, env, fetchImpl);
+    const lockButtons = {
+      inline_keyboard: [
+        [
+          {
+            text: parsed.lang === "ar" ? `➕ متابعة ${parsed.symbol} مجاناً` : `➕ Track ${parsed.symbol} Free`,
+            callback_data: `cb:add_pick:${parsed.symbol}`,
+          },
+          {
+            text: parsed.lang === "ar" ? "💎 ترقية VIP (10$)" : "💎 Upgrade VIP ($10)",
+            callback_data: "cb:upgrade_vip",
+          },
+        ],
+      ],
+    };
+    await sendTelegramReply(chatId, lockMsg, env, fetchImpl, lockButtons);
     return { handled: true, mode: "non_vip_locked", symbol: parsed.symbol, isVip: false };
   }
 
@@ -962,7 +2071,7 @@ export async function processTelegramUpdate(update, env, fetchImpl = fetch) {
 
 export async function onRequestGet() {
   return new Response(
-    JSON.stringify({ ok: true, service: "ratepath_vip_telegram_webhook" }),
+    JSON.stringify({ ok: true, service: "ratepath_terminal_telegram_webhook" }),
     { status: 200, headers: JSON_HEADERS }
   );
 }
@@ -994,7 +2103,7 @@ export async function onRequestPost(context) {
       headers: JSON_HEADERS,
     });
   } catch {
-    // Return 200 to Telegram so transient downstream errors never create retry storms (never leak internals)
+    // Always return 200 to Telegram so transient errors never cause retry storms
     return new Response(
       JSON.stringify({ ok: false, error: "internal_error" }),
       { status: 200, headers: JSON_HEADERS }
