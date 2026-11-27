@@ -231,11 +231,11 @@ def build_session_brief_payload(
     else:
         # Clean promotional conversion footer for Public channels
         promo = (
-            f"🌐 <b>المحوّل الفوري، أسهم الشركات، والأخبار المتجددة كل ساعة:</b>\n{site_base}/?lang=ar\n"
-            f"🤖 لمتابعة عملاتك وأسهمك بتنبيهات خاصة وتقارير الحيتان: @RatePathTerminalBot"
+            f"🌐 <b>المحوّل الفوري، أسهم الشركات، والأخبار الحية:</b>\n{site_base}/?lang=ar\n"
+            f"🤖 لمتابعة عملاتك وأسهمك بتنبيهات خاصة: @RatePathTerminalBot"
             if lang == "ar"
-            else f"🌐 <b>Live Converter, Global Stocks &amp; Hourly News:</b>\n{site_base}/?lang=en\n"
-            f"🤖 Personal Tracker Bot &amp; Exclusive Whale Briefs: @RatePathTerminalBot"
+            else f"🌐 <b>Live Converter, Global Stocks &amp; Market News:</b>\n{site_base}/?lang=en\n"
+            f"🤖 Personal Tracker Bot &amp; Deep Desk Briefs: @RatePathTerminalBot"
         )
         sections.append(promo)
 

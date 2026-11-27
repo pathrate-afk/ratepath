@@ -351,14 +351,14 @@ def build_4h_digest_payload(
     if lang == "ar":
         if is_vip:
             sections = [
-                "⚡ <b>الموجز الحصري للأسواق والسيولة (كل 4 ساعات)</b>",
+                "⚡ <b>موجز الأسواق والسيولة</b>",
                 "🐋 <b>حركة الحيتان ومعروض USDT / USDC:</b>\n"
                 + "\n".join(f"• {_esc(b)}" for b in synthesis.whale_bullets_ar),
                 "📊 <b>تحركات العملات الرقمية وأسبابها:</b>\n"
                 + "\n".join(f"• {_esc(b)}" for b in synthesis.crypto_bullets_ar),
                 "🏢 <b>الشركات العملاقة والاقتصاد العالمي:</b>\n"
                 + "\n".join(f"• {_esc(b)}" for b in synthesis.corporate_macro_bullets_ar),
-                "ℹ️ <i>ملخص معلوماتي لحركة الأرقام والأخبار فقط — ليس توصية استثمارية.</i>",
+                "ℹ️ <i>معلومات سوقية للمتابعة فقط — ليست نصيحة استثمارية.</i>",
             ]
         else:
             top_public = (
@@ -367,23 +367,23 @@ def build_4h_digest_payload(
                 + synthesis.corporate_macro_bullets_ar[:1]
             )
             sections = [
-                "🗞️ <b>موجز أبرز أخبار الاقتصاد والعملات (كل 4 ساعات)</b>",
+                "🗞️ <b>أبرز أخبار الاقتصاد والعملات الآن</b>",
                 "\n".join(f"• {_esc(b)}" for b in top_public),
-                f"🌐 <b>اقرأ كل الأخبار المتجددة كل ساعة وتابع أسعار العملات والذهب وأسهم الشركات مباشرة:</b>\n"
+                f"🌐 <b>الأخبار الحية، المحوّل الفوري وأسهم الشركات:</b>\n"
                 f"{site_base}/?lang=ar\n\n"
-                f"🤖 للحصول على التقرير التفصيلي الكامل + بوت متابعة خاص لعملاتك وأسهمك: @RatePathTerminalBot",
+                f"🤖 للبوت الشخصي والتقارير التفصيلية: @RatePathTerminalBot",
             ]
     else:
         if is_vip:
             sections = [
-                "⚡ <b>4-Hour Exclusive Market, Whale &amp; Corporate Brief</b>",
+                "⚡ <b>Market, Whale &amp; Corporate Brief</b>",
                 "🐋 <b>Whale Flows &amp; USDT / USDC Treasury Supply:</b>\n"
                 + "\n".join(f"• {_esc(b)}" for b in synthesis.whale_bullets_en),
                 "📊 <b>Crypto Surges, Drops &amp; Catalysts:</b>\n"
                 + "\n".join(f"• {_esc(b)}" for b in synthesis.crypto_bullets_en),
                 "🏢 <b>Major Corporate Shocks &amp; Global Macro:</b>\n"
                 + "\n".join(f"• {_esc(b)}" for b in synthesis.corporate_macro_bullets_en),
-                "ℹ️ <i>Informational market &amp; news data only — not financial advice.</i>",
+                "ℹ️ <i>Informational market data only — not financial advice.</i>",
             ]
         else:
             top_public_en = (
@@ -392,11 +392,11 @@ def build_4h_digest_payload(
                 + synthesis.corporate_macro_bullets_en[:1]
             )
             sections = [
-                "🗞️ <b>4-Hour Global Economy &amp; Crypto Flash</b>",
+                "🗞️ <b>Global Economy &amp; Crypto Flash</b>",
                 "\n".join(f"• {_esc(b)}" for b in top_public_en),
-                f"🌐 <b>Read live hourly news, global stocks &amp; instant rates on RatePath:</b>\n"
+                f"🌐 <b>Live News, Global Stocks &amp; Instant Converter:</b>\n"
                 f"{site_base}/?lang=en\n\n"
-                f"🤖 Unlock full whale/corporate briefs &amp; your personal tracker bot: @RatePathTerminalBot",
+                f"🤖 Personal Tracker Bot &amp; Full Desk Briefs: @RatePathTerminalBot",
             ]
 
     text = sanitize_syria_flag_emoji(normalize_preserve_newlines("\n\n".join(sections)), lang=lang)

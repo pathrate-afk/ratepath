@@ -100,8 +100,13 @@ def test_4h_exclusive_digest_slots_movers_and_noise_blocker() -> None:
     )
     vip_ar = build_4h_digest_payload(syn, chat_id="@VIP_AR", lang="ar", is_vip=True)["text"]
     pub_ar = build_4h_digest_payload(syn, chat_id="@PUB_AR", lang="ar", is_vip=False)["text"]
+    vip_en = build_4h_digest_payload(syn, chat_id="@VIP_EN", lang="en", is_vip=True)["text"]
+    pub_en = build_4h_digest_payload(syn, chat_id="@PUB_EN", lang="en", is_vip=False)["text"]
     assert "حركة الحيتان ومعروض USDT" in vip_ar
     assert "الشركات العملاقة والاقتصاد العالمي" in vip_ar
     assert "ratepathlive.com" in pub_ar
-    assert "[VIP]" not in vip_ar
-    assert "القناعة" not in vip_ar
+    for msg in (vip_ar, pub_ar, vip_en, pub_en):
+        assert "[VIP]" not in msg
+        assert "القناعة" not in msg
+        assert "كل 4 ساعات" not in msg
+        assert "4-Hour" not in msg
