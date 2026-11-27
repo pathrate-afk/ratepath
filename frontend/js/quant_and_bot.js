@@ -300,22 +300,23 @@ export function createQuantAndBotController({
               : "➖ Neutral (Wait)";
             const scoreNum = Number(sig.score || 0);
             const scoreText = `${scoreNum > 0 ? "+" : ""}${scoreNum}`;
-            const rsiText = sig.rsi14 != null ? `RSI ${sig.rsi14}` : "";
-            const fundText =
-              sig.funding_8h_pct != null ? `Fund ${sig.funding_8h_pct}%` : "";
-            const metaLine = [rsiText, fundText, `Score ${scoreText}`]
+            const metaSpans = [
+              sig.rsi14 != null ? `<span class="whitespace-nowrap">RSI ${esc(sig.rsi14)}</span>` : "",
+              sig.funding_8h_pct != null ? `<span class="whitespace-nowrap">Fund ${esc(sig.funding_8h_pct)}%</span>` : "",
+              `<span class="whitespace-nowrap">Score ${esc(scoreText)}</span>`,
+            ]
               .filter(Boolean)
-              .join(" · ");
+              .join(`<span class="text-slate-600" aria-hidden="true">·</span>`);
             const reason = isAr ? sig.reason_ar : sig.reason_en;
             return `
-              <div class="p-2.5 rounded-xl bg-slate-950/75 border border-slate-800/90 space-y-1.5">
+              <div class="p-2.5 rounded-xl bg-slate-950/75 border border-slate-800/90 space-y-1.5 min-w-0">
                 <div class="flex items-center justify-between gap-2">
-                  <span class="text-xs font-extrabold text-white">${esc(ASSET_LABELS[sig.asset] || sig.asset)}</span>
-                  <span class="px-2 py-0.5 rounded-md text-[10px] font-bold border ${badgeCls}">${badgeLabel}</span>
+                  <span class="text-xs font-extrabold text-white truncate">${esc(ASSET_LABELS[sig.asset] || sig.asset)}</span>
+                  <span class="px-2 py-0.5 rounded-md text-[10px] font-bold border shrink-0 ${badgeCls}">${badgeLabel}</span>
                 </div>
-                <div class="flex items-center justify-between text-[10px] font-mono text-slate-400" dir="ltr">
-                  <span>${sig.price != null ? esc(sig.price) : "—"}</span>
-                  <span>${esc(metaLine)}</span>
+                <div class="flex flex-wrap items-center justify-between gap-x-2.5 gap-y-0.5 text-[10px] font-mono text-slate-400" dir="ltr">
+                  <span class="font-bold text-slate-200 shrink-0">${sig.price != null ? esc(sig.price) : "—"}</span>
+                  <span class="inline-flex flex-wrap items-center gap-x-1.5 gap-y-0.5">${metaSpans}</span>
                 </div>
                 <p class="text-[11px] text-slate-300 leading-snug">${esc(reason)}</p>
               </div>
