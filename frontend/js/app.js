@@ -47,9 +47,14 @@ import {
 import { createAssetDetailController } from "./asset-detail.js";
 import { createQuantAndBotController } from "./quant_and_bot.js";
 import {
+  FALLBACK_CATALOG_SNAPSHOT,
+  FALLBACK_FEED_SNAPSHOT,
+} from "./fallback-snapshot.js";
+import {
   AFFILIATES_ENABLED,
   CATALOG_FEED_URL,
   CMC_SEARCH_API_URL,
+  FEATURE_FLAGS,
   LIVE_FEED_URL,
   MONETIZATION_CONFIG,
   PUBLIC_SITE_URL,
@@ -58,6 +63,7 @@ import {
 const STORAGE_KEYS = {
   LANG: "ratepath_lang",
   FEED_CACHE: "ratepath_cached_feed_v1",
+  FEED_FETCHED_AT: "ratepath_feed_fetched_at_v1",
   CATALOG_CACHE: "ratepath_cached_catalog_v1",
   PREV_FEED: "ratepath_prev_feed_v1",
   ALERTS: "ratepath_vip_alerts_v1",
@@ -124,6 +130,12 @@ const state = {
   mobileTab: "converter",
   deviceProfile: "desktop",
   isOffline: false,
+  feedFromCache: false,
+  sectionAvailable: {
+    funding: true,
+    quant: true,
+    news: true,
+  },
   wakeLockSentinel: null,
   wakeLockActive: false,
   feed: null,
@@ -296,20 +308,72 @@ function renderWakeLockButton() {
 }
 
 // ---------------------------------------------------------------------------
-// 3. Feed Loader (Network + Offline Cache Fallback)
+// 3. Feed Loader (Instant Cached First-Paint + Timeout-Guarded Live Refresh)
 // ---------------------------------------------------------------------------
+
+async function fetchJsonWithTimeout(url, timeoutMs = 4500) {
+  const controller = typeof AbortController !== "undefined" ? new AbortController() : null;
+  const timer = controller ? setTimeout(() => controller.abort(), timeoutMs) : null;
+  try {
+    const resp = await fetch(`${url}?t=${Date.now()}`, {
+      cache: "no-store",
+      ...(controller ? { signal: controller.signal } : {}),
+    });
+    if (resp.ok) {
+      return await resp.json();
+    }
+    return null;
+  } catch {
+    return null;
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
+function bootstrapInitialSnapshot() {
+  let cachedFeed = null;
+  let cachedCatalog = null;
+  try {
+    const rawF = localStorage.getItem(STORAGE_KEYS.FEED_CACHE);
+    if (rawF) cachedFeed = JSON.parse(rawF);
+  } catch {
+    // Ignore storage errors
+  }
+  try {
+    const rawC = localStorage.getItem(STORAGE_KEYS.CATALOG_CACHE);
+    if (rawC) cachedCatalog = JSON.parse(rawC);
+  } catch {
+    // Ignore storage errors
+  }
+
+  state.feed = cachedFeed || FALLBACK_FEED_SNAPSHOT;
+  state.catalogFeed = cachedCatalog || FALLBACK_CATALOG_SNAPSHOT;
+  state.feedFromCache = true;
+  rebuildCatalogFromState();
+  recomputeAndRenderAll();
+}
+
+function startLiveUtcClock() {
+  const renderClock = () => {
+    const el = document.getElementById("last-updated-time");
+    if (!el) return;
+    const now = new Date();
+    const hh = String(now.getUTCHours()).padStart(2, "0");
+    const mm = String(now.getUTCMinutes()).padStart(2, "0");
+    const ss = String(now.getUTCSeconds()).padStart(2, "0");
+    el.textContent = `${hh}:${mm}:${ss} UTC`;
+  };
+  renderClock();
+  setInterval(renderClock, 1000);
+}
 
 async function fetchCatalogFeed() {
   let loadedCatalog = null;
   for (const url of resolveCatalogEndpoints()) {
-    try {
-      const resp = await fetch(`${url}?t=${Date.now()}`, { cache: "no-store" });
-      if (resp.ok) {
-        loadedCatalog = await resp.json();
-        break;
-      }
-    } catch {
-      // Try next catalog endpoint
+    const data = await fetchJsonWithTimeout(url, 4500);
+    if (data && typeof data === "object" && (data.fiat || data.crypto || data.metals)) {
+      loadedCatalog = data;
+      break;
     }
   }
   if (loadedCatalog) {
@@ -322,9 +386,9 @@ async function fetchCatalogFeed() {
   }
   try {
     const cached = localStorage.getItem(STORAGE_KEYS.CATALOG_CACHE);
-    return cached ? JSON.parse(cached) : null;
+    return cached ? JSON.parse(cached) : FALLBACK_CATALOG_SNAPSHOT;
   } catch {
-    return null;
+    return FALLBACK_CATALOG_SNAPSHOT;
   }
 }
 
@@ -379,14 +443,10 @@ async function fetchLiveFeed() {
   const catalogPromise = fetchCatalogFeed();
 
   for (const url of resolveFeedEndpoints()) {
-    try {
-      const resp = await fetch(`${url}?t=${Date.now()}`, { cache: "no-store" });
-      if (resp.ok) {
-        loadedFeed = await resp.json();
-        break;
-      }
-    } catch {
-      // Try next endpoint path
+    const data = await fetchJsonWithTimeout(url, 4500);
+    if (data && typeof data === "object" && (data.fiat || data.gold || data.crypto)) {
+      loadedFeed = data;
+      break;
     }
   }
 
@@ -396,22 +456,28 @@ async function fetchLiveFeed() {
   }
 
   if (!loadedFeed) {
-    const cachedRaw = localStorage.getItem(STORAGE_KEYS.FEED_CACHE);
-    if (cachedRaw) {
-      loadedFeed = JSON.parse(cachedRaw);
-      fromOfflineCache = true;
+    try {
+      const cachedRaw = localStorage.getItem(STORAGE_KEYS.FEED_CACHE);
+      loadedFeed = cachedRaw ? JSON.parse(cachedRaw) : FALLBACK_FEED_SNAPSHOT;
+    } catch {
+      loadedFeed = FALLBACK_FEED_SNAPSHOT;
     }
+    fromOfflineCache = true;
   } else {
-    const existingCached = localStorage.getItem(STORAGE_KEYS.FEED_CACHE);
-    if (existingCached && existingCached !== JSON.stringify(loadedFeed)) {
-      localStorage.setItem(STORAGE_KEYS.PREV_FEED, existingCached);
+    try {
+      const existingCached = localStorage.getItem(STORAGE_KEYS.FEED_CACHE);
+      if (existingCached && existingCached !== JSON.stringify(loadedFeed)) {
+        localStorage.setItem(STORAGE_KEYS.PREV_FEED, existingCached);
+      }
+      localStorage.setItem(STORAGE_KEYS.FEED_CACHE, JSON.stringify(loadedFeed));
+      localStorage.setItem(STORAGE_KEYS.FEED_FETCHED_AT, String(Date.now()));
+    } catch {
+      // Ignore storage quota errors
     }
-    localStorage.setItem(STORAGE_KEYS.FEED_CACHE, JSON.stringify(loadedFeed));
   }
 
-  if (!loadedFeed) return;
-
   state.isOffline = fromOfflineCache || !navigator.onLine;
+  state.feedFromCache = fromOfflineCache;
   state.feed = loadedFeed;
   rebuildCatalogFromState();
 
@@ -431,8 +497,17 @@ function applyLanguageAttributes() {
 
   const t = TRANSLATIONS[state.lang];
   document.title = isAr
-    ? "ريت باث (RatePath) | المنصة المؤسسية للعملات والذهب والأصول الرقمية"
-    : "RatePath (ريت باث) | Institutional Cross-Asset & Macro Terminal";
+    ? "ريت باث (RatePath) | محول العملات المباشر، سعر الذهب اليوم (الدولار مقابل الليرة السورية والتركية والمصري) والكريبتو"
+    : "RatePath (ريت باث) | Live Currency Converter, Gold Price Today (USD to SYP, TRY, EGP) & Crypto Funding Rates";
+  const metaDesc = document.querySelector('meta[name="description"]');
+  if (metaDesc) {
+    metaDesc.setAttribute(
+      "content",
+      isAr
+        ? "محول العملات المباشر وسعر الذهب والفضة اليوم (عيار 24 و21 و18)، سعر الدولار مقابل الليرة السورية والتركية والجنيه المصري واليورو والريال، وأسعار بيتكوين وإيثيريوم وتيثر وفروق التمويل."
+        : "Live currency converter, gold & silver price today (24K/21K/18K), real-time USD to SYP, TRY, EGP, EUR, SAR, AED, BTC, ETH, SOL, USDT & 8h crypto funding rates."
+    );
+  }
 
   document.querySelectorAll("[data-i18n]").forEach((el) => {
     const key = el.getAttribute("data-i18n");
@@ -472,14 +547,15 @@ function renderStatusAndTopTicker() {
   const updatedEl = document.getElementById("last-updated-time");
 
   const generatedMs = Date.parse(state.feed.meta?.generated_at || "");
-  const ageMinutes = Number.isFinite(generatedMs)
-    ? Math.max(0, Math.floor((Date.now() - generatedMs) / 60000))
-    : null;
-  const isStale = ageMinutes !== null && ageMinutes > 30;
-  const healthy = !state.isOffline && state.feed.meta?.status === "healthy" && !isStale;
+  const fetchedMs = Number(localStorage.getItem(STORAGE_KEYS.FEED_FETCHED_AT) || 0);
+  const refMs = Number.isFinite(generatedMs) ? generatedMs : fetchedMs || Date.now();
+  const ageMinutes = Math.max(0, Math.floor((Date.now() - refMs) / 60000));
+  const isStale = ageMinutes > 30;
+  const healthy = !state.isOffline && !state.feedFromCache && state.feed.meta?.status === "healthy" && !isStale;
   if (statusText) {
-    if (state.isOffline) {
-      statusText.textContent = t.offlineMode;
+    if (state.isOffline || state.feedFromCache) {
+      statusText.textContent =
+        ageMinutes >= 1 ? t.delayedFeed.replace("{m}", String(ageMinutes)) : t.offlineMode;
     } else if (isStale) {
       statusText.textContent = t.delayedFeed.replace("{m}", String(ageMinutes));
     } else {
@@ -496,8 +572,10 @@ function renderStatusAndTopTicker() {
       ? "inline-flex items-center gap-1.5 px-2 sm:px-2.5 py-1 rounded-full text-[11px] font-semibold whitespace-nowrap shrink-0 bg-emerald-500/10 text-emerald-300 border border-emerald-500/30"
       : "inline-flex items-center gap-1.5 px-2 sm:px-2.5 py-1 rounded-full text-[11px] font-semibold whitespace-nowrap shrink-0 bg-amber-500/10 text-amber-300 border border-amber-500/30";
   }
-  if (updatedEl) {
-    updatedEl.textContent = (state.feed.meta?.generated_at || "").replace("T", " ").replace("Z", " UTC");
+  if (updatedEl && !updatedEl.dataset.clockBound) {
+    updatedEl.dataset.clockBound = "1";
+    const now = new Date();
+    updatedEl.textContent = `${String(now.getUTCHours()).padStart(2, "0")}:${String(now.getUTCMinutes()).padStart(2, "0")}:${String(now.getUTCSeconds()).padStart(2, "0")} UTC`;
   }
 
   const tickerContainer = document.getElementById("top-live-ticker");
@@ -1017,11 +1095,21 @@ function translateFundingSignal(signal) {
 }
 
 function renderFundingSpreads() {
+  const panel = document.getElementById("funding-panel");
   const tbody = document.getElementById("funding-table-body");
-  if (!tbody || !state.feed?.crypto?.assets) return;
+  const mobileFundingBtn = document.querySelector('.mobile-nav-btn[data-tab="funding"]');
+  const flags = FEATURE_FLAGS || MONETIZATION_CONFIG?.FEATURE_FLAGS || {};
+  if (!tbody) return;
 
-  const cryptoMap = state.feed.crypto.assets;
-  tbody.innerHTML = ["BTC", "ETH", "SOL"]
+  if (flags.showFundingSpreads === false) {
+    state.sectionAvailable.funding = false;
+    panel?.classList.add("hidden");
+    mobileFundingBtn?.classList.add("hidden");
+    return;
+  }
+
+  const cryptoMap = state.feed?.crypto?.assets || {};
+  const rowsHtml = ["BTC", "ETH", "SOL"]
     .map((sym) => {
       const entry = cryptoMap[sym];
       if (!entry?.funding) return "";
@@ -1059,17 +1147,33 @@ function renderFundingSpreads() {
         </tr>
       `;
     })
-    .join("");
+    .filter(Boolean);
+
+  tbody.innerHTML = rowsHtml.join("");
+  const hasRows = rowsHtml.length > 0;
+  state.sectionAvailable.funding = hasRows || flags.autoHideEmptySections === false;
+  if (!state.sectionAvailable.funding) {
+    panel?.classList.add("hidden");
+    mobileFundingBtn?.classList.add("hidden");
+  } else {
+    mobileFundingBtn?.classList.remove("hidden");
+  }
 }
 
 function renderVerifiedNews() {
   const listEl = document.getElementById("news-feed-list");
-  if (!listEl || !state.feed?.news) return;
+  if (!listEl) return;
 
   const t = TRANSLATIONS[state.lang];
   const isAr = state.lang === "ar";
+  const maxAgeMs = 30 * 24 * 60 * 60 * 1000;
+  const freshItems = (state.feed?.news || []).filter((item) => {
+    const pubMs = Date.parse(item?.published_at || "");
+    if (!Number.isFinite(pubMs)) return true;
+    return Date.now() - pubMs <= maxAgeMs;
+  });
 
-  listEl.innerHTML = state.feed.news
+  listEl.innerHTML = freshItems
     .map((item) => {
       const copy = isAr ? item.ar : item.en;
       const pw = item.priced_in_warning || {};
@@ -1273,6 +1377,7 @@ function syncBodyScrollLock() {
     "modal-asset-picker",
     "modal-auth-sync",
     "modal-asset-detail",
+    "modal-usdt-upgrade",
   ];
   const anyOpen = modalIds.some((id) => {
     const el = document.getElementById(id);
@@ -1292,20 +1397,32 @@ function applyMobileTabVisibility() {
   };
 
   if (isTabletOrDesktop) {
-    Object.values(sections).forEach((el) => el?.classList.remove("hidden"));
-    quantPanel?.classList.remove("hidden");
+    sections.converter?.classList.remove("hidden");
+    sections.rates?.classList.remove("hidden");
+    sections.funding?.classList.toggle("hidden", !state.sectionAvailable.funding);
+    sections.news?.classList.toggle("hidden", !state.sectionAvailable.news);
+    quantPanel?.classList.toggle("hidden", !state.sectionAvailable.quant);
   } else {
     Object.entries(sections).forEach(([key, el]) => {
       if (!el) return;
+      if (key === "funding" && !state.sectionAvailable.funding) {
+        el.classList.add("hidden");
+        return;
+      }
+      if (key === "news" && !state.sectionAvailable.news) {
+        el.classList.add("hidden");
+        return;
+      }
       if (state.mobileTab === "converter") {
-        // Show converter + quick rates together when on primary thumb tab
         el.classList.toggle("hidden", key !== "converter" && key !== "rates");
       } else {
         el.classList.toggle("hidden", key !== state.mobileTab);
       }
     });
-    // Show Quant & Macro Signal Radar together with the Macro/News tab on phones
-    quantPanel?.classList.toggle("hidden", state.mobileTab !== "news");
+    quantPanel?.classList.toggle(
+      "hidden",
+      !state.sectionAvailable.quant || state.mobileTab !== "news"
+    );
   }
 
   document.querySelectorAll(".mobile-nav-btn").forEach((btn) => {
@@ -1569,7 +1686,12 @@ function renderAuthSyncState() {
 
   const configured = isCloudSyncConfigured();
   const signedIn = Boolean(state.authSession?.user?.id);
+  const headerSyncBtn = document.getElementById("btn-open-auth-sync");
 
+  // Gracefully hide Cloud Sync header trigger if Supabase public credentials are not configured
+  if (headerSyncBtn) {
+    headerSyncBtn.classList.toggle("hidden", !configured);
+  }
   if (dot) {
     dot.className = signedIn
       ? "w-2 h-2 rounded-full bg-emerald-400 animate-pulse shrink-0"
@@ -1741,6 +1863,13 @@ const quantBotController = createQuantAndBotController({
   getState: () => state,
   showToast,
   openAuthModal: () => openAuthSyncModal(),
+  syncBodyScrollLock,
+  setSectionAvailability: (sectionKey, available) => {
+    if (sectionKey in state.sectionAvailable) {
+      state.sectionAvailable[sectionKey] = Boolean(available);
+      applyMobileTabVisibility();
+    }
+  },
   jumpToNewsTab: () => {
     if (!window.matchMedia("(min-width: 768px)").matches) {
       state.mobileTab = "news";
@@ -2197,7 +2326,11 @@ function bindEvents() {
     const tgUserId = (document.getElementById("vip-tg-user-id")?.value || "").trim();
     const vipCfg = MONETIZATION_CONFIG?.vipPayments || {};
     const checkoutEndpoint = vipCfg.checkoutApiUrl || "/api/create-vip-checkout";
-    const staticFallbackUrl = String(vipCfg.nowPaymentsVipUrl || "").trim();
+    const staticFallbackUrl = String(
+      planTier === "monthly_personal_bot"
+        ? vipCfg.nowPaymentsPersonalBotUrl || vipCfg.nowPaymentsVipUrl || ""
+        : vipCfg.nowPaymentsVipUrl || ""
+    ).trim();
 
     if (btn) btn.disabled = true;
     try {
@@ -2263,6 +2396,7 @@ function bindEvents() {
       closeVipAlertsModal();
       closeAssetPickerModal();
       closeAuthSyncModal();
+      quantBotController.closeUpgradeModal?.();
     }
   });
   document.getElementById("modal-quote-card")?.addEventListener("click", (e) => {
@@ -2282,11 +2416,13 @@ function bindEvents() {
 // Boot Sequence
 document.addEventListener("DOMContentLoaded", async () => {
   detectAndApplyDeviceProfile();
+  startLiveUtcClock();
   initTelegramMiniApp();
   registerServiceWorker();
   applyMonetizationConfigDom();
   applyLanguageAttributes();
   bindEvents();
+  bootstrapInitialSnapshot();
   applyMobileTabVisibility();
   quantBotController.init();
   assetDetailController.init();

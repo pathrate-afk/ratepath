@@ -7,7 +7,7 @@
  */
 
 export const WORKSPACE_STORAGE_KEY = "ratepath_workspace_v1";
-export const WORKSPACE_VERSION = 2;
+export const WORKSPACE_VERSION = 3;
 
 export const DEFAULT_WORKSPACE_IDS = Object.freeze([
   "USD",
@@ -27,10 +27,11 @@ export const DEFAULT_WORKSPACE_IDS = Object.freeze([
   "BTC",
   "ETH",
   "SOL",
+  "USDT",
 ]);
 
 const METAL_IDS = new Set(["XAU_OZ", "GRAM_24K", "GRAM_21K", "GRAM_18K", "XAG_OZ", "XAG_GRAM"]);
-const CORE_CRYPTO_IDS = new Set(["BTC", "ETH", "SOL"]);
+const CORE_CRYPTO_IDS = new Set(["BTC", "ETH", "SOL", "USDT"]);
 
 const DEFAULT_ID_SET = new Set(DEFAULT_WORKSPACE_IDS);
 const MAX_WORKSPACE_ASSETS = 80;
@@ -96,9 +97,9 @@ export function normalizeWorkspace(raw) {
     return createDefaultWorkspace();
   }
 
-  // Seamless v1 -> v2 upgrade: add live Silver (XAG_OZ & XAG_GRAM) right after Gold for existing users
+  // Seamless v1 -> v2 -> v3 upgrade: add live Silver (XAG_OZ & XAG_GRAM) & Tether (USDT) for existing users
   const rawVersion = Number(raw.version || 1);
-  if (rawVersion < WORKSPACE_VERSION) {
+  if (rawVersion < 2) {
     for (const silverId of ["XAG_GRAM", "XAG_OZ"]) {
       if (!seen.has(silverId) && !hiddenSet.has(silverId) && ordered.length < MAX_WORKSPACE_ASSETS) {
         const goldAnchorIdx = ordered.indexOf("GRAM_18K");
@@ -107,6 +108,15 @@ export function normalizeWorkspace(raw) {
         ordered.splice(insertAt, 0, silverId);
         seen.add(silverId);
       }
+    }
+  }
+  if (rawVersion < WORKSPACE_VERSION) {
+    if (!seen.has("USDT") && !hiddenSet.has("USDT") && ordered.length < MAX_WORKSPACE_ASSETS) {
+      const solIdx = ordered.indexOf("SOL");
+      const btcIdx = ordered.indexOf("BTC");
+      const insertAt = solIdx !== -1 ? solIdx + 1 : btcIdx !== -1 ? btcIdx + 1 : ordered.length;
+      ordered.splice(insertAt, 0, "USDT");
+      seen.add("USDT");
     }
   }
 

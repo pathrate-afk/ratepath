@@ -8,7 +8,9 @@
  */
 
 import {
+  FEATURE_FLAGS,
   MONETIZATION_CONFIG,
+  SUPABASE_ANON_KEY,
   SUPABASE_PUBLIC_ANON_KEY,
   SUPABASE_URL,
 } from "../monetization.config.js";
@@ -23,7 +25,11 @@ function getSupabaseUrl() {
 
 function getSupabaseAnonKey() {
   return String(
-    SUPABASE_PUBLIC_ANON_KEY || MONETIZATION_CONFIG?.SUPABASE_PUBLIC_ANON_KEY || ""
+    SUPABASE_ANON_KEY ||
+      SUPABASE_PUBLIC_ANON_KEY ||
+      MONETIZATION_CONFIG?.SUPABASE_ANON_KEY ||
+      MONETIZATION_CONFIG?.SUPABASE_PUBLIC_ANON_KEY ||
+      ""
   ).trim();
 }
 
@@ -62,6 +68,9 @@ export function isSafePublicSupabaseKey(key = getSupabaseAnonKey()) {
 }
 
 export function isCloudSyncConfigured() {
+  if (FEATURE_FLAGS?.showCloudSync === false || MONETIZATION_CONFIG?.FEATURE_FLAGS?.showCloudSync === false) {
+    return false;
+  }
   const url = getSupabaseUrl();
   return /^https:\/\/[a-z0-9-]+\.supabase\.co$/i.test(url) && isSafePublicSupabaseKey();
 }

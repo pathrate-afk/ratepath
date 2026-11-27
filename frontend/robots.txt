@@ -1,6 +1,7 @@
 User-agent: *
 Allow: /
 Allow: /ar
+Allow: /en
 Allow: /public/live_feed.json
 Disallow: /api/
 Disallow: /server.py

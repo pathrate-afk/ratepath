@@ -3,8 +3,9 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-  <title>RatePath (ريت باث) | Institutional Cross-Asset &amp; Macro Terminal</title>
-  <meta name="description" content="Banking-grade single-input Fiat, Gold (24K/21K/18K), and Crypto converter with live perpetual funding arbitrage and auditor-verified bilingual (EN/AR) macro intelligence." />
+  <title>RatePath (ريت باث) | Live Currency Converter, Gold Price Today (USD to SYP, TRY, EGP) &amp; Crypto Funding Rates</title>
+  <meta name="description" content="Live currency converter, gold &amp; silver price today (24K/21K/18K), real-time USD to SYP, TRY, EGP, EUR, SAR, AED, BTC, ETH, SOL, USDT &amp; 8h crypto funding rates. محول العملات المباشر، سعر الذهب اليوم والدولار مقابل الليرة السورية والتركية والجنيه المصري." />
+  <meta name="keywords" content="live currency converter, gold price today, USD to SYP, USD to TRY, USD to EGP, silver price, crypto funding rates, BTC, ETH, SOL, USDT, محول العملات, سعر الذهب اليوم, سعر الدولار مقابل الليرة السورية, سعر الدولار مقابل الليرة التركية, سعر الدولار في مصر" />
   <meta name="theme-color" content="#070B14" />
 
   <!-- Bilingual SEO & Hreflang Tags -->
@@ -15,13 +16,18 @@
 
   <!-- Open Graph / Viral Preview -->
   <meta property="og:type" content="website" />
+  <meta property="og:url" content="https://ratepathlive.com/" />
+  <meta property="og:locale" content="en_US" />
+  <meta property="og:locale:alternate" content="ar_AE" />
   <meta property="og:site_name" content="RatePath | ريت باث" />
-  <meta property="og:title" content="RatePath (ريت باث) — Institutional Cross-Asset &amp; Macro Terminal" />
-  <meta property="og:description" content="Zero-float Decimal Fiat, Gold (24K/21K/18K) &amp; Crypto converter + 8h Funding Spreads + Verified Macro News." />
+  <meta property="og:title" content="RatePath (ريت باث) — Live Currency Converter, Gold Price Today &amp; Crypto Funding Terminal" />
+  <meta property="og:description" content="Real-time USD to SYP, TRY, EGP, EUR, Gold (24K/21K/18K), Silver, BTC, ETH, SOL &amp; USDT converter + 8h funding spreads &amp; live macro news." />
   <meta property="og:image" content="https://ratepathlive.com/icons/logo-full.jpg" />
   <meta property="og:image:width" content="1024" />
   <meta property="og:image:height" content="571" />
   <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="RatePath (ريت باث) — Live FX, Gold &amp; Crypto Funding Terminal" />
+  <meta name="twitter:description" content="Instant converter for USD, EUR, TRY, SYP, EGP, Gold, Silver, BTC, ETH, SOL &amp; USDT + live funding carry &amp; market pulse." />
   <meta name="twitter:image" content="https://ratepathlive.com/icons/logo-full.jpg" />
 
   <!-- PWA Manifest, Browser Favicons, iPhone / iPad / Android & Tablet Icons -->
@@ -94,10 +100,10 @@
         </div>
       </div>
 
-      <!-- Right Action Bar: Timestamp, Wake-Lock, Quote PNG, VIP Alerts, Refresh, EN/AR -->
+      <!-- Right Action Bar: Live UTC Clock, Wake-Lock, Quote PNG, VIP Alerts, Refresh, EN/AR -->
       <div class="flex items-center gap-1 sm:gap-1.5 md:gap-2 shrink-0">
-        <span id="last-updated-time" class="hidden xl:inline-block text-[11px] font-mono text-slate-400 me-1" dir="ltr">
-          --:-- UTC
+        <span id="last-updated-time" class="hidden md:inline-flex items-center px-2 py-1 rounded-md bg-slate-900/90 border border-slate-800 text-[11px] font-mono text-slate-300 tabular-nums" dir="ltr">
+          LIVE UTC
         </span>
 
         <!-- Screen Wake-Lock Toggle -->
@@ -286,7 +292,7 @@
                   My Workspace
                 </h2>
                 <span id="workspace-count-badge" class="px-2 py-0.5 rounded-full text-[10px] font-mono font-bold bg-slate-800 text-amber-300 border border-slate-700" dir="ltr">
-                  17
+                  18
                 </span>
                 <span id="gold-spread-badge" class="hidden text-[10px] font-mono font-bold px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-300 border border-emerald-500/30" dir="ltr"></span>
               </div>
@@ -428,15 +434,15 @@
                 <span class="text-xs font-extrabold text-amber-300" data-i18n="pbotCheckoutHeading">
                   🤖 Rent Your Personal AI Tracker Bot (USDT)
                 </span>
-                <span class="px-2 py-0.5 rounded-full text-[10px] font-mono font-bold bg-emerald-500/15 text-emerald-300 border border-emerald-500/30">
+                <span class="px-2 py-0.5 rounded-full text-[10px] font-mono font-bold bg-emerald-500/15 text-emerald-300 border border-emerald-500/30" data-i18n="pbotUsdtBadge">
                   USDT Direct
                 </span>
               </div>
               <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
                 <select id="pbot-plan-select" aria-label="Subscription Tier"
                   class="h-10 px-3 rounded-lg bg-slate-900 border border-slate-700 text-xs font-bold text-amber-200">
-                  <option value="monthly_personal_bot">🤖 Personal Bot Pro + VIP — $19/mo (50 Assets + Stocks &amp; News)</option>
-                  <option value="monthly_business_vip">💎 Business VIP + Bot — $10/mo (10 Assets + VIP Channel)</option>
+                  <option value="monthly_personal_bot" data-i18n="pbotPlanOptPro">🤖 Personal Bot Pro + VIP — $19/mo (50 Assets + Stocks &amp; Breakout Alerts)</option>
+                  <option value="monthly_business_vip" data-i18n="pbotPlanOptVip">💎 Business VIP + Bot — $10/mo (10 Assets + VIP Channel)</option>
                 </select>
                 <select id="pbot-usdt-network" aria-label="USDT Network"
                   class="h-10 px-3 rounded-lg bg-slate-900 border border-slate-700 text-xs font-semibold text-slate-200">
@@ -497,9 +503,7 @@
           </div>
 
           <div class="flex flex-wrap items-center justify-between gap-2">
-            <span id="quant-track-record-badge" class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold bg-slate-800 text-slate-300 border border-slate-700">
-              Live Grading: Collecting samples
-            </span>
+            <span id="quant-track-record-badge" class="hidden inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold bg-slate-800 text-slate-300 border border-slate-700"></span>
             <div id="quant-macro-bar" class="flex flex-wrap items-center gap-1.5"></div>
           </div>
 
@@ -738,7 +742,7 @@
             <span class="text-xs font-extrabold text-amber-300" data-i18n="vipCheckoutHeading">
               💎 Business VIP Channel — $10/mo (USDT)
             </span>
-            <span class="px-2 py-0.5 rounded-full text-[10px] font-mono font-bold bg-emerald-500/15 text-emerald-300 border border-emerald-500/30">
+            <span class="px-2 py-0.5 rounded-full text-[10px] font-mono font-bold bg-emerald-500/15 text-emerald-300 border border-emerald-500/30" data-i18n="pbotUsdtBadge">
               USDT Direct
             </span>
           </div>
@@ -747,8 +751,8 @@
           </p>
           <select id="vip-plan-tier" aria-label="VIP Plan Tier"
             class="w-full h-10 px-3 rounded-lg bg-slate-900 border border-slate-700 text-xs font-bold text-amber-200">
-            <option value="monthly_business_vip">💎 Business VIP Channel + Bot (10 Assets) — $10/mo (USDT)</option>
-            <option value="monthly_personal_bot">🤖 Personal Bot Pro (50 Assets + Stocks &amp; News) + VIP — $19/mo (USDT)</option>
+            <option value="monthly_business_vip" data-i18n="pbotPlanOptVip">💎 Business VIP + Bot — $10/mo (10 Assets + VIP Channel)</option>
+            <option value="monthly_personal_bot" data-i18n="pbotPlanOptPro">🤖 Personal Bot Pro + VIP — $19/mo (50 Assets + Stocks &amp; Breakout Alerts)</option>
           </select>
           <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
             <select id="vip-usdt-network" aria-label="USDT Network"
@@ -865,11 +869,11 @@
 
       <div class="flex items-center gap-2 px-3 py-2 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-xs font-semibold text-emerald-300">
         <span class="w-2 h-2 rounded-full bg-emerald-400 shrink-0"></span>
-        <span data-i18n="authLocalSavedBadge">Browser Auto-Save Active (localStorage)</span>
+        <span data-i18n="authLocalSavedBadge">Auto-Save Active on This Device</span>
       </div>
 
       <div id="auth-config-notice" class="hidden p-3 rounded-xl bg-amber-500/10 border border-amber-400/35 text-xs text-amber-200 leading-relaxed" data-i18n="authConfigNotice">
-        Cloud Email Sync requires a public Supabase anon key in monetization.config.js. Browser auto-save is already active locally.
+        Your layout is already saved automatically on this device. Cross-device email sync is coming soon.
       </div>
 
       <!-- Step 1: Enter Email -->
@@ -1016,6 +1020,86 @@
           ⚖️ Historical performance &amp; news are informational market data only — not financial advice or guaranteed future direction.
         </p>
       </div>
+    </div>
+  </div>
+
+  <!-- ===================================================================== -->
+  <!-- MODAL 6: HIGH-CONVERTING FREE-TO-USDT UPGRADE MODAL ($10 / $19 USDT)  -->
+  <!-- ===================================================================== -->
+  <div id="modal-usdt-upgrade" role="dialog" aria-modal="true" aria-labelledby="upgrade-modal-title"
+    class="hidden fixed inset-0 z-50 bg-black/80 backdrop-blur-sm items-end sm:items-center justify-center p-0 sm:p-4 md:p-5">
+    <div class="rp-modal-sheet w-full max-w-xl rounded-t-2xl sm:rounded-2xl bg-slate-900 border border-amber-400/50 shadow-2xl p-4 sm:p-6 space-y-4 overflow-y-auto">
+      <div class="flex items-start justify-between gap-3">
+        <div class="space-y-1">
+          <span class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-extrabold bg-amber-400/15 text-amber-300 border border-amber-400/40" data-i18n="upgradeModalBadge">
+            UNLOCK PRO ALERTS • DIRECT USDT
+          </span>
+          <h2 id="upgrade-modal-title" class="text-base sm:text-lg font-extrabold text-white" data-i18n="upgradeModalTitle">
+            Upgrade Your Market Bot &amp; Breakout Alerts
+          </h2>
+          <p id="upgrade-modal-reason" class="text-xs text-slate-300 leading-relaxed" data-i18n="upgradeModalSubtitle">
+            Free accounts track up to 3 assets. Upgrade with instant USDT (TRC-20 / BEP-20 / TON / SOL) for up to 50 assets, live stock &amp; company news, and real-time Telegram breakout alerts.
+          </p>
+        </div>
+        <button id="btn-close-upgrade-modal" type="button"
+          class="px-2.5 py-1 rounded-lg text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-slate-300 shrink-0" data-i18n="closeBtn">
+          Close
+        </button>
+      </div>
+
+      <!-- Plan Selector Cards ($10 VIP vs $19 Personal Bot Pro) -->
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <button type="button" data-upgrade-plan="monthly_business_vip"
+          class="upgrade-plan-card text-start p-3.5 rounded-xl bg-slate-950/80 border border-slate-700 hover:border-amber-400/50 transition-all space-y-1.5">
+          <div class="flex items-center justify-between gap-2">
+            <span class="text-xs font-extrabold text-white" data-i18n="upgradePlan1Name">Business VIP + Bot</span>
+            <span class="text-sm font-extrabold font-mono text-amber-300" dir="ltr" data-i18n="upgradePlan1Price">$10 / mo</span>
+          </div>
+          <p class="text-[11px] text-slate-400 leading-relaxed" data-i18n="upgradePlan1Desc">
+            10 tracked assets, Private VIP AR/EN channel, 24h Quant Signal Matrix &amp; 8h Funding Carry alerts.
+          </p>
+        </button>
+
+        <button type="button" data-upgrade-plan="monthly_personal_bot"
+          class="upgrade-plan-card text-start p-3.5 rounded-xl bg-amber-500/10 border-2 border-amber-400 ring-1 ring-amber-400/35 transition-all space-y-1.5">
+          <div class="flex items-center justify-between gap-2">
+            <span class="inline-flex items-center gap-1.5 flex-wrap">
+              <span class="text-xs font-extrabold text-white" data-i18n="upgradePlan2Name">Personal Bot Pro + VIP</span>
+              <span class="px-1.5 py-0.5 rounded text-[9px] font-extrabold bg-amber-400 text-slate-950" data-i18n="upgradePlan2Badge">MOST POPULAR</span>
+            </span>
+            <span class="text-sm font-extrabold font-mono text-amber-300 shrink-0" dir="ltr" data-i18n="upgradePlan2Price">$19 / mo</span>
+          </div>
+          <p class="text-[11px] text-slate-300 leading-relaxed" data-i18n="upgradePlan2Desc">
+            50 tracked assets (FX, Gold, Crypto &amp; Global Stocks), Instant Breakout Alerts, Breaking Company News + Full VIP Channel.
+          </p>
+        </button>
+      </div>
+
+      <!-- Instant USDT Network & Direct Checkout Form -->
+      <form id="upgrade-usdt-form" class="space-y-3 p-3.5 rounded-xl bg-slate-950/80 border border-slate-800">
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+          <select id="upgrade-usdt-network" aria-label="USDT Network"
+            class="h-10 px-3 rounded-lg bg-slate-900 border border-slate-700 text-xs font-semibold text-slate-200">
+            <option value="usdttrc20">USDT (TRC-20 • TRON)</option>
+            <option value="usdtbsc">USDT (BEP-20 • BSC)</option>
+            <option value="usdtton">USDT (TON • Telegram)</option>
+            <option value="usdtsol">USDT (Solana)</option>
+            <option value="usdtarb">USDT (Arbitrum)</option>
+          </select>
+          <input id="upgrade-tg-user-id" type="text" inputmode="numeric" dir="ltr"
+            placeholder="Telegram ID (optional)"
+            class="h-10 px-3 rounded-lg bg-slate-900 border border-slate-700 text-xs font-mono text-white placeholder:text-slate-500" />
+        </div>
+        <button id="btn-upgrade-usdt-submit" type="submit"
+          class="w-full py-3 px-4 rounded-xl text-xs sm:text-sm font-extrabold bg-gradient-to-r from-amber-400 to-yellow-300 hover:from-amber-300 hover:to-yellow-200 text-slate-950 shadow-lg shadow-amber-500/15 transition-colors"
+          data-i18n="upgradePayCta">
+          Continue to Instant USDT Payment →
+        </button>
+      </form>
+
+      <p class="text-[10px] text-slate-400 leading-relaxed text-center" data-i18n="upgradeLegalNote">
+        ⚖️ Informational monitoring &amp; alert software only — no guaranteed price outcomes or investment advice.
+      </p>
     </div>
   </div>
 

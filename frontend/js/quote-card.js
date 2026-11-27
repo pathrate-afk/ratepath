@@ -138,7 +138,10 @@ export function renderQuoteCardCanvas(canvas, state) {
   ctx.fillStyle = "#34D399";
   ctx.font = "700 15px monospace";
   ctx.textAlign = "center";
-  ctx.fillText(`UTC ${state.feed.meta.generated_at}`, width - 201, 80);
+  const stampUtc = String(state.feed?.meta?.generated_at || new Date().toISOString())
+    .slice(0, 19)
+    .replace("T", " ");
+  ctx.fillText(`UTC ${stampUtc}`, width - 201, 80);
 
   // 6. Hero Active Conversion Banner
   drawRoundedRect(ctx, 56, 140, width - 112, 118, 18);
@@ -238,22 +241,23 @@ export function renderQuoteCardCanvas(canvas, state) {
     ctx.fillText(`${lang === "ar" ? "السعر" : "Spot"}: ${assetMeta?.spotDisplay || "-"}`, x + 18, y + 102);
   });
 
-  // 8. Watermarked Institutional Footer
+  // 8. Watermarked Institutional Footer (Organic Traffic Driver: Domain + Official EN/AR Telegram)
+  ctx.save();
+  ctx.direction = "ltr";
   ctx.textAlign = "left";
   ctx.fillStyle = "#94A3B8";
-  ctx.font = "600 15px system-ui, sans-serif";
+  ctx.font = "600 14px system-ui, -apple-system, sans-serif";
   ctx.fillText(
-    lang === "ar"
-      ? "مصادر موثقة: Binance • Bybit • Swissquote • SP-Today • CoinMarketCap"
-      : "Verified sources: Binance • Bybit • Swissquote • SP-Today • CoinMarketCap",
+    "Binance • Bybit • Swissquote • SP-Today • CoinMarketCap",
     56,
     584
   );
 
   ctx.textAlign = "right";
-  ctx.fillStyle = "#D4AF37";
-  ctx.font = "800 17px system-ui, sans-serif";
-  ctx.fillText("ratepathlive.com • ريت باث", width - 56, 584);
+  ctx.fillStyle = "#FDE68A";
+  ctx.font = "800 16px system-ui, -apple-system, sans-serif";
+  ctx.fillText("ratepathlive.com  •  @RatePath_AR  •  @RatePathLive", width - 56, 584);
+  ctx.restore();
 }
 
 /**

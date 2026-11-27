@@ -25,7 +25,10 @@ const FETCH_HEADERS = {
 };
 
 const NOISE_RE =
-  /(401\(k\)|stay-at-home|my husband|my wife|should i retire|social security|wedding|divorce|horoscope|credit card tips|best savings account|gift guide|holiday shopping|inheritance|برجك|الأبراج|وصفات طبخ|كرة القدم|الدوري|مباراة)/i;
+  /(401\(k\)|stay-at-home|my husband|my wife|should i retire|social security|wedding|divorce|horoscope|credit card tips|best savings account|gift guide|holiday shopping|inheritance|برجك|الأبراج|وصفات طبخ|كرة القدم|الدوري|مباراة|تقنية الفار|كأس العالم|السجون التونسية|سجن|معتقل|investingpro|خصم\s*\d+%|اشترك الآن في|عرض خاص)/i;
+
+const MARKET_RELEVANCE_AR_RE =
+  /(دولار|يورو|ذهب|فضة|نفط|برنت|أوبك|بيتكوين|إيثيريوم|عملة|عملات|كريبتو|سهم|أسهم|بورصة|بنك|مركزي|فائدة|تضخم|اقتصاد|سوق|أسواق|شركة|شركات|تداول|أرباح|خسائر|إفلاس|usdt|usdc|btc|eth|xau|ليرة|ريال|درهم|جنيه|دينار|استثمار|سندات|عقود|تعدين|حيتان|محافظ|سيولة)/i;
 
 const WHALE_RE = /(usdt|usdc|tether|whale|حيتان|محافظ|محفظة|طباعة|معروض|سيولة|stablecoin|mint|burn|hack|اختراق)/i;
 const CORP_RE = /(bankrupt|إفلاس|افلاس|خسارة|خسائر|أرباح|إغلاق|اغلاق|تسريح|layoffs|earnings|شركة|شركات|سهم|أسهم|stock|tesla|apple|nvidia|amazon|microsoft|aramco|أرامكو|بنك|مصرف)/i;
@@ -43,10 +46,10 @@ const FEEDS_EN = [
 
 const FEEDS_AR = [
   { cat: "macro", source: "سكاي نيوز اقتصاد", url: "https://www.skynewsarabia.com/rss/v1/business.xml" },
-  { cat: "macro", source: "الجزيرة اقتصاد", url: "https://www.aljazeera.net/aljazeerarss/eb20a53e-8d14-4d35-b1c9-943122246049/73d0e1b4-532f-45ef-b135-bfdff8b8cab9" },
   { cat: "crypto", source: "كوين تليغراف عربي", url: "https://ar.cointelegraph.com/rss" },
-  { cat: "corporate", source: "Investing عربي", url: "https://sa.investing.com/rss/news.rss" },
+  { cat: "corporate", source: "Investing عربي", url: "https://sa.investing.com/rss/news.rss", strictMarket: true },
   { cat: "crypto", source: "Investing كريبتو", url: "https://sa.investing.com/rss/news_301.rss" },
+  { cat: "macro", source: "Investing عملات", url: "https://sa.investing.com/rss/news_1.rss" },
 ];
 
 function withTimeout(init = {}, ms = 6000) {
@@ -106,7 +109,8 @@ async function fetchRssFeed(feed) {
       const url = decodeHtmlEntities(linkM?.[1] || "").trim();
       const rawDesc = decodeHtmlEntities(descM?.[1] || "");
       const summary = rawDesc.length >= 25 ? rawDesc.slice(0, 320) : title;
-      if (title.length < 12 || !/^https?:\/\//i.test(url) || NOISE_RE.test(title)) continue;
+      if (title.length < 12 || !/^https?:\/\//i.test(url) || NOISE_RE.test(`${title} ${summary}`)) continue;
+      if (feed.strictMarket && !MARKET_RELEVANCE_AR_RE.test(`${title} ${summary}`)) continue;
 
       const parsedMs = pubM?.[1] ? Date.parse(pubM[1].trim()) : NaN;
       const publishedAt = Number.isFinite(parsedMs) ? new Date(parsedMs).toISOString() : new Date().toISOString();

@@ -159,7 +159,7 @@ export function createAssetDetailController({
     detailState.open = false;
     modal.classList.add("hidden");
     modal.classList.remove("flex");
-    const otherOpen = ["modal-quote-card", "modal-vip-alerts", "modal-asset-picker", "modal-auth-sync"].some(
+    const otherOpen = ["modal-quote-card", "modal-vip-alerts", "modal-asset-picker", "modal-auth-sync", "modal-usdt-upgrade"].some(
       (id) => {
         const el = document.getElementById(id);
         return el && !el.classList.contains("hidden");

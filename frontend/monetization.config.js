@@ -1,107 +1,121 @@
 /**
- * RatePath (ريت باث) — Centralized Cloud Endpoints, Geo-Filtered Monetization & 4-Channel Telegram Config
+ * RatePath (ريت باث) — Centralized Cloud Endpoints, Feature Flags, Geo-Filtered Monetization & Telegram Config
  *
- * Edit ONLY this file to activate your personal referral URLs, A-Ads unit ID,
- * NOWPayments $10/mo USDT VIP checkout, and EN/AR Telegram channels.
+ * Edit ONLY this file to manage your Supabase public key, NOWPayments USDT checkout links,
+ * affiliate referral URLs, A-Ads unit ID, section feature flags, and EN/AR Telegram channels.
  */
 
-// Live Serverless Feed URLs (GitHub Actions `live-data` orphan branch with CORS)
+// ---------------------------------------------------------------------------
+// 1. Live Serverless Data Feeds (GitHub `live-data` branch + Cloudflare Pages fallback)
+// ---------------------------------------------------------------------------
 export const LIVE_FEED_URL =
   "https://raw.githubusercontent.com/pathrate-afk/ratepath/live-data/live_feed.json";
 
 export const CATALOG_FEED_URL =
   "https://raw.githubusercontent.com/pathrate-afk/ratepath/live-data/catalog_feed.json";
 
-// On-Demand CoinMarketCap Long-Tail Search Proxy (Cloudflare Pages Function)
 export const CMC_SEARCH_API_URL = "/api/cmc-search";
 
-// Public Supabase Auth & Preferences Sync Config
-// SECURITY: ONLY place a public anon / publishable client key here (never a privileged backend secret key).
-export const SUPABASE_URL = "https://kyhljlkituvhyiawjtqr.supabase.co";
-export const SUPABASE_PUBLIC_ANON_KEY = "sb_publishable_WtLIN9IYG46IfC67plySDg_AStEV44u";
+// ---------------------------------------------------------------------------
+// 2. Public Supabase Cloud Sync (Optional — Cloud Sync UI hides cleanly if left blank)
+// SECURITY: Paste ONLY your public anon / publishable client key below (NEVER a privileged backend secret key).
+// ---------------------------------------------------------------------------
+export const SUPABASE_URL = "https://kyhljlkituvhyiawjtqr.supabase.co"; // Paste your Supabase Project URL (or "" to hide Cloud Sync)
+export const SUPABASE_ANON_KEY = "sb_publishable_WtLIN9IYG46IfC67plySDg_AStEV44u"; // Paste your Supabase public anon/publishable key (or "" to hide Cloud Sync)
+export const SUPABASE_PUBLIC_ANON_KEY = SUPABASE_ANON_KEY; // Backward-compatible alias
 
-// Affiliate monetization toggle — ACTIVE with verified USDT-paying partner accounts.
-// Geo-compliance router (`frontend/js/affiliates.js`) automatically hides any partner blocked in the visitor's country.
+// ---------------------------------------------------------------------------
+// 3. Section Feature Flags (Auto-hides any section with 0 live rows for maximum conversion)
+// ---------------------------------------------------------------------------
+export const FEATURE_FLAGS = {
+  showFundingSpreads: true,
+  showQuantRadar: true,
+  showLiveNews: true,
+  showBreakingBar: true,
+  showPersonalBot: true,
+  showPartnersShelf: true,
+  showCloudSync: true,        // Automatically hidden if SUPABASE_URL or SUPABASE_ANON_KEY is empty
+  autoHideEmptySections: true, // Automatically hides sections if live upstream returns 0 rows
+};
+
+// Affiliate monetization toggle — Geo-compliance router (`frontend/js/affiliates.js`) automatically
+// hides any partner restricted in the visitor's jurisdiction.
 export const AFFILIATES_ENABLED = true;
 
-// Public Canonical Site URL (Cloudflare Pages / Custom Domain)
+// Public Canonical Site URL
 export const PUBLIC_SITE_URL = "https://ratepathlive.com";
 
 export const MONETIZATION_CONFIG = {
   AFFILIATES_ENABLED,
+  FEATURE_FLAGS,
   LIVE_FEED_URL,
   CATALOG_FEED_URL,
   CMC_SEARCH_API_URL,
   SUPABASE_URL,
+  SUPABASE_ANON_KEY,
   SUPABASE_PUBLIC_ANON_KEY,
   PUBLIC_SITE_URL,
   cloudFeedUrl: LIVE_FEED_URL,
 
-  // 1. Geo-Filtered Financial & Crypto Affiliates (Verified personal referral links; leave "" to hide)
-  // Payouts marked [USDT] pay commissions directly to your USDT wallet without a bank account.
+  // -------------------------------------------------------------------------
+  // 4. Geo-Filtered Crypto, Gold/FX & Bot Affiliate Partners
+  // Replace global fallback URLs below with your personal affiliate referral links to earn USDT commissions.
+  // -------------------------------------------------------------------------
   affiliates: {
-    // Crypto Exchanges — MENA / Asia / LATAM / Turkey [Direct USDT Payout]
+    // Active Verified Referral Links [Direct USDT Payout]
     bybit: "https://www.bybit.com/invite?ref=N8PZMKN&medium=referral&utm_campaign=evergreen&share_to=link",
-    okx: "",         // Complete OKX TR KYC/Apply to unlock your OKX link
     bitget: "https://share.bitget.com/u/N9R5T1J8",
-    binance: "",     // Optional: paste your Binance referral link here when ready
-
-    // Gold (XAU/USD) & Forex Trading Broker [Direct USDT TRC20 Payout]
     exness: "https://one.toexness.com/a/c_zmvyur7qg4",
-
-    // Regulated US / UK / Canada / EU Exchanges (Auto-shown ONLY to US/UK/CA/EU visitors)
-    kraken: "",      // https://kraken.pxf.io/YOUR_CODE
-    coinbase: "",    // https://advanced.coinbase.com/join/YOUR_CODE
-
-    // Global Charting & Cold Wallet (Works worldwide including US/EU/MENA; TradingView works in SY too)
     tradingview: "https://www.tradingview.com/?aff_id=1176056",
-    ledger: "",      // https://shop.ledger.com/?r=YOUR_CODE    [Direct BTC/USDT Payout]
 
-    // Automated Trading & Alert Bot Platforms (Optional extra slots — Bybit/Bitget/TradingView Bots are ALREADY ACTIVE above!)
-    pionex: "",       // https://www.pionex.com/en/signUp?r=YOUR_CODE  [Direct USDT Payout]
+    // Global Fallback Partners (Clickable now — paste your personal referral codes when approved)
+    okx: "https://www.okx.com/join",          // Paste your OKX referral link here: https://www.okx.com/join/YOUR_CODE
+    mexc: "https://www.mexc.com/register",    // Paste your MEXC referral link here: https://www.mexc.com/register?inviteCode=YOUR_CODE
+
+    // Optional Extra Exchanges & Wallets (Leave "" to keep hidden until you paste your referral link)
+    binance: "",      // https://accounts.binance.com/register?ref=YOUR_CODE
+    kraken: "",       // https://kraken.pxf.io/YOUR_CODE        (Auto-shown ONLY in US/UK/CA/EU)
+    coinbase: "",     // https://advanced.coinbase.com/join/YOUR_CODE (Auto-shown ONLY in US/UK)
+    ledger: "",       // https://shop.ledger.com/?r=YOUR_CODE
+    pionex: "",       // https://www.pionex.com/en/signUp?r=YOUR_CODE
     threecommas: "",  // https://3commas.io/?c=YOUR_CODE
     cryptohopper: "", // https://www.cryptohopper.com/?atid=YOUR_CODE
-
-    // International Fiat Remittances (Auto-hidden in restricted countries like SY/LB/IQ)
-    wise: "",        // https://wise.com/invite/u/YOUR_CODE
-    remitly: "",     // https://remit.ly/YOUR_CODE
+    wise: "",         // https://wise.com/invite/u/YOUR_CODE
+    remitly: "",      // https://remit.ly/YOUR_CODE
   },
 
-  // 2. Privacy-Preserving Display Ad Slot (A-Ads / Anonymous Ads — pays directly in BTC/Crypto!)
+  // -------------------------------------------------------------------------
+  // 5. Privacy-Preserving Display Ad Slot (A-Ads — auto-hidden until numeric ID is pasted)
+  // -------------------------------------------------------------------------
   advertising: {
-    // Drop your numeric A-Ads unit ID here (e.g. "2390123") to render the live iframe automatically
-    aAdsUnitId: "",
+    aAdsUnitId: "", // Paste numeric A-Ads unit ID (e.g. "2390123") to activate banner
     aAdsSize: "728x90",
     aAdsPartnerUrl: "https://aads.com/?partner=ratepath",
   },
 
-  // 3. Subscriptions — Paid in USDT directly to owner's NOWPayments wallet (Informational Data Service Only)
+  // -------------------------------------------------------------------------
+  // 6. Direct USDT Subscriptions (NOWPayments API + Optional Static Payment Links)
+  // -------------------------------------------------------------------------
   vipPayments: {
     checkoutApiUrl: "/api/create-vip-checkout",
-    // Optional static NOWPayments Payment Link fallback if API key is not configured yet
-    nowPaymentsVipUrl: "",
+    // Paste your direct NOWPayments Payment Links below as instant fallback if API key is paused:
+    nowPaymentsVipUrl: "",         // $10/mo Business VIP + Bot: https://nowpayments.io/payment/?iid=YOUR_10_USD_LINK
+    nowPaymentsPersonalBotUrl: "", // $19/mo Personal Bot Pro:   https://nowpayments.io/payment/?iid=YOUR_19_USD_LINK
     vipMonthlyPriceUsd: "10",
     personalBotMonthlyPriceUsd: "19",
     defaultPayCurrency: "usdttrc20",
   },
 
-  // 4. Official 4-Channel Language-Separated Telegram Ecosystem Links
-  // English UI automatically binds `_EN` channels; Arabic UI automatically binds `_AR` channels.
+  // -------------------------------------------------------------------------
+  // 7. Official Bilingual Telegram Ecosystem Links (Auto-bound by EN / AR)
+  // -------------------------------------------------------------------------
   telegram: {
-    // Pure English Channels (bound when UI is EN / LTR) — verified live usernames
     publicChannelEn: "https://t.me/RatePathLive",
-    // VIP channels are private (no public username) -> route visitors through the official bot
     vipChannelEn: "https://t.me/RatePathTerminalBot?start=vip_en",
-
-    // Pure Arabic Channels (bound when UI is AR / RTL) — verified live usernames
     publicChannelAr: "https://t.me/RatePath_AR",
     vipChannelAr: "https://t.me/RatePathTerminalBot?start=vip_ar",
-
-    // Shared Official Bot & Mini App Base URL (verified via Telegram getMe)
     botUrl: "https://t.me/RatePathTerminalBot",
     miniAppUrl: `${PUBLIC_SITE_URL}/`,
-
-    // Backward-compatible fallbacks
     publicChannelUrl: "https://t.me/RatePathLive",
     vipChannelUrl: "https://t.me/RatePathTerminalBot?start=vip_en",
   },

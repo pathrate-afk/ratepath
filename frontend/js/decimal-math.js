@@ -91,6 +91,11 @@ export function buildAssetCatalog(feed, catalogFeed = null, customAssets = {}) {
   const extMetals = catalogFeed?.metals || {};
   const extCryptoList = Array.isArray(catalogFeed?.crypto) ? catalogFeed.crypto : [];
   const extCryptoById = Object.fromEntries(extCryptoList.map((c) => [c.id, c]));
+  const extCryptoBySym = Object.fromEntries(
+    extCryptoList
+      .filter((c) => c?.symbol)
+      .map((c) => [String(c.symbol).toUpperCase(), c])
+  );
 
   // Aggregate 24h consensus bias across news items for live directional badges
   const biasScore = { USD: 0, EUR: 0, GBP: 0, XAU: 0, BTC: 0, ETH: 0, SOL: 0 };
@@ -190,8 +195,8 @@ export function buildAssetCatalog(feed, catalogFeed = null, customAssets = {}) {
 
   const makeCryptoEntry = (code, symbol, decimals) => {
     const asset = cryptoAssets[code] || {};
-    const cmcMeta = extCryptoById[code] || {};
-    const rawUsd = asset.spot_price || cmcMeta.price_usd || "1";
+    const cmcMeta = extCryptoById[code] || extCryptoBySym[code] || {};
+    const rawUsd = asset.spot_price || cmcMeta.price_usd || (code === "USDT" ? "1.0000" : "1");
     const usdScaled = parseDecimalToScaled(rawUsd) || SCALE;
     const chg24 = cmcMeta.change_24h_pct || null;
     return {
@@ -199,15 +204,15 @@ export function buildAssetCatalog(feed, catalogFeed = null, customAssets = {}) {
       code,
       category: "crypto",
       symbol,
-      nameEn: cmcMeta.name || code,
-      nameAr: cmcMeta.name || code,
+      nameEn: cmcMeta.name || (code === "USDT" ? "Tether (USDT)" : code),
+      nameAr: code === "USDT" ? "تيثر (USDT)" : cmcMeta.name || code,
       decimals,
       pairLabel: `${code}/USD`,
       spotDisplay: rawUsd,
-      spotSource: asset.spot_source || "binance_vision",
+      spotSource: asset.spot_source || (code === "USDT" ? "coinmarketcap" : "binance_vision"),
       funding: asset.funding || null,
-      cmcId: cmcMeta.cmc_id ?? null,
-      cmcRank: cmcMeta.rank ?? null,
+      cmcId: cmcMeta.cmc_id ?? (code === "USDT" ? 825 : null),
+      cmcRank: cmcMeta.rank ?? (code === "USDT" ? 3 : null),
       logoUrl: cmcMeta.logo_url || "",
       change24hPct: chg24,
       unitsPerUsdScaled: (SCALE * SCALE + usdScaled / 2n) / usdScaled,
@@ -261,18 +266,27 @@ export function buildAssetCatalog(feed, catalogFeed = null, customAssets = {}) {
     makeCryptoEntry("BTC", "₿", 6),
     makeCryptoEntry("ETH", "Ξ", 5),
     makeCryptoEntry("SOL", "◎", 4),
+    makeCryptoEntry("USDT", "₮", 2),
   ];
 
   const byId = Object.fromEntries(coreAssets.map((item) => [item.id, item]));
   const allSearchable = [...coreAssets];
 
-  // 2. Extended Metals: Silver (XAG_OZ & XAG_GRAM)
-  for (const [metalId, shortCode, unitTag, nameEn, nameAr] of [
-    ["XAG_OZ", "XAG", "oz", "Silver Troy Ounce", "أونصة الفضة الفوري"],
-    ["XAG_GRAM", "Ag/g", "g", "Silver Gram (999)", "جرام الفضة عيار 999"],
+  // 2. Extended Metals: Silver (XAG_OZ & XAG_GRAM — always available even before catalog_feed loads)
+  const fallbackXagOz = extMetals.XAG_OZ?.price_usd || goldPrices.XAG_OZ || "43.75";
+  const fallbackXagGram = extMetals.XAG_GRAM?.price_usd || goldPrices.XAG_GRAM || "1.41";
+  for (const [metalId, shortCode, unitTag, nameEn, nameAr, fallbackPrice] of [
+    ["XAG_OZ", "XAG", "oz", "Silver Troy Ounce", "أونصة الفضة الفوري", fallbackXagOz],
+    ["XAG_GRAM", "Ag/g", "g", "Silver Gram (999)", "جرام الفضة عيار 999", fallbackXagGram],
   ]) {
-    if (extMetals[metalId] && !byId[metalId]) {
+    if (!byId[metalId]) {
       const m = makeMetalEntry(metalId, shortCode, unitTag, "Ag", nameEn, nameAr);
+      if (m.spotDisplay === "1" && fallbackPrice) {
+        const s = parseDecimalToScaled(fallbackPrice) || SCALE;
+        m.spotDisplay = fallbackPrice;
+        m.usdPerUnitScaled = s;
+        m.unitsPerUsdScaled = (SCALE * SCALE + s / 2n) / s;
+      }
       byId[metalId] = m;
       allSearchable.push(m);
     }
@@ -289,6 +303,7 @@ export function buildAssetCatalog(feed, catalogFeed = null, customAssets = {}) {
   // 4. Extended Top-300 CoinMarketCap Cryptocurrencies from `catalog_feed.json`
   for (const coin of extCryptoList) {
     if (!coin?.id || byId[coin.id]) continue;
+    if (String(coin.symbol || "").toUpperCase() === "USDT" && byId.USDT) continue;
     const c = makeExtendedCryptoEntry(coin);
     byId[coin.id] = c;
     allSearchable.push(c);
