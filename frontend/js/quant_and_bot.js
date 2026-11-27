@@ -135,7 +135,7 @@ export function createQuantAndBotController({
           const cm = catMeta(item.category);
           return `
             <button type="button" data-jump-news-id="${esc(item.id)}"
-              class="shrink-0 max-w-[300px] sm:max-w-[360px] inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-950/90 hover:bg-slate-800 border border-slate-800 hover:border-amber-400/50 text-start transition-colors cursor-pointer">
+              class="shrink-0 max-w-[80vw] sm:max-w-[340px] md:max-w-[380px] inline-flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-xl bg-slate-950/90 hover:bg-slate-800 border border-slate-800 hover:border-amber-400/50 text-start transition-colors cursor-pointer">
               <span class="shrink-0">${cm.icon}</span>
               ${arrowHtml(item.direction)}
               <span class="text-xs font-bold text-slate-100 truncate">${esc(item.title)}</span>
@@ -277,7 +277,7 @@ export function createQuantAndBotController({
 
     const rows = Array.isArray(data.signals) ? data.signals : [];
     body.innerHTML = `
-      <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+      <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-2 gap-2">
         ${rows
           .map((sig) => {
             const isUp = sig.bias === "bullish";

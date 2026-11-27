@@ -122,6 +122,7 @@ const state = {
   amount: "100",
   baseAssetId: "USD",
   mobileTab: "converter",
+  deviceProfile: "desktop",
   isOffline: false,
   wakeLockSentinel: null,
   wakeLockActive: false,
@@ -975,10 +976,10 @@ function renderConversionMatrix() {
 
       return `
         <div data-ws-card="${escapeHtml(item.id)}" ${isEdit ? 'draggable="true"' : `data-select-asset="${escapeHtml(item.id)}" role="button" tabindex="0"`}
-          class="group relative p-3 rounded-xl border transition-all select-none ${isEdit ? "rp-edit-card" : "cursor-pointer"} ${activeRing}">
+          class="group relative min-w-0 p-2.5 sm:p-3 rounded-xl border transition-all select-none ${isEdit ? "rp-edit-card" : "cursor-pointer"} ${activeRing}">
           ${editControlsHtml}
           <div class="flex flex-wrap items-start justify-between gap-1.5 mb-1.5">
-            <div class="flex items-center gap-1.5 min-w-0 flex-1 basis-[6.5rem]">
+            <div class="flex items-center gap-1.5 min-w-0 flex-1 basis-[5.5rem] sm:basis-[6.5rem]">
               ${renderAssetIconBadge(item)}
               <div class="min-w-0">
                 <span class="text-xs font-extrabold text-white font-mono" dir="ltr">${escapeHtml(item.code)}</span>
@@ -989,7 +990,7 @@ function renderConversionMatrix() {
               ${escapeHtml(signalLabel)}
             </span>
           </div>
-          <div class="text-base sm:text-lg font-extrabold text-slate-50 font-mono tabular-nums truncate" dir="ltr">
+          <div class="text-[15px] sm:text-base md:text-lg font-extrabold text-slate-50 font-mono tabular-nums truncate" dir="ltr">
             ${escapeHtml(conv?.formatted || "0.00")}
           </div>
           <div class="flex items-center justify-between gap-1 mt-1 text-[10px] text-slate-400 font-mono" dir="ltr">
@@ -1226,11 +1227,62 @@ function evaluateLocalPriceAlerts() {
 }
 
 // ---------------------------------------------------------------------------
-// 6. Responsive Mobile One-Handed Navigation & Modals
+// 6. Automatic Device Detection (Mobile / Tablet / Desktop / Wide) & Modals
 // ---------------------------------------------------------------------------
 
+function detectAndApplyDeviceProfile() {
+  const vw = Math.max(
+    320,
+    Math.round(window.innerWidth || document.documentElement.clientWidth || 1024)
+  );
+  const vh = Math.max(
+    320,
+    Math.round(
+      window.visualViewport?.height || window.innerHeight || document.documentElement.clientHeight || 768
+    )
+  );
+  const device =
+    vw < 768 ? "mobile" : vw < 1024 ? "tablet" : vw < 1536 ? "desktop" : "wide";
+  const orientation = vw >= vh ? "landscape" : "portrait";
+  const isTouch =
+    (typeof window.matchMedia === "function" && window.matchMedia("(pointer: coarse)").matches) ||
+    (navigator.maxTouchPoints || 0) > 0;
+
+  state.deviceProfile = device;
+  const root = document.documentElement;
+  root.dataset.device = device;
+  root.dataset.orientation = orientation;
+  root.dataset.touch = isTouch ? "true" : "false";
+  root.style.setProperty("--rp-vw", `${vw}px`);
+  root.style.setProperty("--rp-vh", `${(vh * 0.01).toFixed(2)}px`);
+
+  const headerEl = document.querySelector("header.rp-header");
+  if (headerEl) {
+    const h = Math.round(headerEl.getBoundingClientRect().height);
+    if (h > 40) {
+      root.style.setProperty("--rp-header-h", `${h}px`);
+    }
+  }
+  return device;
+}
+
+function syncBodyScrollLock() {
+  const modalIds = [
+    "modal-quote-card",
+    "modal-vip-alerts",
+    "modal-asset-picker",
+    "modal-auth-sync",
+    "modal-asset-detail",
+  ];
+  const anyOpen = modalIds.some((id) => {
+    const el = document.getElementById(id);
+    return el && !el.classList.contains("hidden");
+  });
+  document.body.style.overflow = anyOpen ? "hidden" : "";
+}
+
 function applyMobileTabVisibility() {
-  const isDesktop = window.matchMedia("(min-width: 1024px)").matches;
+  const isTabletOrDesktop = window.matchMedia("(min-width: 768px)").matches;
   const quantPanel = document.getElementById("quant-radar-panel");
   const sections = {
     converter: document.getElementById("converter-panel"),
@@ -1239,7 +1291,7 @@ function applyMobileTabVisibility() {
     news: document.getElementById("news-panel"),
   };
 
-  if (isDesktop) {
+  if (isTabletOrDesktop) {
     Object.values(sections).forEach((el) => el?.classList.remove("hidden"));
     quantPanel?.classList.remove("hidden");
   } else {
@@ -1252,7 +1304,7 @@ function applyMobileTabVisibility() {
         el.classList.toggle("hidden", key !== state.mobileTab);
       }
     });
-    // Show Quant & Macro Signal Radar together with the Macro/News tab on mobile
+    // Show Quant & Macro Signal Radar together with the Macro/News tab on phones
     quantPanel?.classList.toggle("hidden", state.mobileTab !== "news");
   }
 
@@ -1270,6 +1322,7 @@ function openQuoteCardModal() {
   renderQuoteCardCanvas(canvas, state);
   modal.classList.remove("hidden");
   modal.classList.add("flex");
+  syncBodyScrollLock();
   triggerTelegramHaptic("medium");
 }
 
@@ -1278,6 +1331,7 @@ function closeQuoteCardModal() {
   if (!modal) return;
   modal.classList.add("hidden");
   modal.classList.remove("flex");
+  syncBodyScrollLock();
 }
 
 function openVipAlertsModal() {
@@ -1292,6 +1346,7 @@ function openVipAlertsModal() {
   renderVipAlertsList();
   modal.classList.remove("hidden");
   modal.classList.add("flex");
+  syncBodyScrollLock();
   triggerTelegramHaptic("medium");
 }
 
@@ -1300,6 +1355,7 @@ function closeVipAlertsModal() {
   if (!modal) return;
   modal.classList.add("hidden");
   modal.classList.remove("flex");
+  syncBodyScrollLock();
 }
 
 // ---------------------------------------------------------------------------
@@ -1341,6 +1397,7 @@ function openAssetPickerModal() {
   renderAssetPickerResults();
   modal.classList.remove("hidden");
   modal.classList.add("flex");
+  syncBodyScrollLock();
   setTimeout(() => searchInput?.focus(), 40);
   triggerTelegramHaptic("light");
 }
@@ -1350,6 +1407,7 @@ function closeAssetPickerModal() {
   if (!modal) return;
   modal.classList.add("hidden");
   modal.classList.remove("flex");
+  syncBodyScrollLock();
 }
 
 async function runRemoteCmcSearch(queryText) {
@@ -1542,6 +1600,7 @@ function openAuthSyncModal() {
   renderAuthSyncState();
   modal.classList.remove("hidden");
   modal.classList.add("flex");
+  syncBodyScrollLock();
   triggerTelegramHaptic("light");
 }
 
@@ -1550,6 +1609,7 @@ function closeAuthSyncModal() {
   if (!modal) return;
   modal.classList.add("hidden");
   modal.classList.remove("flex");
+  syncBodyScrollLock();
 }
 
 async function initCloudAndTelegramSync() {
@@ -1682,7 +1742,7 @@ const quantBotController = createQuantAndBotController({
   showToast,
   openAuthModal: () => openAuthSyncModal(),
   jumpToNewsTab: () => {
-    if (!window.matchMedia("(min-width: 1024px)").matches) {
+    if (!window.matchMedia("(min-width: 768px)").matches) {
       state.mobileTab = "news";
       applyMobileTabVisibility();
     }
@@ -2097,7 +2157,18 @@ function bindEvents() {
     });
   });
 
-  window.addEventListener("resize", applyMobileTabVisibility);
+  let viewportRaf = 0;
+  const handleViewportChange = () => {
+    if (viewportRaf) return;
+    viewportRaf = window.requestAnimationFrame(() => {
+      viewportRaf = 0;
+      detectAndApplyDeviceProfile();
+      applyMobileTabVisibility();
+    });
+  };
+  window.addEventListener("resize", handleViewportChange, { passive: true });
+  window.addEventListener("orientationchange", handleViewportChange, { passive: true });
+  window.visualViewport?.addEventListener("resize", handleViewportChange, { passive: true });
   window.addEventListener("online", () => {
     state.isOffline = false;
     fetchLiveFeed();
@@ -2210,11 +2281,13 @@ function bindEvents() {
 
 // Boot Sequence
 document.addEventListener("DOMContentLoaded", async () => {
+  detectAndApplyDeviceProfile();
   initTelegramMiniApp();
   registerServiceWorker();
   applyMonetizationConfigDom();
   applyLanguageAttributes();
   bindEvents();
+  applyMobileTabVisibility();
   quantBotController.init();
   assetDetailController.init();
 

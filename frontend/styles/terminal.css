@@ -7,6 +7,10 @@
   --rp-gold: #d4af37;
   --rp-emerald: #10b981;
   --rp-rose: #f43f5e;
+  --rp-vw: 100vw;
+  --rp-vh: 1vh;
+  --rp-header-h: 112px;
+  --rp-safe-bottom: env(safe-area-inset-bottom, 0px);
 }
 
 html {
@@ -14,22 +18,50 @@ html {
   color: #f8fafc;
   font-family: "Inter", "IBM Plex Sans Arabic", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   -webkit-font-smoothing: antialiased;
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
   text-rendering: optimizeLegibility;
+  overflow-x: clip;
+  max-width: 100%;
+}
+
+body {
+  overflow-x: clip;
+  max-width: 100%;
+  min-height: 100vh;
+  min-height: 100dvh;
 }
 
 html[dir="rtl"] {
   font-family: "IBM Plex Sans Arabic", "Inter", system-ui, -apple-system, sans-serif;
 }
 
+/* Smooth anchor clearance beneath sticky header on all screen sizes */
+#converter-panel,
+#rates-panel,
+#personal-bot-hub,
+#quant-radar-panel,
+#funding-panel,
+#news-panel {
+  scroll-margin-top: calc(var(--rp-header-h, 112px) + 0.75rem);
+}
+
 /* Prevent Cumulative Layout Shift (CLS) during instant EN <-> AR switching */
 header.rp-header {
-  min-height: 64px;
+  min-height: 56px;
+}
+
+@media (min-width: 640px) {
+  header.rp-header {
+    min-height: 64px;
+  }
 }
 
 .rp-ticker-strip {
-  min-height: 46px;
+  min-height: 42px;
   scrollbar-width: none;
   -ms-overflow-style: none;
+  -webkit-overflow-scrolling: touch;
 }
 
 .rp-ticker-strip::-webkit-scrollbar {
@@ -58,15 +90,72 @@ header.rp-header {
   }
 }
 
-/* Safe-area padding for mobile iOS/Telegram Mini App bottom bar */
+/* Safe-area padding for mobile (< 768px) fixed bottom navigation bar */
 .pb-safe-bottom {
-  padding-bottom: calc(4.75rem + env(safe-area-inset-bottom, 0px));
+  padding-bottom: calc(5rem + env(safe-area-inset-bottom, 0px));
 }
 
-@media (min-width: 1024px) {
+.rp-mobile-nav {
+  padding-bottom: calc(0.4rem + env(safe-area-inset-bottom, 0px));
+}
+
+.mobile-nav-btn {
+  min-height: 44px;
+  touch-action: manipulation;
+}
+
+@media (min-width: 768px) {
   .pb-safe-bottom {
     padding-bottom: 2rem;
   }
+}
+
+/* Adaptive Modal Sheets: bottom-sheet on Mobile (< 640px), centered dialog on Tablet & Desktop */
+.rp-modal-sheet {
+  max-height: calc(var(--rp-vh, 1vh) * 92);
+  max-height: 92dvh;
+}
+
+@media (max-width: 639px) {
+  .rp-modal-sheet {
+    padding-bottom: calc(1.1rem + env(safe-area-inset-bottom, 0px));
+  }
+}
+
+@media (min-width: 640px) {
+  .rp-modal-sheet {
+    max-height: 88vh;
+    max-height: 88dvh;
+  }
+}
+
+/* Touch device ergonomics: prevent iOS Safari zoom on input focus & double-tap zoom */
+@media (pointer: coarse) {
+  button,
+  a,
+  select {
+    touch-action: manipulation;
+  }
+}
+
+@media (max-width: 767px) and (pointer: coarse) {
+  input[type="text"],
+  input[type="email"],
+  input[type="search"],
+  select {
+    font-size: 16px;
+  }
+}
+
+/* Auto-detected device profile fine-tuning */
+html[data-device="mobile"] .rp-ticker-strip {
+  min-height: 40px;
+}
+
+html[data-device="wide"] main,
+html[data-device="wide"] header > div,
+html[data-device="wide"] footer {
+  max-width: 1600px;
 }
 
 /* Customizable Personal Workspace Drag-and-Drop & Edit Mode States */

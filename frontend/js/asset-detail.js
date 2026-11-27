@@ -159,7 +159,15 @@ export function createAssetDetailController({
     detailState.open = false;
     modal.classList.add("hidden");
     modal.classList.remove("flex");
-    document.body.style.overflow = "";
+    const otherOpen = ["modal-quote-card", "modal-vip-alerts", "modal-asset-picker", "modal-auth-sync"].some(
+      (id) => {
+        const el = document.getElementById(id);
+        return el && !el.classList.contains("hidden");
+      }
+    );
+    if (!otherOpen) {
+      document.body.style.overflow = "";
+    }
   }
 
   function populateDetailTargetSelect() {
