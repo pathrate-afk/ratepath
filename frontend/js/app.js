@@ -251,7 +251,10 @@ function registerServiceWorker() {
       .catch(() => {});
     return;
   }
-  navigator.serviceWorker.register("./sw.js").catch(() => {});
+  navigator.serviceWorker
+    .register("./sw.js", { updateViaCache: "none" })
+    .then((reg) => reg.update?.())
+    .catch(() => {});
 }
 
 // ---------------------------------------------------------------------------

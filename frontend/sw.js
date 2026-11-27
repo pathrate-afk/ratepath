@@ -1,5 +1,5 @@
 /* RatePath (ريت باث) Offline-First Service Worker (Bypassed on localhost & /api/) */
-const CACHE_VERSION = "ratepath-pwa-v17";
+const CACHE_VERSION = "ratepath-pwa-v18";
 const FEED_CACHE_NAME = "ratepath-live-feed-v3";
 
 const IS_LOCALHOST =
@@ -42,7 +42,15 @@ self.addEventListener("install", (event) => {
     return;
   }
   event.waitUntil(
-    caches.open(CACHE_VERSION).then((cache) => cache.addAll(APP_SHELL_ASSETS))
+    caches.open(CACHE_VERSION).then((cache) =>
+      Promise.all(
+        APP_SHELL_ASSETS.map((asset) =>
+          fetch(new Request(asset, { cache: "reload" }))
+            .then((resp) => (resp.ok ? cache.put(asset, resp) : null))
+            .catch(() => null)
+        )
+      )
+    )
   );
   self.skipWaiting();
 });
@@ -99,10 +107,16 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
-  // Network-first with offline cache fallback for same-origin App Shell & monetization.config.js
+  // Network-first (revalidated) with offline cache fallback for same-origin App Shell & JS modules
   if (url.origin === self.location.origin) {
+    const isCodeAsset =
+      url.pathname === "/" ||
+      url.pathname.endsWith(".html") ||
+      url.pathname.endsWith(".js") ||
+      url.pathname.endsWith(".css");
+    const netReq = isCodeAsset ? new Request(request, { cache: "no-cache" }) : request;
     event.respondWith(
-      fetch(request)
+      fetch(netReq)
         .then((resp) => {
           if (resp && resp.ok) {
             const clone = resp.clone();
