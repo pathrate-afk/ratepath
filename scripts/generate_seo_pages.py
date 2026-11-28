@@ -641,8 +641,8 @@ def _render_seo_page_html(
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&amp;family=Inter:wght@400;500;600;700;800&amp;family=JetBrains+Mono:wght@500;600;700;800&amp;display=swap" rel="stylesheet" />
 
-  <link rel="stylesheet" href="/styles/tailwind.min.css?v=19" />
-  <link rel="stylesheet" href="/styles/terminal.css?v=19" />
+  <link rel="stylesheet" href="/styles/tailwind.min.css?v=20" />
+  <link rel="stylesheet" href="/styles/terminal.css?v=20" />
 
   <script type="application/ld+json">
 {json_ld_str}
@@ -782,7 +782,7 @@ def _render_seo_page_html(
     <p class="font-mono shrink-0">ratepathlive.com • {generated_date}</p>
   </footer>
 
-  <script type="module" src="/js/seo-pair-page.js?v=19"></script>
+  <script type="module" src="/js/seo-pair-page.js?v=20"></script>
 </body>
 </html>
 """

@@ -57,4 +57,4 @@ def test_automatic_device_profile_and_responsive_breakpoints() -> None:
     # 6. Zero CSP violations (no inline onclick/onerror) and fresh PWA cache version
     assert "onclick=" not in index_html
     assert "onerror=" not in index_html
-    assert "ratepath-pwa-v19" in sw_js
+    assert "ratepath-pwa-v20" in sw_js

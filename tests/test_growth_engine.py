@@ -112,6 +112,20 @@ def test_programmatic_seo_pages_sitemap_robots_and_http_200() -> None:
         assert f"<loc>https://ratepathlive.com/{slug}</loc>" in sitemap_xml
         assert f"Allow: /{slug}" in robots_txt
 
+    # Verify `/js/seo-pair-page.js` resolves ALL ES module imports cleanly in real Node.js (prevents broken named exports)
+    node_bin = shutil.which("node")
+    assert node_bin is not None
+    seo_js_uri = (FRONTEND_DIR / "js" / "seo-pair-page.js").as_uri()
+    import_proc = subprocess.run(
+        [node_bin, "--input-type=module", "-e", f'await import("{seo_js_uri}"); console.log("SEO_MODULE_IMPORT_OK");'],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        check=False,
+    )
+    assert import_proc.returncode == 0, f"seo-pair-page.js ESM import failed:\n{import_proc.stderr}"
+    assert "SEO_MODULE_IMPORT_OK" in import_proc.stdout
+
     # Spin up local frontend server on ephemeral port and verify HTTP 200 on every SEO route
     handler_cls = partial(RatePathRequestHandler, directory=str(FRONTEND_DIR))
     server = ThreadingHTTPServer(("127.0.0.1", 0), handler_cls)

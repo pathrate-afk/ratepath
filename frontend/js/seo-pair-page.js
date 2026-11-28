@@ -12,7 +12,7 @@
  */
 
 import { FALLBACK_FEED_SNAPSHOT, FALLBACK_CATALOG_SNAPSHOT } from "./fallback-snapshot.js";
-import { createSyriaRevolutionFlagSvg } from "./syria-flag.js";
+import { getSyriaRevolutionFlagSvg } from "./syria-flag.js";
 
 const LIVE_FEED_URLS = [
   "https://raw.githubusercontent.com/pathrate-afk/ratepath/live-data/live_feed.json",
@@ -306,7 +306,7 @@ async function refreshLiveFeeds() {
 
 function mountSyriaFlagBadges() {
   document.querySelectorAll("[data-syria-flag-slot]").forEach((slot) => {
-    slot.replaceChildren(createSyriaRevolutionFlagSvg("w-6 h-4 rounded-[3px] shadow-sm inline-block"));
+    slot.innerHTML = getSyriaRevolutionFlagSvg("w-7 h-5 rounded-[3px] shrink-0 shadow-sm ring-1 ring-white/15 inline-block");
   });
 }
 
@@ -373,8 +373,10 @@ function initSeoPairPage() {
   setInterval(refreshLiveFeeds, 60000);
 }
 
-if (document.readyState === "loading") {
-  document.addEventListener("DOMContentLoaded", initSeoPairPage);
-} else {
-  initSeoPairPage();
+if (typeof document !== "undefined") {
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", initSeoPairPage);
+  } else {
+    initSeoPairPage();
+  }
 }
