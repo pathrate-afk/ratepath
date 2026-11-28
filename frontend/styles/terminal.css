@@ -198,6 +198,15 @@ html[data-device="wide"] footer {
   background-color: rgba(251, 191, 36, 0.08) !important;
 }
 
+/* Normalize select controls so height & vertical centering match adjacent inputs across all browsers */
+select {
+  line-height: 1.25;
+  padding-top: 0;
+  padding-bottom: 0;
+  vertical-align: middle;
+  text-overflow: ellipsis;
+}
+
 /* Programmatic SEO High-Intent Pair Pages Responsive Container & Split Grid */
 .rp-seo-wrap {
   width: 100%;

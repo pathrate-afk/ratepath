@@ -138,9 +138,7 @@ export function renderQuoteCardCanvas(canvas, state) {
   ctx.fillStyle = "#34D399";
   ctx.font = "700 15px monospace";
   ctx.textAlign = "center";
-  const stampUtc = String(state.feed?.meta?.generated_at || new Date().toISOString())
-    .slice(0, 19)
-    .replace("T", " ");
+  const stampUtc = new Date().toISOString().slice(0, 19).replace("T", " ");
   ctx.fillText(`UTC ${stampUtc}`, width - 201, 80);
 
   // 6. Hero Active Conversion Banner
@@ -172,14 +170,31 @@ export function renderQuoteCardCanvas(canvas, state) {
     176
   );
 
+  const fitMonoText = (text, maxW, maxPx = 23, minPx = 13) => {
+    let sz = maxPx;
+    while (sz > minPx) {
+      ctx.font = `700 ${sz}px monospace`;
+      if (ctx.measureText(text).width <= maxW) break;
+      sz -= 1;
+    }
+    ctx.font = `700 ${sz}px monospace`;
+    return text;
+  };
+
+  ctx.save();
+  ctx.direction = "ltr";
+  ctx.textAlign = "left";
   ctx.fillStyle = "#F8FAFC";
-  ctx.font = "800 44px monospace";
-  ctx.fillText(`${srcAmountFormatted} ${sourceAsset.code}`, 84, 230);
+  const heroPrimaryText = `${srcAmountFormatted} ${sourceAsset.code}`;
+  fitMonoText(heroPrimaryText, 640, 44, 24);
+  ctx.fillText(heroPrimaryText, 84, 230);
 
   ctx.textAlign = "right";
   ctx.fillStyle = "#FDE68A";
-  ctx.font = "700 24px monospace";
-  ctx.fillText(`≈ $${usdEquivalentFormatted} USD`, width - 84, 218);
+  const usdEqText = `≈ $${usdEquivalentFormatted} USD`;
+  fitMonoText(usdEqText, 380, 24, 15);
+  ctx.fillText(usdEqText, width - 84, 218);
+  ctx.restore();
 
   // 7. 8-Card Institutional Benchmark Matrix (reflects visitor workspace order when customized)
   const wsIds = Array.isArray(state.workspace?.ordered_ids)
@@ -230,15 +245,19 @@ export function renderQuoteCardCanvas(canvas, state) {
     const cardLabel = resolveAssetLabel(id, assetMeta);
     ctx.fillText(cardLabel.length > 18 ? cardLabel.slice(0, 17) + "…" : cardLabel, x + cardW - 18, y + 32);
 
+    ctx.save();
+    ctx.direction = "ltr";
     ctx.textAlign = "left";
     ctx.fillStyle = "#F8FAFC";
-    ctx.font = "700 23px monospace";
     const valStr = conv?.formatted || "0.00";
-    ctx.fillText(valStr.length > 15 ? valStr.slice(0, 15) : valStr, x + 18, y + 74);
+    fitMonoText(valStr, cardW - 36, 23, 13);
+    ctx.fillText(valStr, x + 18, y + 74);
 
     ctx.fillStyle = "#64748B";
     ctx.font = "500 13px monospace";
-    ctx.fillText(`${lang === "ar" ? "السعر" : "Spot"}: ${assetMeta?.spotDisplay || "-"}`, x + 18, y + 102);
+    const spotStr = `${lang === "ar" ? "السعر" : "Spot"}: ${assetMeta?.spotDisplay || "-"}`;
+    ctx.fillText(spotStr.length > 26 ? spotStr.slice(0, 25) + "…" : spotStr, x + 18, y + 102);
+    ctx.restore();
   });
 
   // 8. Watermarked Institutional Footer (Organic Traffic Driver: Domain + Official EN/AR Telegram)

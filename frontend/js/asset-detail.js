@@ -80,6 +80,7 @@ export function createAssetDetailController({
     data: null,
     convAmount: "100",
     convTargetId: "USD",
+    convSwapped: false,
     cache: new Map(),
   };
 
@@ -140,6 +141,7 @@ export function createAssetDetailController({
     detailState.activeTf = "1d";
     detailState.convAmount = asset.category === "fiat" ? "100" : "1";
     detailState.convTargetId = defaultTargetFor(asset.id);
+    detailState.convSwapped = false;
 
     modal.classList.remove("hidden");
     modal.classList.add("flex");
@@ -212,20 +214,23 @@ export function createAssetDetailController({
     const asset = getAssetObj(detailState.assetId);
     if (!asset || !appState?.catalog) return;
 
-    if (sourceCodeEl) sourceCodeEl.textContent = asset.code;
-
     const targetAsset = appState.catalog.byId[detailState.convTargetId] || appState.catalog.byId.USD;
+    const effectiveFrom = detailState.convSwapped ? targetAsset : asset;
+    const effectiveTo = detailState.convSwapped ? asset : targetAsset;
+
+    if (sourceCodeEl) sourceCodeEl.textContent = effectiveFrom.code;
+
     const quickIds = ["USD", "EUR", "GBP", "SAR", "AED", "TRY", "EGP", "SYP", "GRAM_21K", "XAU_OZ", "BTC"]
-      .filter((id) => id !== asset.id && appState.catalog.byId[id])
+      .filter((id) => id !== effectiveFrom.id && appState.catalog.byId[id])
       .slice(0, 6);
-    const targetIds = [...new Set([targetAsset.id, ...quickIds])];
-    const conv = convertAllAssets(detailState.convAmount || "0", asset.id, appState.catalog, targetIds);
-    const targetVal = conv.conversions?.[targetAsset.id]?.formatted || "0";
+    const targetIds = [...new Set([effectiveTo.id, ...quickIds])];
+    const conv = convertAllAssets(detailState.convAmount || "0", effectiveFrom.id, appState.catalog, targetIds);
+    const targetVal = conv.conversions?.[effectiveTo.id]?.formatted || "0";
 
     if (resultEl) {
       resultEl.innerHTML = `
-        <span class="text-xs text-slate-400 font-mono" dir="ltr">${esc(detailState.convAmount || "0")} ${esc(asset.code)} =</span>
-        <strong class="text-lg sm:text-xl font-extrabold font-mono text-amber-300 tabular-nums" dir="ltr">${esc(targetVal)} ${esc(targetAsset.code)}</strong>
+        <span class="text-xs text-slate-400 font-mono" dir="ltr">${esc(detailState.convAmount || "0")} ${esc(effectiveFrom.code)} =</span>
+        <strong class="text-lg sm:text-xl font-extrabold font-mono text-amber-300 tabular-nums" dir="ltr">${esc(targetVal)} ${esc(effectiveTo.code)}</strong>
       `;
     }
 
@@ -273,10 +278,17 @@ export function createAssetDetailController({
         : asset.pairLabel;
     }
     if (priceEl) {
+      const isDirectUsdQuote =
+        asset.category === "fiat" &&
+        asset.id !== "USD" &&
+        String(asset.pairLabel || "").toUpperCase().startsWith(`${String(asset.code || "").toUpperCase()}/USD`);
+      priceEl.setAttribute("dir", "ltr");
       priceEl.textContent =
         asset.category === "fiat"
           ? asset.id === "USD"
             ? "$1.00 USD"
+            : isDirectUsdQuote
+            ? `1 ${asset.code} = $${asset.spotDisplay} USD`
             : `1 USD = ${asset.spotDisplay} ${asset.code}`
           : `$${asset.spotDisplay}`;
     }
@@ -344,12 +356,13 @@ export function createAssetDetailController({
           .join("");
 
         const activeWin = tfs[detailState.activeTf] || tfs["1m"] || tfs["1y"] || tfs["1d"];
+        const syncedCurrent = asset.spotDisplay || activeWin?.current;
         const chartHtml = activeWin
           ? `
             <div class="p-3 rounded-xl bg-slate-950/90 border border-slate-800 space-y-2">
               <div class="flex flex-wrap items-center justify-between gap-2 text-[11px] font-mono text-slate-400" dir="ltr">
                 <span>${isAr ? "أدنى" : "Low"}: <strong class="text-slate-200">${esc(activeWin.low)}</strong></span>
-                <span>${isAr ? "الحالي" : "Now"}: <strong class="text-amber-300">${esc(activeWin.current)}</strong></span>
+                <span>${isAr ? "الحالي" : "Now"}: <strong class="text-amber-300">${esc(syncedCurrent)}</strong></span>
                 <span>${isAr ? "أعلى" : "High"}: <strong class="text-slate-200">${esc(activeWin.high)}</strong></span>
               </div>
               ${renderSvgChart(activeWin.series, Number(activeWin.change_pct || 0) >= 0)}
@@ -446,16 +459,14 @@ export function createAssetDetailController({
 
     document.getElementById("detail-conv-target")?.addEventListener("change", (e) => {
       detailState.convTargetId = e.target.value;
+      detailState.convSwapped = false;
       renderDetailConverter();
     });
 
     document.getElementById("btn-detail-conv-swap")?.addEventListener("click", () => {
-      const prevSrc = detailState.assetId;
-      const prevTgt = detailState.convTargetId;
-      if (prevTgt && getAssetObj(prevTgt)) {
-        detailState.convTargetId = prevSrc || "USD";
-        openAssetDetail(prevTgt);
-      }
+      // Preserve amount & current modal asset — simply flip conversion direction cleanly!
+      detailState.convSwapped = !detailState.convSwapped;
+      renderDetailConverter();
     });
 
     document.addEventListener("click", (e) => {

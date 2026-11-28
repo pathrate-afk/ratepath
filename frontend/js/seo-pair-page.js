@@ -153,10 +153,19 @@ function updateFreshnessLabel() {
   }
 }
 
+function displayCode(code) {
+  const sym = String(code || "").toUpperCase();
+  if (sym === "XAU_OZ") return "XAU (oz)";
+  if (sym === "XAG_OZ") return "XAG (oz)";
+  return sym;
+}
+
 function applyLanguage(lang) {
   state.lang = lang === "en" ? "en" : "ar";
   document.documentElement.lang = state.lang;
   document.documentElement.dir = state.lang === "ar" ? "rtl" : "ltr";
+  const nextTitle = document.body.getAttribute(state.lang === "ar" ? "data-title-ar" : "data-title-en");
+  if (nextTitle) document.title = nextTitle;
   try {
     localStorage.setItem(LS_LANG_KEY, state.lang);
   } catch {
@@ -180,17 +189,21 @@ function applyLanguage(lang) {
 function renderLivePair() {
   const fromCode = state.swapped ? state.quote : state.base;
   const toCode = state.swapped ? state.base : state.quote;
+  const baseLabel = displayCode(state.base);
+  const quoteLabel = displayCode(state.quote);
+  const fromLabel = displayCode(fromCode);
+  const toLabel = displayCode(toCode);
   const primaryRate = computeRate(state.base, state.quote);
   const convRate = computeRate(fromCode, toCode);
 
   const heroVal = document.getElementById("seo-hero-rate");
   if (heroVal && primaryRate) {
-    heroVal.textContent = `${formatSmartNumber(primaryRate)} ${state.quote}`;
+    heroVal.textContent = `${formatSmartNumber(primaryRate)} ${quoteLabel}`;
   }
 
   const inverseVal = document.getElementById("seo-inverse-rate");
   if (inverseVal && primaryRate) {
-    inverseVal.textContent = `1 ${state.quote} = ${formatSmartNumber(1 / primaryRate)} ${state.base}`;
+    inverseVal.textContent = `1 ${quoteLabel} = ${formatSmartNumber(1 / primaryRate)} ${baseLabel}`;
   }
 
   const chgBadge = document.getElementById("seo-change-badge");
@@ -198,6 +211,7 @@ function renderLivePair() {
     const chg = get24hChange(state.base, state.catalog);
     if (chg !== null) {
       const up = chg >= 0;
+      chgBadge.setAttribute("dir", "ltr");
       chgBadge.textContent = `${up ? "▲ +" : "🔻 "}${chg.toFixed(2)}% (24h)`;
       chgBadge.className = up
         ? "inline-flex items-center px-2.5 py-1 rounded-full text-xs font-mono font-bold bg-emerald-500/15 text-emerald-300 border border-emerald-500/35"
@@ -211,30 +225,30 @@ function renderLivePair() {
   const toLbl = document.getElementById("conv-to-code");
   const outEl = document.getElementById("conv-output");
   const unitHint = document.getElementById("conv-unit-rate");
-  if (fromLbl) fromLbl.textContent = fromCode;
-  if (toLbl) toLbl.textContent = toCode;
+  if (fromLbl) fromLbl.textContent = fromLabel;
+  if (toLbl) toLbl.textContent = toLabel;
   if (outEl && convRate) {
     const converted = (Number(state.amount) || 0) * convRate;
-    outEl.textContent = `${formatSmartNumber(converted)} ${toCode}`;
+    outEl.textContent = `${formatSmartNumber(converted)} ${toLabel}`;
   }
   if (unitHint && convRate) {
-    unitHint.textContent = `1 ${fromCode} = ${formatSmartNumber(convRate)} ${toCode}`;
+    unitHint.textContent = `1 ${fromLabel} = ${formatSmartNumber(convRate)} ${toLabel}`;
   }
 
   // Quick conversion table headers & rows (`data-quick-qty`)
   const thFrom = document.getElementById("quick-th-from");
   const thTo = document.getElementById("quick-th-to");
-  if (thFrom) thFrom.textContent = fromCode;
-  if (thTo) thTo.textContent = toCode;
+  if (thFrom) thFrom.textContent = fromLabel;
+  if (thTo) thTo.textContent = toLabel;
   document.querySelectorAll("[data-quick-qty]").forEach((row) => {
     const qty = Number(row.getAttribute("data-quick-qty"));
     const inCell = row.querySelector("[data-quick-in]");
     const outCell = row.querySelector("[data-quick-out]");
     if (inCell && Number.isFinite(qty)) {
-      inCell.textContent = `${new Intl.NumberFormat("en-US").format(qty)} ${fromCode}`;
+      inCell.textContent = `${new Intl.NumberFormat("en-US").format(qty)} ${fromLabel}`;
     }
     if (outCell && convRate && Number.isFinite(qty)) {
-      outCell.textContent = `${formatSmartNumber(qty * convRate)} ${toCode}`;
+      outCell.textContent = `${formatSmartNumber(qty * convRate)} ${toLabel}`;
     }
   });
 

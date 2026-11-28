@@ -32,8 +32,8 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&amp;family=Inter:wght@400;500;600;700;800&amp;family=JetBrains+Mono:wght@500;600;700;800&amp;display=swap" rel="stylesheet" />
 
-  <link rel="stylesheet" href="/styles/tailwind.min.css?v=21" />
-  <link rel="stylesheet" href="/styles/terminal.css?v=21" />
+  <link rel="stylesheet" href="/styles/tailwind.min.css?v=22" />
+  <link rel="stylesheet" href="/styles/terminal.css?v=22" />
 
   <script type="application/ld+json">
 {
@@ -114,17 +114,17 @@
 }
   </script>
 </head>
-<body class="bg-[#070B14] text-slate-100 min-h-screen antialiased" data-seo-slug="usd-to-try" data-base="USD" data-quote="TRY" data-mode="pair">
+<body class="bg-[#070B14] text-slate-100 min-h-screen antialiased" data-seo-slug="usd-to-try" data-base="USD" data-quote="TRY" data-mode="pair" data-title-ar="سعر الدولار مقابل الليرة التركية اليوم + محوّل فوري | ريت باث" data-title-en="USD to TRY Live Rate Today &amp; Instant Converter | RatePath">
   <header class="sticky top-0 z-40 bg-[#070B14]/95 backdrop-blur-md border-b border-slate-800/90">
     <div class="rp-seo-wrap px-4 h-16 flex items-center justify-between gap-2 sm:gap-3">
-      <a href="/" class="flex items-center gap-2.5 min-w-0">
-        <img src="/icons/logo-mark.png" alt="RatePath | ريت باث" width="36" height="36" class="w-9 h-9 rounded-xl ring-1 ring-amber-400/45 object-cover shrink-0" />
+      <a href="/" class="flex items-center gap-2 sm:gap-2.5 min-w-0">
+        <img src="/icons/logo-mark.png" alt="RatePath | ريت باث" width="36" height="36" class="w-8 h-8 sm:w-9 sm:h-9 rounded-xl ring-1 ring-amber-400/45 object-cover shrink-0" />
         <div class="min-w-0">
-          <div class="flex items-center gap-2">
-            <span class="text-base font-extrabold text-white">RatePath</span>
-            <span class="text-xs font-bold text-amber-400">• ريت باث</span>
+          <div class="flex items-center gap-1.5 sm:gap-2">
+            <span class="text-sm sm:text-base font-extrabold text-white whitespace-nowrap">RatePath</span>
+            <span class="hidden sm:inline text-xs font-bold text-amber-400 whitespace-nowrap">• ريت باث</span>
           </div>
-          <p class="text-[11px] text-slate-400 truncate" data-ar="تيرمينال أسعار الصرف والذهب والكريبتو" data-en="Live FX, Gold &amp; Crypto Terminal">تيرمينال أسعار الصرف والذهب والكريبتو</p>
+          <p class="hidden sm:block text-[11px] text-slate-400 truncate" data-ar="تيرمينال أسعار الصرف والذهب والكريبتو" data-en="Live FX, Gold &amp; Crypto Terminal">تيرمينال أسعار الصرف والذهب والكريبتو</p>
         </div>
       </a>
       <div class="flex items-center gap-2 shrink-0">
@@ -142,7 +142,7 @@
           <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
           <span id="seo-updated-label" data-ar="تحديث مباشر الآن" data-en="Updated live just now">تحديث مباشر الآن</span>
         </span>
-        <span id="seo-change-badge" hidden></span>
+        <span id="seo-change-badge" dir="ltr" hidden></span>
       </div>
 
       <h1 class="text-xl sm:text-3xl font-extrabold text-white tracking-tight flex items-center gap-2.5 flex-wrap">
@@ -151,18 +151,17 @@
       </h1>
       <p class="mt-2 text-sm text-slate-300" data-ar="سعر صرف الدولار مقابل الليرة التركية لحظياً مع حاسبة تحويل فورية وتنبيهات اختراق السعر." data-en="Live US Dollar to Turkish Lira exchange rate with instant calculator and free Telegram alerts.">سعر صرف الدولار مقابل الليرة التركية لحظياً مع حاسبة تحويل فورية وتنبيهات اختراق السعر.</p>
 
-      <div class="mt-5 p-4 sm:p-5 rounded-xl bg-slate-950/75 border border-slate-800 flex flex-col sm:flex-row sm:items-end sm:justify-between gap-3">
-        <div>
+      <div class="mt-5 p-4 sm:p-5 rounded-xl bg-slate-950/75 border border-slate-800 flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4">
+        <div dir="ltr" class="text-start">
           <div class="text-xs uppercase tracking-wider text-slate-400 font-semibold">1 USD =</div>
-          <div id="seo-hero-rate" class="mt-1 text-3xl sm:text-5xl font-extrabold font-mono text-amber-300">50.74 TRY</div>
-          <div id="seo-inverse-rate" class="mt-1 text-xs font-mono text-slate-400">1 TRY = 0.0197 USD</div>
+          <div id="seo-hero-rate" class="mt-1 text-3xl sm:text-5xl font-extrabold font-mono text-amber-300 tabular-nums">50.74 TRY</div>
+          <div id="seo-inverse-rate" class="mt-1 text-xs font-mono text-slate-400 tabular-nums">1 TRY = 0.0197 USD</div>
         </div>
         <div class="flex flex-col sm:items-end gap-2">
           <a href="https://t.me/RatePathTerminalBot?start=seo_usd_to_try" target="_blank" rel="noopener noreferrer"
-             class="inline-flex items-center justify-center gap-2 px-4 py-3 rounded-xl bg-amber-400 hover:bg-amber-300 text-slate-950 font-extrabold text-xs sm:text-sm shadow-lg shadow-amber-500/20 transition"
-             data-ar="🔔 فعّل تنبيه السعر مجاناً على تيليجرام (@RatePathTerminalBot)"
-             data-en="🔔 Get Free Instant Telegram Alert (@RatePathTerminalBot)">
-            🔔 فعّل تنبيه السعر مجاناً على تيليجرام (@RatePathTerminalBot)
+             class="inline-flex items-center justify-center gap-2 px-4 py-3 rounded-xl bg-amber-400 hover:bg-amber-300 text-slate-950 font-extrabold text-xs sm:text-sm shadow-lg shadow-amber-500/20 transition">
+            <span data-ar="🔔 فعّل تنبيه السعر مجاناً على تيليجرام" data-en="🔔 Get Free Instant Telegram Alert">🔔 فعّل تنبيه السعر مجاناً على تيليجرام</span>
+            <bdi dir="ltr" class="font-mono">(@RatePathTerminalBot)</bdi>
           </a>
           <a href="/?asset=USD"
              class="inline-flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-200 font-semibold text-xs transition"
@@ -183,13 +182,13 @@
         </div>
 
         <label for="conv-amount" class="block text-xs text-slate-400 mb-1.5" data-ar="أدخل المبلغ للتحويل الفوري" data-en="Enter amount to convert instantly">أدخل المبلغ للتحويل الفوري</label>
-        <div class="flex items-center gap-2">
+        <div class="flex items-center gap-2" dir="ltr">
           <input id="conv-amount" type="number" inputmode="decimal" step="any" min="0" value="1"
                  class="w-full px-4 py-3 rounded-xl bg-slate-950 border border-slate-700 focus:border-amber-400 focus:outline-none font-mono text-lg font-bold text-white" />
           <span id="conv-from-code" class="px-3.5 py-3 rounded-xl bg-slate-800 border border-slate-700 font-mono text-sm font-extrabold text-amber-300 shrink-0">USD</span>
         </div>
 
-        <div class="mt-3 flex flex-wrap gap-2">
+        <div class="mt-3 flex flex-wrap gap-2" dir="ltr">
           <button type="button" data-chip-amount="1" class="px-3 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-mono text-slate-200">1</button>
           <button type="button" data-chip-amount="10" class="px-3 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-mono text-slate-200">10</button>
           <button type="button" data-chip-amount="100" class="px-3 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-mono text-slate-200">100</button>
@@ -200,10 +199,10 @@
         <div class="mt-4 p-4 rounded-xl bg-slate-950/90 border border-amber-400/30">
           <div class="flex items-center justify-between text-xs text-slate-400 mb-1">
             <span data-ar="النتيجة الفورية" data-en="Instant Result">النتيجة الفورية</span>
-            <span id="conv-to-code" class="font-mono font-bold text-amber-300">TRY</span>
+            <span id="conv-to-code" class="font-mono font-bold text-amber-300" dir="ltr">TRY</span>
           </div>
-          <div id="conv-output" class="text-2xl sm:text-3xl font-extrabold font-mono text-emerald-300">50.74 TRY</div>
-          <div id="conv-unit-rate" class="mt-1 text-xs font-mono text-slate-400">1 USD = 50.74 TRY</div>
+          <div id="conv-output" dir="ltr" class="text-2xl sm:text-3xl font-extrabold font-mono text-emerald-300 tabular-nums">50.74 TRY</div>
+          <div id="conv-unit-rate" dir="ltr" class="mt-1 text-xs font-mono text-slate-400 tabular-nums">1 USD = 50.74 TRY</div>
         </div>
       </div>
 
@@ -213,12 +212,12 @@
         <table class="w-full text-start border-collapse">
           <thead>
             <tr class="text-xs text-slate-400 border-b border-slate-800">
-              <th id="quick-th-from" class="px-3 py-2 text-start">USD</th>
-              <th id="quick-th-to" class="px-3 py-2 text-start">TRY</th>
+              <th id="quick-th-from" class="px-3 py-2 text-start" dir="ltr">USD</th>
+              <th id="quick-th-to" class="px-3 py-2 text-start" dir="ltr">TRY</th>
             </tr>
           </thead>
           <tbody>
-            <tr class="border-t border-slate-800/70" data-quick-qty="1"><td class="px-3 py-2 font-mono text-sm text-slate-300" data-quick-in>1 USD</td><td class="px-3 py-2 font-mono text-sm font-bold text-amber-300" data-quick-out>50.74 TRY</td></tr><tr class="border-t border-slate-800/70" data-quick-qty="10"><td class="px-3 py-2 font-mono text-sm text-slate-300" data-quick-in>10 USD</td><td class="px-3 py-2 font-mono text-sm font-bold text-amber-300" data-quick-out>507.37 TRY</td></tr><tr class="border-t border-slate-800/70" data-quick-qty="50"><td class="px-3 py-2 font-mono text-sm text-slate-300" data-quick-in>50 USD</td><td class="px-3 py-2 font-mono text-sm font-bold text-amber-300" data-quick-out>2,536.87 TRY</td></tr><tr class="border-t border-slate-800/70" data-quick-qty="100"><td class="px-3 py-2 font-mono text-sm text-slate-300" data-quick-in>100 USD</td><td class="px-3 py-2 font-mono text-sm font-bold text-amber-300" data-quick-out>5,073.74 TRY</td></tr><tr class="border-t border-slate-800/70" data-quick-qty="500"><td class="px-3 py-2 font-mono text-sm text-slate-300" data-quick-in>500 USD</td><td class="px-3 py-2 font-mono text-sm font-bold text-amber-300" data-quick-out>25,368.70 TRY</td></tr><tr class="border-t border-slate-800/70" data-quick-qty="1000"><td class="px-3 py-2 font-mono text-sm text-slate-300" data-quick-in>1,000 USD</td><td class="px-3 py-2 font-mono text-sm font-bold text-amber-300" data-quick-out>50,737.40 TRY</td></tr>
+            <tr class="border-t border-slate-800/70" data-quick-qty="1"><td class="px-3 py-2 font-mono text-sm text-slate-300" dir="ltr" data-quick-in>1 USD</td><td class="px-3 py-2 font-mono text-sm font-bold text-amber-300" dir="ltr" data-quick-out>50.74 TRY</td></tr><tr class="border-t border-slate-800/70" data-quick-qty="10"><td class="px-3 py-2 font-mono text-sm text-slate-300" dir="ltr" data-quick-in>10 USD</td><td class="px-3 py-2 font-mono text-sm font-bold text-amber-300" dir="ltr" data-quick-out>507.37 TRY</td></tr><tr class="border-t border-slate-800/70" data-quick-qty="50"><td class="px-3 py-2 font-mono text-sm text-slate-300" dir="ltr" data-quick-in>50 USD</td><td class="px-3 py-2 font-mono text-sm font-bold text-amber-300" dir="ltr" data-quick-out>2,536.87 TRY</td></tr><tr class="border-t border-slate-800/70" data-quick-qty="100"><td class="px-3 py-2 font-mono text-sm text-slate-300" dir="ltr" data-quick-in>100 USD</td><td class="px-3 py-2 font-mono text-sm font-bold text-amber-300" dir="ltr" data-quick-out>5,073.74 TRY</td></tr><tr class="border-t border-slate-800/70" data-quick-qty="500"><td class="px-3 py-2 font-mono text-sm text-slate-300" dir="ltr" data-quick-in>500 USD</td><td class="px-3 py-2 font-mono text-sm font-bold text-amber-300" dir="ltr" data-quick-out>25,368.70 TRY</td></tr><tr class="border-t border-slate-800/70" data-quick-qty="1000"><td class="px-3 py-2 font-mono text-sm text-slate-300" dir="ltr" data-quick-in>1,000 USD</td><td class="px-3 py-2 font-mono text-sm font-bold text-amber-300" dir="ltr" data-quick-out>50,737.40 TRY</td></tr>
           </tbody>
         </table>
       </div>
@@ -238,14 +237,14 @@
           </summary>
           <p class="mt-2 text-xs sm:text-sm text-slate-300 leading-relaxed" data-ar="يتم سحب سعر صرف الدولار مقابل الليرة التركية (USD/TRY) تلقائياً وتحديثه كل دقيقة في البطاقة الرئيسية والمحوّل أعلاه." data-en="USD/TRY is fetched from live FX feeds and updated automatically every minute in the rate card and calculator above.">يتم سحب سعر صرف الدولار مقابل الليرة التركية (USD/TRY) تلقائياً وتحديثه كل دقيقة في البطاقة الرئيسية والمحوّل أعلاه.</p>
         </details>
-        <details class="group rounded-xl bg-slate-900/70 border border-slate-800 p-4" open>
+        <details class="group rounded-xl bg-slate-900/70 border border-slate-800 p-4">
           <summary class="cursor-pointer font-bold text-slate-100 text-sm sm:text-base list-none flex items-center justify-between gap-2">
             <span data-ar="كيف أحصل على تنبيه عند صعود أو هبوط الليرة التركية؟" data-en="How do I set a USD/TRY breakout alert?">كيف أحصل على تنبيه عند صعود أو هبوط الليرة التركية؟</span>
             <span class="text-amber-400 text-xs">▾</span>
           </summary>
           <p class="mt-2 text-xs sm:text-sm text-slate-300 leading-relaxed" data-ar="عبر بوت @RatePathTerminalBot المجاني يمكنك إضافة TRY وتحديد سعر مستهدف ليصلك إشعار فوري لحظة وصول السعر." data-en="Open @RatePathTerminalBot, select Turkish Lira (TRY) on your free watchlist, and set a custom target price or +/-2% alert.">عبر بوت @RatePathTerminalBot المجاني يمكنك إضافة TRY وتحديد سعر مستهدف ليصلك إشعار فوري لحظة وصول السعر.</p>
         </details>
-        <details class="group rounded-xl bg-slate-900/70 border border-slate-800 p-4" open>
+        <details class="group rounded-xl bg-slate-900/70 border border-slate-800 p-4">
           <summary class="cursor-pointer font-bold text-slate-100 text-sm sm:text-base list-none flex items-center justify-between gap-2">
             <span data-ar="هل يظهر جدول تحويل لمبالغ 10 و100 و1000 دولار بالليرة التركية؟" data-en="Does this page show quick USD to TRY conversion amounts?">هل يظهر جدول تحويل لمبالغ 10 و100 و1000 دولار بالليرة التركية؟</span>
             <span class="text-amber-400 text-xs">▾</span>
@@ -266,9 +265,9 @@
 
   <footer class="rp-seo-wrap px-4 py-8 mt-6 border-t border-slate-800/80 text-xs text-slate-400 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
     <p data-ar="⚖️ ريت باث (RatePath) يقدم بيانات سوقية وأدوات تحويل وتنبيهات معلوماتية فقط — ليست نصيحة استثمارية أو مالية." data-en="⚖️ RatePath provides live market data, conversion tools &amp; informational price alerts only — not financial advice.">⚖️ ريت باث (RatePath) يقدم بيانات سوقية وأدوات تحويل وتنبيهات معلوماتية فقط — ليست نصيحة استثمارية أو مالية.</p>
-    <p class="font-mono shrink-0">ratepathlive.com • 2026-11-28</p>
+    <p class="font-mono shrink-0" dir="ltr">ratepathlive.com • 2026-11-28</p>
   </footer>
 
-  <script type="module" src="/js/seo-pair-page.js?v=21"></script>
+  <script type="module" src="/js/seo-pair-page.js?v=22"></script>
 </body>
 </html>

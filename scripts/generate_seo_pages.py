@@ -444,6 +444,15 @@ def _pair_rate(base: str, quote: str, feed: dict[str, Any], catalog: dict[str, A
     return u_from / u_to
 
 
+def _display_code(code: str) -> str:
+    sym = code.upper()
+    if sym == "XAU_OZ":
+        return "XAU (oz)"
+    if sym == "XAG_OZ":
+        return "XAG (oz)"
+    return sym
+
+
 def _build_metals_table_html(spec: SeoPageSpec, feed: dict[str, Any], catalog: dict[str, Any]) -> str:
     if spec.mode not in ("gold", "silver"):
         return ""
@@ -467,12 +476,12 @@ def _build_metals_table_html(spec: SeoPageSpec, feed: dict[str, Any], catalog: d
         for ccy in ccys:
             val = _pair_rate(unit_code, ccy, feed, catalog)
             cells.append(
-                f'<td class="px-3 py-2.5 font-mono text-xs sm:text-sm text-slate-100 whitespace-nowrap" '
+                f'<td class="px-2 py-2.5 font-mono text-xs text-slate-100 whitespace-nowrap" dir="ltr" '
                 f'data-metal-unit="{unit_code}" data-metal-ccy="{ccy}">{_fmt_dec(val)} {ccy}</td>'
             )
         rows_html.append(
             f'<tr class="border-t border-slate-800/80 hover:bg-slate-800/40">'
-            f'<td class="px-3 py-2.5 font-semibold text-amber-300 whitespace-nowrap" data-ar="{html.escape(lbl_ar)}" data-en="{html.escape(lbl_en)}">{html.escape(lbl_ar)}</td>'
+            f'<td class="px-2.5 py-2.5 font-semibold text-xs sm:text-sm text-amber-300 whitespace-nowrap" data-ar="{html.escape(lbl_ar)}" data-en="{html.escape(lbl_en)}">{html.escape(lbl_ar)}</td>'
             f'{"".join(cells)}'
             f"</tr>"
         )
@@ -486,14 +495,14 @@ def _build_metals_table_html(spec: SeoPageSpec, feed: dict[str, Any], catalog: d
       <div class="overflow-x-auto">
         <table class="w-full text-start border-collapse">
           <thead>
-            <tr class="text-xs text-slate-400 uppercase border-b border-slate-800">
-              <th class="px-3 py-2 text-start" data-ar="العيار / الوحدة" data-en="Unit / Karat">العيار / الوحدة</th>
-              <th class="px-3 py-2 text-start">USD</th>
-              <th class="px-3 py-2 text-start">🟢 SYP</th>
-              <th class="px-3 py-2 text-start">TRY</th>
-              <th class="px-3 py-2 text-start">EGP</th>
-              <th class="px-3 py-2 text-start">SAR</th>
-              <th class="px-3 py-2 text-start">AED</th>
+            <tr class="text-[11px] text-slate-400 uppercase border-b border-slate-800">
+              <th class="px-2.5 py-2 text-start" data-ar="العيار / الوحدة" data-en="Unit / Karat">العيار / الوحدة</th>
+              <th class="px-2 py-2 text-start" dir="ltr">USD</th>
+              <th class="px-2 py-2 text-start" dir="ltr">🟢 SYP</th>
+              <th class="px-2 py-2 text-start" dir="ltr">TRY</th>
+              <th class="px-2 py-2 text-start" dir="ltr">EGP</th>
+              <th class="px-2 py-2 text-start" dir="ltr">SAR</th>
+              <th class="px-2 py-2 text-start" dir="ltr">AED</th>
             </tr>
           </thead>
           <tbody>
@@ -516,6 +525,8 @@ def _render_seo_page_html(
     inv_rate = (Decimal("1") / rate) if rate else None
     rate_str = _fmt_dec(rate)
     inv_str = _fmt_dec(inv_rate)
+    base_label = _display_code(spec.base)
+    quote_label = _display_code(spec.quote)
     bot_cta_url = f"https://t.me/{BOT_USERNAME}?start=seo_{spec.slug.replace('-', '_')}"
     terminal_asset = "XAU" if spec.base == "XAU_OZ" else ("XAG" if spec.base == "XAG_OZ" else spec.base)
 
@@ -571,16 +582,17 @@ def _render_seo_page_html(
         q_val = (Decimal(qty) * rate) if rate else None
         quick_rows.append(
             f'<tr class="border-t border-slate-800/70" data-quick-qty="{qty}">'
-            f'<td class="px-3 py-2 font-mono text-sm text-slate-300" data-quick-in>{qty:,} {spec.base}</td>'
-            f'<td class="px-3 py-2 font-mono text-sm font-bold text-amber-300" data-quick-out>{_fmt_dec(q_val)} {spec.quote}</td>'
+            f'<td class="px-3 py-2 font-mono text-sm text-slate-300" dir="ltr" data-quick-in>{qty:,} {base_label}</td>'
+            f'<td class="px-3 py-2 font-mono text-sm font-bold text-amber-300" dir="ltr" data-quick-out>{_fmt_dec(q_val)} {quote_label}</td>'
             f"</tr>"
         )
 
     faqs_html = []
-    for q_ar, a_ar, q_en, a_en in spec.faqs:
+    for faq_idx, (q_ar, a_ar, q_en, a_en) in enumerate(spec.faqs):
+        open_attr = " open" if faq_idx == 0 else ""
         faqs_html.append(
             f"""
-        <details class="group rounded-xl bg-slate-900/70 border border-slate-800 p-4" open>
+        <details class="group rounded-xl bg-slate-900/70 border border-slate-800 p-4"{open_attr}>
           <summary class="cursor-pointer font-bold text-slate-100 text-sm sm:text-base list-none flex items-center justify-between gap-2">
             <span data-ar="{html.escape(q_ar)}" data-en="{html.escape(q_en)}">{html.escape(q_ar)}</span>
             <span class="text-amber-400 text-xs">▾</span>
@@ -641,24 +653,24 @@ def _render_seo_page_html(
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&amp;family=Inter:wght@400;500;600;700;800&amp;family=JetBrains+Mono:wght@500;600;700;800&amp;display=swap" rel="stylesheet" />
 
-  <link rel="stylesheet" href="/styles/tailwind.min.css?v=21" />
-  <link rel="stylesheet" href="/styles/terminal.css?v=21" />
+  <link rel="stylesheet" href="/styles/tailwind.min.css?v=22" />
+  <link rel="stylesheet" href="/styles/terminal.css?v=22" />
 
   <script type="application/ld+json">
 {json_ld_str}
   </script>
 </head>
-<body class="bg-[#070B14] text-slate-100 min-h-screen antialiased" data-seo-slug="{spec.slug}" data-base="{spec.base}" data-quote="{spec.quote}" data-mode="{spec.mode}">
+<body class="bg-[#070B14] text-slate-100 min-h-screen antialiased" data-seo-slug="{spec.slug}" data-base="{spec.base}" data-quote="{spec.quote}" data-mode="{spec.mode}" data-title-ar="{html.escape(spec.title_ar)}" data-title-en="{html.escape(spec.title_en)}">
   <header class="sticky top-0 z-40 bg-[#070B14]/95 backdrop-blur-md border-b border-slate-800/90">
     <div class="rp-seo-wrap px-4 h-16 flex items-center justify-between gap-2 sm:gap-3">
-      <a href="/" class="flex items-center gap-2.5 min-w-0">
-        <img src="/icons/logo-mark.png" alt="RatePath | ريت باث" width="36" height="36" class="w-9 h-9 rounded-xl ring-1 ring-amber-400/45 object-cover shrink-0" />
+      <a href="/" class="flex items-center gap-2 sm:gap-2.5 min-w-0">
+        <img src="/icons/logo-mark.png" alt="RatePath | ريت باث" width="36" height="36" class="w-8 h-8 sm:w-9 sm:h-9 rounded-xl ring-1 ring-amber-400/45 object-cover shrink-0" />
         <div class="min-w-0">
-          <div class="flex items-center gap-2">
-            <span class="text-base font-extrabold text-white">RatePath</span>
-            <span class="text-xs font-bold text-amber-400">• ريت باث</span>
+          <div class="flex items-center gap-1.5 sm:gap-2">
+            <span class="text-sm sm:text-base font-extrabold text-white whitespace-nowrap">RatePath</span>
+            <span class="hidden sm:inline text-xs font-bold text-amber-400 whitespace-nowrap">• ريت باث</span>
           </div>
-          <p class="text-[11px] text-slate-400 truncate" data-ar="تيرمينال أسعار الصرف والذهب والكريبتو" data-en="Live FX, Gold &amp; Crypto Terminal">تيرمينال أسعار الصرف والذهب والكريبتو</p>
+          <p class="hidden sm:block text-[11px] text-slate-400 truncate" data-ar="تيرمينال أسعار الصرف والذهب والكريبتو" data-en="Live FX, Gold &amp; Crypto Terminal">تيرمينال أسعار الصرف والذهب والكريبتو</p>
         </div>
       </a>
       <div class="flex items-center gap-2 shrink-0">
@@ -676,7 +688,7 @@ def _render_seo_page_html(
           <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
           <span id="seo-updated-label" data-ar="تحديث مباشر الآن" data-en="Updated live just now">تحديث مباشر الآن</span>
         </span>
-        <span id="seo-change-badge" hidden></span>
+        <span id="seo-change-badge" dir="ltr" hidden></span>
       </div>
 
       <h1 class="text-xl sm:text-3xl font-extrabold text-white tracking-tight flex items-center gap-2.5 flex-wrap">
@@ -685,18 +697,17 @@ def _render_seo_page_html(
       </h1>
       <p class="mt-2 text-sm text-slate-300" data-ar="{html.escape(spec.subtitle_ar)}" data-en="{html.escape(spec.subtitle_en)}">{html.escape(spec.subtitle_ar)}</p>
 
-      <div class="mt-5 p-4 sm:p-5 rounded-xl bg-slate-950/75 border border-slate-800 flex flex-col sm:flex-row sm:items-end sm:justify-between gap-3">
-        <div>
-          <div class="text-xs uppercase tracking-wider text-slate-400 font-semibold">1 {spec.base} =</div>
-          <div id="seo-hero-rate" class="mt-1 text-3xl sm:text-5xl font-extrabold font-mono text-amber-300">{rate_str} {spec.quote}</div>
-          <div id="seo-inverse-rate" class="mt-1 text-xs font-mono text-slate-400">1 {spec.quote} = {inv_str} {spec.base}</div>
+      <div class="mt-5 p-4 sm:p-5 rounded-xl bg-slate-950/75 border border-slate-800 flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4">
+        <div dir="ltr" class="text-start">
+          <div class="text-xs uppercase tracking-wider text-slate-400 font-semibold">1 {base_label} =</div>
+          <div id="seo-hero-rate" class="mt-1 text-3xl sm:text-5xl font-extrabold font-mono text-amber-300 tabular-nums">{rate_str} {quote_label}</div>
+          <div id="seo-inverse-rate" class="mt-1 text-xs font-mono text-slate-400 tabular-nums">1 {quote_label} = {inv_str} {base_label}</div>
         </div>
         <div class="flex flex-col sm:items-end gap-2">
           <a href="{bot_cta_url}" target="_blank" rel="noopener noreferrer"
-             class="inline-flex items-center justify-center gap-2 px-4 py-3 rounded-xl bg-amber-400 hover:bg-amber-300 text-slate-950 font-extrabold text-xs sm:text-sm shadow-lg shadow-amber-500/20 transition"
-             data-ar="🔔 فعّل تنبيه السعر مجاناً على تيليجرام (@RatePathTerminalBot)"
-             data-en="🔔 Get Free Instant Telegram Alert (@RatePathTerminalBot)">
-            🔔 فعّل تنبيه السعر مجاناً على تيليجرام (@RatePathTerminalBot)
+             class="inline-flex items-center justify-center gap-2 px-4 py-3 rounded-xl bg-amber-400 hover:bg-amber-300 text-slate-950 font-extrabold text-xs sm:text-sm shadow-lg shadow-amber-500/20 transition">
+            <span data-ar="🔔 فعّل تنبيه السعر مجاناً على تيليجرام" data-en="🔔 Get Free Instant Telegram Alert">🔔 فعّل تنبيه السعر مجاناً على تيليجرام</span>
+            <bdi dir="ltr" class="font-mono">(@RatePathTerminalBot)</bdi>
           </a>
           <a href="/?asset={terminal_asset}"
              class="inline-flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-200 font-semibold text-xs transition"
@@ -712,18 +723,18 @@ def _render_seo_page_html(
     <section class="mt-6 rp-seo-grid gap-6">
       <div class="rp-seo-main rounded-2xl bg-slate-900/85 border border-slate-800 p-5">
         <div class="flex items-center justify-between gap-2 mb-4">
-          <h2 class="text-base sm:text-lg font-bold text-white" data-ar="المحوّل الفوري ({spec.base} ↔ {spec.quote})" data-en="Instant Converter ({spec.base} ↔ {spec.quote})">المحوّل الفوري ({spec.base} ↔ {spec.quote})</h2>
+          <h2 class="text-base sm:text-lg font-bold text-white" data-ar="المحوّل الفوري ({base_label} ↔ {quote_label})" data-en="Instant Converter ({base_label} ↔ {quote_label})">المحوّل الفوري ({base_label} ↔ {quote_label})</h2>
           <button id="conv-swap" type="button" class="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs font-bold text-amber-300">⇄ <span data-ar="عكس" data-en="Swap">عكس</span></button>
         </div>
 
         <label for="conv-amount" class="block text-xs text-slate-400 mb-1.5" data-ar="أدخل المبلغ للتحويل الفوري" data-en="Enter amount to convert instantly">أدخل المبلغ للتحويل الفوري</label>
-        <div class="flex items-center gap-2">
+        <div class="flex items-center gap-2" dir="ltr">
           <input id="conv-amount" type="number" inputmode="decimal" step="any" min="0" value="1"
                  class="w-full px-4 py-3 rounded-xl bg-slate-950 border border-slate-700 focus:border-amber-400 focus:outline-none font-mono text-lg font-bold text-white" />
-          <span id="conv-from-code" class="px-3.5 py-3 rounded-xl bg-slate-800 border border-slate-700 font-mono text-sm font-extrabold text-amber-300 shrink-0">{spec.base}</span>
+          <span id="conv-from-code" class="px-3.5 py-3 rounded-xl bg-slate-800 border border-slate-700 font-mono text-sm font-extrabold text-amber-300 shrink-0">{base_label}</span>
         </div>
 
-        <div class="mt-3 flex flex-wrap gap-2">
+        <div class="mt-3 flex flex-wrap gap-2" dir="ltr">
           <button type="button" data-chip-amount="1" class="px-3 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-mono text-slate-200">1</button>
           <button type="button" data-chip-amount="10" class="px-3 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-mono text-slate-200">10</button>
           <button type="button" data-chip-amount="100" class="px-3 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-mono text-slate-200">100</button>
@@ -734,10 +745,10 @@ def _render_seo_page_html(
         <div class="mt-4 p-4 rounded-xl bg-slate-950/90 border border-amber-400/30">
           <div class="flex items-center justify-between text-xs text-slate-400 mb-1">
             <span data-ar="النتيجة الفورية" data-en="Instant Result">النتيجة الفورية</span>
-            <span id="conv-to-code" class="font-mono font-bold text-amber-300">{spec.quote}</span>
+            <span id="conv-to-code" class="font-mono font-bold text-amber-300" dir="ltr">{quote_label}</span>
           </div>
-          <div id="conv-output" class="text-2xl sm:text-3xl font-extrabold font-mono text-emerald-300">{rate_str} {spec.quote}</div>
-          <div id="conv-unit-rate" class="mt-1 text-xs font-mono text-slate-400">1 {spec.base} = {rate_str} {spec.quote}</div>
+          <div id="conv-output" dir="ltr" class="text-2xl sm:text-3xl font-extrabold font-mono text-emerald-300 tabular-nums">{rate_str} {quote_label}</div>
+          <div id="conv-unit-rate" dir="ltr" class="mt-1 text-xs font-mono text-slate-400 tabular-nums">1 {base_label} = {rate_str} {quote_label}</div>
         </div>
       </div>
 
@@ -747,8 +758,8 @@ def _render_seo_page_html(
         <table class="w-full text-start border-collapse">
           <thead>
             <tr class="text-xs text-slate-400 border-b border-slate-800">
-              <th id="quick-th-from" class="px-3 py-2 text-start">{spec.base}</th>
-              <th id="quick-th-to" class="px-3 py-2 text-start">{spec.quote}</th>
+              <th id="quick-th-from" class="px-3 py-2 text-start" dir="ltr">{base_label}</th>
+              <th id="quick-th-to" class="px-3 py-2 text-start" dir="ltr">{quote_label}</th>
             </tr>
           </thead>
           <tbody>
@@ -779,10 +790,10 @@ def _render_seo_page_html(
 
   <footer class="rp-seo-wrap px-4 py-8 mt-6 border-t border-slate-800/80 text-xs text-slate-400 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
     <p data-ar="⚖️ ريت باث (RatePath) يقدم بيانات سوقية وأدوات تحويل وتنبيهات معلوماتية فقط — ليست نصيحة استثمارية أو مالية." data-en="⚖️ RatePath provides live market data, conversion tools &amp; informational price alerts only — not financial advice.">⚖️ ريت باث (RatePath) يقدم بيانات سوقية وأدوات تحويل وتنبيهات معلوماتية فقط — ليست نصيحة استثمارية أو مالية.</p>
-    <p class="font-mono shrink-0">ratepathlive.com • {generated_date}</p>
+    <p class="font-mono shrink-0" dir="ltr">ratepathlive.com • {generated_date}</p>
   </footer>
 
-  <script type="module" src="/js/seo-pair-page.js?v=21"></script>
+  <script type="module" src="/js/seo-pair-page.js?v=22"></script>
 </body>
 </html>
 """

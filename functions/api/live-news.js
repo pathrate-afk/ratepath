@@ -197,15 +197,19 @@ async function fetchStablecoinSupplyCard(lang) {
 
     const mainDelta = usdtDeltaM ?? usdcDeltaM ?? 0;
     const isUp = mainDelta >= 0;
-    const uSign = (usdtDeltaM ?? 0) >= 0 ? "+" : "";
-    const cSign = (usdcDeltaM ?? 0) >= 0 ? "+" : "";
+    const fmtSignedUsdM = (val) => {
+      const n = Number(val ?? 0);
+      return n < 0 ? `-$${Math.abs(n)}M` : `+$${n}M`;
+    };
+    const uFmt = fmtSignedUsdM(usdtDeltaM);
+    const cFmt = fmtSignedUsdM(usdcDeltaM);
 
     const card = {
       id: "ln-stablecoin-treasury",
       title:
         lang === "ar"
-          ? `سيولة الحيتان والعملات المستقرة: تغيّر معروض USDT بـ ${uSign}${usdtDeltaM ?? 0}M$ وUSDC بـ ${cSign}${usdcDeltaM ?? 0}M$ خلال 24 ساعة`
-          : `Stablecoin Treasury Flow: USDT ${uSign}$${usdtDeltaM ?? 0}M & USDC ${cSign}$${usdcDeltaM ?? 0}M (24h Supply)`,
+          ? `سيولة الحيتان والعملات المستقرة: تغيّر معروض USDT بـ ${uFmt} وUSDC بـ ${cFmt} خلال 24 ساعة`
+          : `Stablecoin Treasury Flow: USDT ${uFmt} & USDC ${cFmt} (24h Supply)`,
       summary:
         lang === "ar"
           ? `رصد مباشر من شبكة البلوكشين عبر DefiLlama: إجمالي معروض USDT يبلغ ${usdtB ?? "-"} مليار دولار، وUSDC يبلغ ${usdcB ?? "-"} مليار دولار. زيادة المعروض تعكس ضخ سيولة جديدة للأسواق، بينما تراجعه يشير لعمليات استرداد وخروج سيولة.`

@@ -819,6 +819,12 @@ function renderContextualAffiliateCta() {
   const t = TRANSLATIONS[state.lang];
   const isAr = state.lang === "ar";
   const isFiat = activeAsset.category === "fiat";
+  const partnerIds = new Set(partners.map((p) => p.id));
+  const isRemittancePartners = partnerIds.has("wise") || partnerIds.has("remitly");
+  const bannerBadge = isFiat ? (isRemittancePartners ? t.affFiatBadge : t.affFxBrokerBadge) : t.affCryptoBadge;
+  const bannerTitle = isFiat ? (isRemittancePartners ? t.affFiatTitle : t.affFxBrokerTitle) : t.affCryptoTitle;
+  const bannerDesc = isFiat ? (isRemittancePartners ? t.affFiatDesc : t.affFxBrokerDesc) : t.affCryptoDesc;
+
   const gradientCls = isFiat
     ? "from-emerald-950/60 via-slate-900/90 to-slate-900 border-emerald-500/30"
     : "from-amber-950/55 via-slate-900/90 to-slate-900 border-amber-500/35";
@@ -837,7 +843,7 @@ function renderContextualAffiliateCta() {
       const btnText = isAr ? partner.ctaAr : partner.ctaEn;
       const cls = idx === 0 ? primaryBtnCls : secondaryBtnCls;
       return `<a href="${safeHref(partner.url)}" target="_blank" rel="noopener noreferrer sponsored"
-        class="px-3 py-1.5 rounded-lg text-xs font-bold ${cls} transition-colors">
+        class="px-3 py-1.5 rounded-lg text-xs font-bold ${cls} transition-colors whitespace-nowrap">
         ${escapeHtml(btnText)}${idx === 0 ? " ↗" : ""}
       </a>`;
     })
@@ -847,10 +853,10 @@ function renderContextualAffiliateCta() {
     <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3.5 rounded-xl bg-gradient-to-r ${gradientCls} border">
       <div class="space-y-0.5">
         <span class="inline-block text-[10px] font-bold tracking-wider uppercase px-2 py-0.5 rounded border ${badgeCls}">
-          ${escapeHtml(isFiat ? t.affFiatBadge : t.affCryptoBadge)}
+          ${escapeHtml(bannerBadge)}
         </span>
-        <p class="text-xs sm:text-sm font-bold text-slate-100">${escapeHtml(isFiat ? t.affFiatTitle : t.affCryptoTitle)}</p>
-        <p class="text-[11px] text-slate-400">${escapeHtml(isFiat ? t.affFiatDesc : t.affCryptoDesc)}</p>
+        <p class="text-xs sm:text-sm font-bold text-slate-100">${escapeHtml(bannerTitle)}</p>
+        <p class="text-[11px] text-slate-400">${escapeHtml(bannerDesc)}</p>
       </div>
       <div class="flex flex-wrap items-center gap-2 shrink-0">
         ${buttonsHtml}
@@ -956,6 +962,7 @@ function renderConversionMatrix() {
 
   const usdReadout = document.getElementById("usd-equivalent-readout");
   if (usdReadout) {
+    usdReadout.setAttribute("dir", "ltr");
     usdReadout.textContent = `$${state.conversionResult.usdEquivalentFormatted} USD`;
   }
 
@@ -1124,26 +1131,26 @@ function renderFundingSpreads() {
 
       return `
         <tr class="border-b border-slate-800/70 hover:bg-slate-800/35 transition-colors">
-          <td class="py-2.5 px-3">
+          <td class="py-2 px-2">
             <div class="font-bold text-xs text-white font-mono" dir="ltr">${escapeHtml(sym)}</div>
             <div class="text-[10px] text-slate-400 font-mono" dir="ltr">$${escapeHtml(entry.spot_price)}</div>
           </td>
-          <td class="py-2.5 px-2 font-mono text-xs text-slate-200 tabular-nums" dir="ltr">
-            <span class="block text-[10px] uppercase text-slate-400">${escapeHtml(f.primary_exchange)}</span>
+          <td class="py-2 px-1.5 font-mono text-[11px] sm:text-xs text-slate-200 tabular-nums whitespace-nowrap" dir="ltr">
+            <span class="block text-[9px] sm:text-[10px] uppercase text-slate-400">${escapeHtml(f.primary_exchange)}</span>
             ${escapeHtml(f.primary_rate)}
           </td>
-          <td class="py-2.5 px-2 font-mono text-xs text-slate-200 tabular-nums" dir="ltr">
-            <span class="block text-[10px] uppercase text-slate-400">${escapeHtml(f.secondary_exchange)}</span>
+          <td class="py-2 px-1.5 font-mono text-[11px] sm:text-xs text-slate-200 tabular-nums whitespace-nowrap hidden sm:table-cell" dir="ltr">
+            <span class="block text-[9px] sm:text-[10px] uppercase text-slate-400">${escapeHtml(f.secondary_exchange)}</span>
             ${escapeHtml(f.secondary_rate)}
           </td>
-          <td class="py-2.5 px-2 font-mono text-xs font-bold text-emerald-300 tabular-nums" dir="ltr">
+          <td class="py-2 px-1.5 font-mono text-[11px] sm:text-xs font-bold text-emerald-300 tabular-nums whitespace-nowrap" dir="ltr">
             ${escapeHtml(f.spread_bps)} bps
           </td>
-          <td class="py-2.5 px-2 font-mono text-xs font-bold text-amber-300 tabular-nums" dir="ltr">
+          <td class="py-2 px-1.5 font-mono text-[11px] sm:text-xs font-bold text-amber-300 tabular-nums whitespace-nowrap" dir="ltr">
             ${escapeHtml(f.annualized_spread_pct)}%
           </td>
-          <td class="py-2.5 px-3 text-end">
-            <span class="inline-block text-[10px] font-mono font-semibold px-2 py-0.5 rounded border leading-tight max-w-[8rem] text-center ${pillClass}" dir="${state.lang === "ar" ? "rtl" : "ltr"}">
+          <td class="py-2 px-2 text-end">
+            <span class="inline-block text-[10px] font-mono font-semibold px-1.5 py-0.5 rounded border leading-tight max-w-[7.5rem] text-center ${pillClass}" dir="${state.lang === "ar" ? "rtl" : "ltr"}">
               ${escapeHtml(translateFundingSignal(f.arbitrage_signal))}
             </span>
           </td>
@@ -1553,6 +1560,54 @@ async function runRemoteCmcSearch(queryText) {
   }
 }
 
+const ARABIC_ASSET_SYNONYMS = {
+  "سولانا": "SOL",
+  "السولانا": "SOL",
+  "بيتكوين": "BTC",
+  "بتكوين": "BTC",
+  "البيتكوين": "BTC",
+  "ايثيريوم": "ETH",
+  "ايثريوم": "ETH",
+  "ريبل": "XRP",
+  "تيثر": "USDT",
+  "دوجكوين": "DOGE",
+  "تون": "TON",
+  "تونكوين": "TON",
+  "كاردانو": "ADA",
+  "بيبي": "PEPE",
+  "شيبا": "SHIB",
+  "بينانس": "BNB",
+  "ذهب": "XAU",
+  "الذهب": "XAU",
+  "فضه": "XAG",
+  "الفضه": "XAG",
+  "دولار": "USD",
+  "يورو": "EUR",
+  "استرليني": "GBP",
+  "باوند": "GBP",
+  "ليره سوريه": "SYP",
+  "سوري": "SYP",
+  "ليره تركيه": "TRY",
+  "تركي": "TRY",
+  "جنيه مصري": "EGP",
+  "مصري": "EGP",
+  "ريال سعودي": "SAR",
+  "درهم اماراتي": "AED",
+  "دينار اردني": "JOD",
+  "دينار كويتي": "KWD",
+  "دينار عراقي": "IQD",
+  "روبل": "RUB",
+};
+
+function normalizeSearchToken(raw) {
+  return String(raw || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[أإآ]/g, "ا")
+    .replace(/ة/g, "ه")
+    .replace(/ى/g, "ي");
+}
+
 function renderAssetPickerResults() {
   const listEl = document.getElementById("asset-picker-results");
   const remoteBtn = document.getElementById("btn-cmc-remote-search");
@@ -1560,6 +1615,8 @@ function renderAssetPickerResults() {
 
   const t = TRANSLATIONS[state.lang];
   const q = state.pickerQuery.trim().toLowerCase();
+  const qNorm = normalizeSearchToken(q);
+  const synCode = ARABIC_ASSET_SYNONYMS[qNorm] || "";
   const activeSet = new Set(state.workspace?.ordered_ids || []);
 
   document.querySelectorAll(".picker-tab-btn").forEach((btn) => {
@@ -1576,33 +1633,60 @@ function renderAssetPickerResults() {
   let localMatches = state.catalog.allSearchable.filter((item) => {
     if (state.pickerTab !== "all" && item.category !== state.pickerTab) return false;
     if (!q) return true;
-    const hay = `${item.id} ${item.code} ${item.nameEn || ""} ${item.nameAr || ""} ${getLocalizedAssetName(item)}`.toLowerCase();
-    return hay.includes(q);
+    const arAssetName = TRANSLATIONS.ar?.assets?.[item.id] || "";
+    const enAssetName = TRANSLATIONS.en?.assets?.[item.id] || "";
+    const hay = normalizeSearchToken(
+      `${item.id} ${item.code} ${item.nameEn || ""} ${item.nameAr || ""} ${arAssetName} ${enAssetName} ${getLocalizedAssetName(item)}`
+    );
+    if (synCode && String(item.code || "").toUpperCase() === synCode) return true;
+    return hay.includes(qNorm);
   });
 
-  // Prioritize exact symbol matches first
+  // Prioritize exact symbol matches & primary market-cap rank first, then deduplicate by category+code
   if (q) {
     localMatches.sort((a, b) => {
-      const aExact = a.code.toLowerCase() === q ? 0 : a.code.toLowerCase().startsWith(q) ? 1 : 2;
-      const bExact = b.code.toLowerCase() === q ? 0 : b.code.toLowerCase().startsWith(q) ? 1 : 2;
-      return aExact - bExact;
+      const aCode = String(a.code || "").toLowerCase();
+      const bCode = String(b.code || "").toLowerCase();
+      const aExact = (synCode && aCode === synCode.toLowerCase()) || aCode === qNorm ? 0 : aCode.startsWith(qNorm) ? 1 : 2;
+      const bExact = (synCode && bCode === synCode.toLowerCase()) || bCode === qNorm ? 0 : bCode.startsWith(qNorm) ? 1 : 2;
+      if (aExact !== bExact) return aExact - bExact;
+      const aRank = Number(a.cmcRank || 999999);
+      const bRank = Number(b.cmcRank || 999999);
+      return aRank - bRank;
     });
   }
 
-  // Merge remote online World Fiat & Crypto results if available
-  const existingIds = new Set(localMatches.map((x) => x.id));
-  const combined = [...localMatches.slice(0, 80)];
+  const dedupedLocal = [];
+  const seenCodeKeys = new Set();
+  for (const item of localMatches) {
+    const codeKey =
+      item.category === "gold"
+        ? `gold:${item.id}`
+        : `${item.category}:${String(item.code || item.id).toUpperCase()}`;
+    if (seenCodeKeys.has(codeKey)) continue;
+    seenCodeKeys.add(codeKey);
+    dedupedLocal.push(item);
+  }
+
+  // Merge remote online World Fiat & Crypto results if available (strictly deduplicated by id AND code)
+  const existingIds = new Set(dedupedLocal.map((x) => x.id));
+  const combined = [...dedupedLocal.slice(0, 80)];
   for (const rc of state.pickerRemoteResults) {
     if (!rc?.id || existingIds.has(rc.id)) continue;
     const isRemoteFiat = rc.category === "fiat" && rc.units_per_usd;
-    if (state.pickerTab !== "all" && (isRemoteFiat ? "fiat" : "crypto") !== state.pickerTab) {
+    const rCat = isRemoteFiat ? "fiat" : "crypto";
+    if (state.pickerTab !== "all" && rCat !== state.pickerTab) {
       continue;
     }
+    const rCodeKey = `${rCat}:${String(rc.code || rc.symbol || rc.id).toUpperCase()}`;
+    if (seenCodeKeys.has(rCodeKey)) continue;
+    seenCodeKeys.add(rCodeKey);
+    existingIds.add(rc.id);
     combined.push({
       id: rc.id,
       code: rc.code || rc.symbol,
       symbol: rc.symbol || rc.code,
-      category: isRemoteFiat ? "fiat" : "crypto",
+      category: rCat,
       nameEn: rc.name_en || rc.name || rc.symbol,
       nameAr: rc.name_ar || rc.name || rc.symbol,
       spotDisplay: isRemoteFiat ? rc.units_per_usd : rc.price_usd || "0",
@@ -1898,6 +1982,16 @@ function recomputeAndRenderAll() {
   if (pbotSearch) {
     pbotSearch.placeholder = TRANSLATIONS[state.lang]?.pbotSearchPlaceholder || pbotSearch.placeholder;
   }
+  document.querySelectorAll("[data-i18n-placeholder]").forEach((el) => {
+    const k = el.getAttribute("data-i18n-placeholder");
+    if (k && TRANSLATIONS[state.lang]?.[k]) {
+      el.placeholder = TRANSLATIONS[state.lang][k];
+    }
+  });
+  document.querySelectorAll("[data-seo-link-ar][data-seo-link-en]").forEach((el) => {
+    const txt = el.getAttribute(state.lang === "ar" ? "data-seo-link-ar" : "data-seo-link-en");
+    if (txt) el.textContent = txt;
+  });
   updateSeoJsonLd(state.feed, state.lang);
   applyMobileTabVisibility();
 
