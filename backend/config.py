@@ -182,6 +182,12 @@ class Settings:
             else raw_mini_app.rstrip("/")
         )
 
+        raw_admin_id = (
+            _get("ADMIN_TELEGRAM_ID")
+            if not is_placeholder_secret(_get("ADMIN_TELEGRAM_ID"))
+            else _get("ADMIN_CHAT_ID")
+        )
+
         return cls(
             gemini_api_key=gemini_pool[0] if gemini_pool else "placeholder",
             groq_api_key=groq_pool[0] if groq_pool else "placeholder",
@@ -197,7 +203,7 @@ class Settings:
             telegram_vip_channel_en=_get("TELEGRAM_VIP_CHANNEL_EN"),
             telegram_public_channel_ar=_get("TELEGRAM_PUBLIC_CHANNEL_AR"),
             telegram_vip_channel_ar=_get("TELEGRAM_VIP_CHANNEL_AR"),
-            admin_chat_id=_get("ADMIN_CHAT_ID"),
+            admin_chat_id=raw_admin_id,
             mini_app_url=raw_mini_app,
             gemini_api_keys=gemini_pool,
             groq_api_keys=groq_pool,

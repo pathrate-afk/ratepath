@@ -29,10 +29,19 @@ const CATALOG_FEED_DEFAULT =
 const VIP_DAILY_LIMIT = 25;
 const VIP_CACHE_TTL_SECONDS = 900; // 15 minutes
 const BATCH_FEED_CACHE_TTL_MS = 45000; // 45s in-memory Edge isolate batch cache
+const SUPPORT_HOURLY_LIMIT = 8; // Abuse protection: max 8 AI support messages/hour/user
+const SUPPORT_MAX_PROMPT_CHARS = 500; // Abuse protection: max 500 chars per prompt
+const SUPPORT_MAX_HISTORY_TURNS = 4; // Keep only last 4 turns (8 messages) per user
+const AI_SUPPORT_TIMEOUT_MS = 8000; // 8s strict timeout budget with admin escalation fallback
 const VIP_MEMBER_STATUSES = new Set(["member", "administrator", "creator"]);
 const RAW_SYRIA_FLAG_EMOJI = "\uD83C\uDDF8\uD83C\uDDFE";
 const TG_USER_REDIS_PREFIX = "ratepath:tg_user:";
 const TG_USERS_INDEX_REDIS_KEY = "ratepath:tg_users:index";
+const SUPPORT_TICKET_REDIS_PREFIX = "ratepath:support_ticket:";
+
+// In-memory fallbacks when Upstash Redis is not configured in local dev / tests
+const _localSupportRateLimits = new Map();
+const _localSupportTickets = new Map();
 
 export const TIER_LIMITS = Object.freeze({
   free: { maxAssets: 3, priceUsd: 0, labelAr: "المجانية", labelEn: "Free" },
@@ -192,6 +201,28 @@ export function detectQueryLang(text, userLangCode = "") {
   if (/[\u0600-\u06FF]/.test(String(text || ""))) return "ar";
   if (String(userLangCode || "").toLowerCase().startsWith("ar")) return "ar";
   return "en";
+}
+
+export function resolveDefaultLangFromTelegram(userLangCode = "") {
+  return String(userLangCode || "").trim().toLowerCase().startsWith("ar") ? "ar" : "en";
+}
+
+export function resolveAdminTelegramId(env) {
+  const candidates = [env?.ADMIN_TELEGRAM_ID, env?.ADMIN_CHAT_ID];
+  for (const raw of candidates) {
+    const clean = String(raw || "").trim();
+    if (clean && clean.toLowerCase() !== "placeholder") return clean;
+  }
+  return null;
+}
+
+function isAdminTelegramUser(userId, env) {
+  const uidStr = String(userId || "").trim();
+  if (!uidStr) return false;
+  const adminIds = [env?.ADMIN_TELEGRAM_ID, env?.ADMIN_CHAT_ID]
+    .map((v) => String(v || "").trim())
+    .filter((v) => v && v.toLowerCase() !== "placeholder");
+  return adminIds.includes(uidStr);
 }
 
 export function parseUserAssetQuery(rawText, userLangCode = "") {
@@ -491,8 +522,8 @@ export async function checkVipMembership(userId, env, fetchImpl = fetch) {
   const uidStr = String(userId || "").trim();
   if (!uidStr) return { isVip: false, planTier: "free", reason: "missing_user_id" };
 
-  // 1. Admin bypass
-  if (env?.ADMIN_CHAT_ID && uidStr === String(env.ADMIN_CHAT_ID).trim()) {
+  // 1. Admin bypass (supports both ADMIN_TELEGRAM_ID and legacy ADMIN_CHAT_ID)
+  if (isAdminTelegramUser(uidStr, env)) {
     return { isVip: true, planTier: "monthly_personal_bot", reason: "admin" };
   }
 
@@ -939,7 +970,443 @@ async function generateVipAiBrief(parsedAsset, snapshot, headlines, env, fetchIm
 }
 
 // ---------------------------------------------------------------------------
-// Bilingual Conversion Views & Inline Keyboards (AR Default + EN Toggle)
+// AI Support Assistant, Rate Limiting & Admin Escalation Bridge
+// ---------------------------------------------------------------------------
+
+const ESCALATION_KEYWORDS_RE =
+  /(paid|didn'?t activate|did not activate|not activated|payment issue|payment problem|txid|transaction hash|order\s*id|refund|talk to human|human support|real person|speak to admin|دفعت|تم الدفع|لم يتفعل|ما تفعل|مشكلة دفع|مشكله دفع|مشكلة في الدفع|تحويل للإدارة|موظف|بشري|رقم الطلب|معرف العملية|استرداد)/i;
+
+const TXID_OR_ORDER_RE =
+  /(\b(?:RPVIP|RPBOT)-[A-Z0-9-]{6,}\b|\b\d{5,20}_(?:vip10|pro19)_\d{8,}\b|\b0x[a-fA-F0-9]{32,64}\b|\b[a-fA-F0-9]{48,64}\b)/;
+
+export function detectSupportEscalationTrigger(text) {
+  const s = String(text || "").trim();
+  if (!s) return { shouldEscalate: false, reason: null };
+  if (TXID_OR_ORDER_RE.test(s)) return { shouldEscalate: true, reason: "order_or_txid_detected" };
+  if (ESCALATION_KEYWORDS_RE.test(s)) return { shouldEscalate: true, reason: "payment_or_human_keyword" };
+  return { shouldEscalate: false, reason: null };
+}
+
+export async function checkAndIncrementSupportRateLimit(userId, env, fetchImpl = fetch, nowDate = new Date()) {
+  const hourTag = nowDate.toISOString().slice(0, 13).replace(/[-:T]/g, "");
+  const key = `ratepath:support_rl:${userId}:${hourTag}`;
+  const redisCount = await upstashCmd(env, ["INCR", key], fetchImpl);
+  if (redisCount !== null) {
+    const numCount = Number(redisCount);
+    if (numCount === 1) {
+      await upstashCmd(env, ["EXPIRE", key, "3600"], fetchImpl);
+    }
+    return { allowed: numCount <= SUPPORT_HOURLY_LIMIT, count: numCount, limit: SUPPORT_HOURLY_LIMIT };
+  }
+  const prev = _localSupportRateLimits.get(key) || 0;
+  const next = prev + 1;
+  _localSupportRateLimits.set(key, next);
+  if (_localSupportRateLimits.size > 2000) {
+    _localSupportRateLimits.clear();
+  }
+  return { allowed: next <= SUPPORT_HOURLY_LIMIT, count: next, limit: SUPPORT_HOURLY_LIMIT };
+}
+
+export function buildAiSupportSystemPrompt() {
+  return [
+    "You are the official AI Support & Troubleshooting Assistant for RatePath Terminal (@RatePathTerminalBot).",
+    "",
+    "EXACT RATEPATH KNOWLEDGE BASE:",
+    "- Website: https://ratepathlive.com (live FX rates including USD/SYP, USD/TRY, USD/EGP, EUR, SAR, AED, Gold XAU/24K/21K/18K, Silver XAG, Crypto BTC/ETH/SOL/USDT, and 1200x630 PNG Quote Card generator).",
+    "- Plans & Limits:",
+    "  * Free Plan: up to 3 active assets in watchlist with live breakout/drop price alerts.",
+    "  * Business VIP ($10/mo USDT): up to 10 active assets + private RatePath VIP Channel (Quant Signal Matrix + 8h Funding Carry spreads) + priority alert delivery.",
+    "  * Personal Bot Pro ($19/mo USDT): up to 50 active assets + Global Stocks (AAPL, TSLA, NVDA, Aramco, etc.) & Company News alerts + full VIP Channel access + top priority.",
+    "- Payments: Direct USDT via NOWPayments supporting TRC-20 (TRON), BEP-20 (BSC), TON (Telegram), Solana, and Arbitrum. No forced auto-renewal. Activation and single-use VIP Channel invite link delivery happen automatically within 1-5 minutes after blockchain confirmation.",
+    "- Common Troubleshooting:",
+    "  * Add/remove/replace assets: tap /start -> 'Add Asset' or 'My Watchlist' (or 'Replace an Existing Asset' if at 3/3 Free limit).",
+    "  * Set target price alerts: select an asset in My Watchlist -> tap 'Set Alert' -> choose quick % (+2%/-2%/+5%/-5%) or type your exact target number.",
+    "  * Switch language anytime: tap /start -> [ 🇬🇧 English ] or [ 🇸🇦 العربية ].",
+    "  * Pending USDT payment: blockchain confirmations usually take 1-5 minutes; if still not active after 10 minutes, send the Order ID or TXID to escalate directly to a human admin.",
+    "",
+    "STRICT RULES:",
+    "1. Always reply in the EXACT SAME language the user wrote in (Arabic if they write Arabic; English if they write English).",
+    "2. Keep answers concise (max 4-6 short lines), friendly, clear, and action-oriented.",
+    "3. NEVER give financial, trading, or investment advice. NEVER promise profits or predict guaranteed market direction.",
+    "4. NEVER invent discounts, promo codes, free trials beyond the 3-asset Free plan, or unbuilt features.",
+    "5. NEVER output the raw Unicode Syria flag emoji (U+1F1F8 U+1F1FE); always write '🟢 SYP' (EN) or '🟢 ل.س' (AR).",
+    "6. If the user reports a payment issue, missing activation, bug, or asks for a human, tell them to share their Order ID or TXID and confirm that their case is being escalated to the human admin team.",
+  ].join("\n");
+}
+
+export async function generateAiSupportReply(userText, historyTurns, replyLang, env, fetchImpl = fetch) {
+  const sysPrompt = buildAiSupportSystemPrompt();
+  const safeHistory = Array.isArray(historyTurns) ? historyTurns.slice(-(SUPPORT_MAX_HISTORY_TURNS * 2)) : [];
+  const messages = [
+    { role: "system", content: sysPrompt },
+    ...safeHistory.map((m) => ({
+      role: m.role === "assistant" ? "assistant" : "user",
+      content: String(m.content || "").slice(0, SUPPORT_MAX_PROMPT_CHARS),
+    })),
+    { role: "user", content: String(userText || "").slice(0, SUPPORT_MAX_PROMPT_CHARS) },
+  ];
+
+  const deadlineMs = Date.now() + AI_SUPPORT_TIMEOUT_MS;
+  const remainingMs = () => Math.max(0, deadlineMs - Date.now());
+
+  // 1. Primary: Existing Groq Key Pool (`GROQ_API_KEY_1..3` / `GROQ_API_KEY`)
+  const groqKeys = [env?.GROQ_API_KEY_1, env?.GROQ_API_KEY_2, env?.GROQ_API_KEY_3, env?.GROQ_API_KEY]
+    .map((k) => String(k || "").trim())
+    .filter((k, i, arr) => k && k.toLowerCase() !== "placeholder" && arr.indexOf(k) === i);
+  for (const groqKey of groqKeys) {
+    if (remainingMs() < 900) break;
+    for (const modelName of ["llama-3.3-70b-versatile", "openai/gpt-oss-120b"]) {
+      const budget = remainingMs();
+      if (budget < 900) break;
+      try {
+        const resp = await fetchImpl(
+          "https://api.groq.com/openai/v1/chat/completions",
+          withTimeout({
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${groqKey}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              model: modelName,
+              temperature: 0.25,
+              max_tokens: 320,
+              messages,
+            }),
+          }, Math.min(budget, 5000))
+        );
+        if (!resp.ok) continue;
+        const data = await resp.json();
+        const content = data?.choices?.[0]?.message?.content;
+        if (typeof content === "string" && content.trim().length > 10) {
+          return {
+            ok: true,
+            provider: "groq",
+            text: sanitizeTelegramHtml(sanitizeSyriaEmoji(normalizePreserveNewlines(content), replyLang)),
+          };
+        }
+      } catch {
+        // Fail over cleanly to next key/provider
+      }
+    }
+  }
+
+  // 2. Secondary: Existing Gemini Key Pool (`GEMINI_API_KEY_1..3` / `GEMINI_API_KEY`)
+  const geminiKeys = [env?.GEMINI_API_KEY_1, env?.GEMINI_API_KEY_2, env?.GEMINI_API_KEY_3, env?.GEMINI_API_KEY]
+    .map((k) => String(k || "").trim())
+    .filter((k, i, arr) => k && k.toLowerCase() !== "placeholder" && arr.indexOf(k) === i);
+  for (const geminiKey of geminiKeys) {
+    if (remainingMs() < 900) break;
+    for (const gModel of ["gemini-2.5-flash", "gemini-3.5-flash-lite"]) {
+      const budget = remainingMs();
+      if (budget < 900) break;
+      try {
+        const contents = messages
+          .filter((m) => m.role !== "system")
+          .map((m) => ({
+            role: m.role === "assistant" ? "model" : "user",
+            parts: [{ text: m.content }],
+          }));
+        const resp = await fetchImpl(
+          `https://generativelanguage.googleapis.com/v1beta/models/${gModel}:generateContent?key=${encodeURIComponent(geminiKey)}`,
+          withTimeout({
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              systemInstruction: { parts: [{ text: sysPrompt }] },
+              contents,
+            }),
+          }, Math.min(budget, 5000))
+        );
+        if (!resp.ok) continue;
+        const data = await resp.json();
+        const textOut = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+        if (typeof textOut === "string" && textOut.trim().length > 10) {
+          return {
+            ok: true,
+            provider: "gemini",
+            text: sanitizeTelegramHtml(sanitizeSyriaEmoji(normalizePreserveNewlines(textOut), replyLang)),
+          };
+        }
+      } catch {
+        // Fail over to OpenRouter
+      }
+    }
+  }
+
+  // 3. Tertiary: Existing OpenRouter Key (`OPENROUTER_API_KEY`)
+  const orKey = String(env?.OPENROUTER_API_KEY || "").trim();
+  if (orKey && orKey.toLowerCase() !== "placeholder" && remainingMs() >= 900) {
+    try {
+      const resp = await fetchImpl(
+        "https://openrouter.ai/api/v1/chat/completions",
+        withTimeout({
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${orKey}`,
+            "Content-Type": "application/json",
+            "HTTP-Referer": "https://ratepathlive.com",
+            "X-Title": "RatePath Support Bot",
+          },
+          body: JSON.stringify({
+            model: "google/gemini-2.0-flash-exp:free",
+            temperature: 0.25,
+            max_tokens: 320,
+            messages,
+          }),
+        }, Math.min(remainingMs(), 5000))
+      );
+      if (resp.ok) {
+        const data = await resp.json();
+        const content = data?.choices?.[0]?.message?.content;
+        if (typeof content === "string" && content.trim().length > 10) {
+          return {
+            ok: true,
+            provider: "openrouter",
+            text: sanitizeTelegramHtml(sanitizeSyriaEmoji(normalizePreserveNewlines(content), replyLang)),
+          };
+        }
+      }
+    } catch {
+      // Fall through to admin escalation fallback
+    }
+  }
+
+  return { ok: false, provider: "none", text: "" };
+}
+
+export async function forwardTicketToAdmin({
+  userId,
+  username,
+  profile,
+  userMessage,
+  reason,
+  env,
+  fetchImpl = fetch,
+}) {
+  const adminId = resolveAdminTelegramId(env);
+  if (!adminId) return { forwarded: false, reason: "missing_admin_id" };
+
+  const tierLabel = getTierMeta(profile?.plan_tier).labelEn;
+  const langCode = (profile?.lang || "ar").toUpperCase();
+  const handleStr = username ? `@${escapeHtml(username)}` : "N/A";
+  const ticketHtml =
+    `🎫 <b>RatePath Support Ticket</b>\n\n` +
+    `• <b>User ID:</b> <code>${escapeHtml(String(userId))}</code>\n` +
+    `• <b>Username:</b> ${handleStr}\n` +
+    `• <b>Current Tier:</b> <code>${escapeHtml(tierLabel)}</code>\n` +
+    `• <b>Language:</b> <code>${escapeHtml(langCode)}</code>\n` +
+    `• <b>Trigger:</b> <code>${escapeHtml(reason || "user_request")}</code>\n\n` +
+    `💬 <b>Message:</b>\n${escapeHtml(String(userMessage || "(No message text)").slice(0, 1000))}\n\n` +
+    `↩️ <i>Reply directly to this message to send your answer back to the user.</i>`;
+
+  const sendRes = await sendTelegramReply(adminId, ticketHtml, env, fetchImpl);
+  const adminMsgId = sendRes?.data?.result?.message_id;
+  if (sendRes?.ok && adminMsgId) {
+    const ticketMeta = JSON.stringify({
+      userId: String(userId),
+      lang: profile?.lang === "en" ? "en" : "ar",
+      createdAt: new Date().toISOString(),
+    });
+    _localSupportTickets.set(String(adminMsgId), ticketMeta);
+    await upstashCmd(
+      env,
+      ["SET", `${SUPPORT_TICKET_REDIS_PREFIX}${adminMsgId}`, ticketMeta, "EX", "604800"],
+      fetchImpl
+    );
+  }
+  return { forwarded: Boolean(sendRes?.ok), adminMsgId: adminMsgId || null };
+}
+
+async function handleAdminTicketReply(msg, env, fetchImpl = fetch) {
+  if (!isAdminTelegramUser(msg?.from?.id, env)) return null;
+  const adminChatId = String(msg?.chat?.id || msg?.from?.id || "");
+  const replied = msg?.reply_to_message;
+  if (!replied) return null;
+
+  const replyText = String(msg.text || "").trim();
+  if (!replyText) return null;
+
+  // 1. Lookup target user from Redis / memory ticket map by replied message_id
+  let targetUserId = null;
+  let targetLang = detectQueryLang(replyText, "ar");
+  const repliedId = String(replied.message_id || "");
+  if (repliedId) {
+    const rawTicket =
+      (await upstashCmd(env, ["GET", `${SUPPORT_TICKET_REDIS_PREFIX}${repliedId}`], fetchImpl)) ||
+      _localSupportTickets.get(repliedId) ||
+      null;
+    if (typeof rawTicket === "string" && rawTicket.trim()) {
+      try {
+        const parsed = JSON.parse(rawTicket);
+        if (parsed?.userId) targetUserId = String(parsed.userId);
+        if (parsed?.lang) targetLang = parsed.lang === "en" ? "en" : "ar";
+      } catch {
+        // Fallback to regex parsing below
+      }
+    }
+  }
+
+  // 2. Resilient regex fallback directly from forwarded ticket text (`User ID: 123456`)
+  if (!targetUserId) {
+    const m = String(replied.text || "").match(/User ID:\s*(\d{5,20})/i);
+    if (m) targetUserId = m[1];
+  }
+  if (!targetUserId) return null;
+
+  const isAr = targetLang === "ar";
+  const deliveredHtml = isAr
+    ? `👨‍💻 <b>رد فريق دعم RatePath:</b>\n\n${escapeHtml(replyText)}\n\n<i>يمكنك الرد مباشرة هنا إذا احتجت أي مساعدة إضافية.</i>`
+    : `👨‍💻 <b>RatePath Support Team Reply:</b>\n\n${escapeHtml(replyText)}\n\n<i>You can reply right here if you need anything else.</i>`;
+
+  const userRes = await sendTelegramReply(targetUserId, deliveredHtml, env, fetchImpl, buildSupportModeKeyboard(targetLang));
+  const confirmAdmin = userRes?.ok
+    ? `✅ Reply delivered to user <code>${escapeHtml(targetUserId)}</code>.`
+    : `⚠️ Could not deliver reply to user <code>${escapeHtml(targetUserId)}</code> (blocked or unreachable).`;
+  await sendTelegramReply(adminChatId, confirmAdmin, env, fetchImpl);
+  return { handled: true, mode: "admin_reply_bridged", targetUserId, delivered: Boolean(userRes?.ok) };
+}
+
+async function handleSupportUserMessage({ msg, chatId, userId, rawText, profile, env, fetchImpl = fetch }) {
+  const replyLang = detectQueryLang(rawText, profile.lang);
+  const isAr = replyLang === "ar";
+
+  // 1. Prompt length abuse protection (max 500 chars)
+  if (rawText.length > SUPPORT_MAX_PROMPT_CHARS) {
+    const tooLongText = isAr
+      ? `⚠️ رسالتك طويلة جداً (${rawText.length} حرفاً). يرجى اختصار سؤالك إلى أقل من <b>${SUPPORT_MAX_PROMPT_CHARS} حرف</b> لكي أساعدك فوراً.`
+      : `⚠️ Your message is too long (${rawText.length} characters). Please keep it under <b>${SUPPORT_MAX_PROMPT_CHARS} characters</b> so I can help right away.`;
+    await sendTelegramReply(chatId, tooLongText, env, fetchImpl, buildSupportModeKeyboard(replyLang));
+    return { handled: true, mode: "support_prompt_too_long", length: rawText.length, maxChars: SUPPORT_MAX_PROMPT_CHARS };
+  }
+
+  // 2. Auto-escalation trigger (TXID / Order ID / payment & human keywords / active escalated session)
+  const esc = detectSupportEscalationTrigger(rawText);
+  if (esc.shouldEscalate || profile.ui_state?.escalated === true) {
+    const reason = esc.reason || "follow_up_after_escalation";
+    const ticketRes = await forwardTicketToAdmin({
+      userId,
+      username: msg.from?.username || "",
+      profile,
+      userMessage: rawText,
+      reason,
+      env,
+      fetchImpl,
+    });
+    const prevHist = Array.isArray(profile.ui_state?.history) ? profile.ui_state.history : [];
+    profile.ui_state = {
+      mode: "support",
+      escalated: true,
+      history: prevHist.slice(-(SUPPORT_MAX_HISTORY_TURNS * 2)),
+    };
+    await saveBotUserProfile(profile, env, fetchImpl);
+
+    const escReply =
+      reason === "order_or_txid_detected"
+        ? isAr
+          ? `✅ <b>تم استلام رقم الطلب / معرّف العملية وتحويل تذكرتك للإدارة فوراً!</b>\n\nسيقوم المشرف بمراجعة معاملتك والرد عليك مباشرة في هذه المحادثة.`
+          : `✅ <b>Order ID / TXID received and forwarded to our admin team!</b>\n\nAn admin will review your transaction and reply to you directly in this chat.`
+        : isAr
+        ? `👤 <b>تم تحويل رسالتك إلى فريق الدعم البشري بنجاح.</b>\n\nلتسريع التحقق من الدفع أو التفعيل، يرجى إرسال <b>رقم الطلب (Order ID)</b> أو <b>معرّف العملية (TXID)</b> هنا مباشرة وسيرد عليك المشرف في نفس هذه المحادثة.`
+        : `👤 <b>Your message has been forwarded to our human support team.</b>\n\nTo speed up payment or activation verification, please share your <b>Order ID</b> or <b>TXID</b> right here and an admin will reply directly in this chat.`;
+
+    await sendTelegramReply(chatId, escReply, env, fetchImpl, {
+      inline_keyboard: [[{ text: isAr ? "❌ إنهاء الدعم" : "❌ Exit Support", callback_data: "cb:support_exit" }]],
+    });
+    return {
+      handled: true,
+      mode: "support_escalated",
+      reason,
+      forwarded: ticketRes.forwarded,
+      adminMsgId: ticketRes.adminMsgId,
+    };
+  }
+
+  // 3. Hourly abuse protection rate limit (max 8 AI support messages/hour/user)
+  const rl = await checkAndIncrementSupportRateLimit(userId, env, fetchImpl);
+  if (!rl.allowed) {
+    const rlText = isAr
+      ? `⏳ وصلت للحد المسموح من رسائل الدعم الذكي (${rl.limit} رسائل في الساعة) لحماية سرعة الخدمة.\n\nيمكنك الضغط على «👤 تحويل للإدارة» للتواصل المباشر أو المحاولة بعد ساعة.`
+      : `⏳ You've reached the hourly AI support limit (${rl.limit} messages/hour) to protect response speed.\n\nTap «👤 Talk to Human» to reach our admin team directly, or try again next hour.`;
+    await sendTelegramReply(chatId, rlText, env, fetchImpl, buildSupportModeKeyboard(replyLang));
+    return { handled: true, mode: "support_rate_limited", count: rl.count, limit: rl.limit };
+  }
+
+  // 4. Generate AI Support response using existing project AI providers & 4-turn rolling history
+  const prevHistory = Array.isArray(profile.ui_state?.history) ? profile.ui_state.history : [];
+  const aiRes = await generateAiSupportReply(rawText, prevHistory, replyLang, env, fetchImpl);
+
+  if (aiRes.ok && aiRes.text) {
+    const updatedHistory = [
+      ...prevHistory,
+      { role: "user", content: rawText },
+      { role: "assistant", content: aiRes.text },
+    ].slice(-(SUPPORT_MAX_HISTORY_TURNS * 2));
+    profile.ui_state = {
+      mode: "support",
+      escalated: false,
+      history: updatedHistory,
+    };
+    await saveBotUserProfile(profile, env, fetchImpl);
+    await sendTelegramReply(chatId, aiRes.text, env, fetchImpl, buildSupportModeKeyboard(replyLang));
+    return {
+      handled: true,
+      mode: "support_ai_reply",
+      provider: aiRes.provider,
+      lang: replyLang,
+      historyMessages: updatedHistory.length,
+    };
+  }
+
+  // 5. Safe Fallback: AI failed or timed out (>8s) -> auto-forward to human admin without crashing
+  const fallbackTicket = await forwardTicketToAdmin({
+    userId,
+    username: msg.from?.username || "",
+    profile,
+    userMessage: rawText,
+    reason: "ai_timeout_or_failure",
+    env,
+    fetchImpl,
+  });
+  const fallbackText = isAr
+    ? `⏳ <b>المساعد الذكي مشغول حالياً — تم تحويل رسالتك تلقائياً إلى فريق الدعم البشري.</b>\n\nسيقوم المشرف بالرد عليك هنا في أقرب وقت ممكن (إذا كان استفسارك حول دفع USDT يرجى إرسال رقم الطلب أو TXID).`
+    : `⏳ <b>AI support is temporarily unavailable — your message has been forwarded automatically to our human support team.</b>\n\nAn admin will reply right here shortly (if this is about a USDT payment, please share your Order ID or TXID).`;
+  await sendTelegramReply(chatId, fallbackText, env, fetchImpl, {
+    inline_keyboard: [[{ text: isAr ? "❌ إنهاء الدعم" : "❌ Exit Support", callback_data: "cb:support_exit" }]],
+  });
+  return {
+    handled: true,
+    mode: "support_ai_fallback_escalated",
+    forwarded: fallbackTicket.forwarded,
+    adminMsgId: fallbackTicket.adminMsgId,
+  };
+}
+
+function buildSupportModeKeyboard(lang) {
+  const isAr = lang !== "en";
+  return {
+    inline_keyboard: [
+      [
+        { text: isAr ? "👤 تحويل للإدارة" : "👤 Talk to Human", callback_data: "cb:support_human" },
+        { text: isAr ? "❌ إنهاء الدعم" : "❌ Exit Support", callback_data: "cb:support_exit" },
+      ],
+    ],
+  };
+}
+
+export function buildSupportGreetingView(lang) {
+  const isAr = lang !== "en";
+  const text = isAr
+    ? `💬 <b>الدعم الذكي — RatePath Terminal</b>\n\nأهلاً بك! اسألني أي سؤال عن:\n• إضافة العملات وضبط تنبيهات الأسعار\n• باقات VIP (10$) و Pro (19$) والدفع بـ USDT\n• التحقق من تفعيل الاشتراك أو حل أي مشكلة\n\n✏️ اكتب سؤالك الآن وسأجيبك فوراً (أو اضغط «تحويل للإدارة» للتواصل مع الدعم البشري).`
+    : `💬 <b>AI Support — RatePath Terminal</b>\n\nHi! Ask me anything about:\n• Adding assets &amp; setting instant breakout alerts\n• Business VIP ($10/mo), Pro ($19/mo) &amp; USDT payments\n• Verifying an activation or troubleshooting\n\n✏️ Type your question below for an instant answer (or tap «Talk to Human» to reach our admin team).`;
+  return {
+    text,
+    replyMarkup: buildSupportModeKeyboard(isAr ? "ar" : "en"),
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Bilingual Conversion Views & Inline Keyboards (AR + EN Exact Copy)
 // ---------------------------------------------------------------------------
 
 export function buildWelcomeView(profile, publicSiteUrl = "https://ratepathlive.com") {
@@ -978,21 +1445,23 @@ export function buildWelcomeView(profile, publicSiteUrl = "https://ratepathlive.
           ],
           [
             { text: "💎 مزايا باقة VIP ($10/شهر)", callback_data: "cb:upgrade_vip" },
-            { text: "🇬🇧 English", callback_data: "cb:lang:en" },
+            { text: "💬 الدعم الذكي", callback_data: "cb:support" },
           ],
+          [{ text: "🇬🇧 English", callback_data: "cb:lang:en" }],
         ],
       },
     };
   }
 
+  const planLabelEn = isFree ? "Free" : tierMeta.labelEn;
   const textEn =
     `Welcome to RatePath Terminal ⚡\n\n` +
-    `Your instant desk to track live FX, Gold, Silver & Crypto and receive real-time price alerts right on Telegram — zero noise, zero intrusive ads.\n\n` +
-    `📊 Current Plan: ${tierMeta.labelEn} (${currentCount} / ${maxLimit} assets)\n\n` +
+    `Your real-time hub for FX rates, gold, and crypto with instant Telegram price alerts — zero noise, zero pop-ups.\n\n` +
+    `📊 Current Plan: ${planLabelEn} (${currentCount} / ${maxLimit} assets)\n\n` +
     `Get started in one tap:\n` +
-    `• Pick 3 free assets to track (e.g., Gold XAU, Bitcoin BTC, USD to TRY/SYP/EGP).\n` +
-    `• Set a target price for instant breakout or drop alerts.\n\n` +
-    `🌐 Live Rates & Instant Converter:\n` +
+    `• Pick 3 free assets to track (e.g., Gold XAU, Bitcoin BTC, USD/TRY, USD/SYP, USD/EGP).\n` +
+    `• Set a target price to get an instant alert the moment it breaks above or drops below.\n\n` +
+    `🌐 Live Terminal & Instant Converter:\n` +
     `${siteUrl}`;
 
   const addBtnLabelEn =
@@ -1010,9 +1479,10 @@ export function buildWelcomeView(profile, publicSiteUrl = "https://ratepathlive.
           { text: "🌐 Open Live Site", url: siteUrl },
         ],
         [
-          { text: "💎 VIP Plan Perks ($10/mo)", callback_data: "cb:upgrade_vip" },
-          { text: "🇸🇦 العربية", callback_data: "cb:lang:ar" },
+          { text: "💎 VIP Plans ($10/mo)", callback_data: "cb:upgrade_vip" },
+          { text: "💬 AI Support", callback_data: "cb:support" },
         ],
+        [{ text: "🇸🇦 العربية", callback_data: "cb:lang:ar" }],
       ],
     },
   };
@@ -1041,9 +1511,9 @@ export function buildFreeLimitPaywallView(profile) {
     const text =
       `🔒 وصلت للحد الأقصى للباقة المجانية (3 / 3 أصول)\n\n` +
       `الأصول النشطة في قائمتك حالياً:\n` +
-      `1️⃣ ${escapeHtml(labelOf(0))}\n` +
-      `2️⃣ ${escapeHtml(labelOf(1))}\n` +
-      `3️⃣ ${escapeHtml(labelOf(2))}\n\n` +
+      `1️⃣ ${labelOf(0)}\n` +
+      `2️⃣ ${labelOf(1)}\n` +
+      `3️⃣ ${labelOf(2)}\n\n` +
       `تحتاج لمتابعة المزيد من العملات، الذهب، أو الكريبتو؟\n` +
       `بترقية حسابك إلى باقة Business VIP (+ البوت الشخصي) ستحصل فوراً على:\n\n` +
       `✅ متابعة حتى 10 أصول مخصّصة بتنبيهات لحظية.\n` +
@@ -1064,16 +1534,16 @@ export function buildFreeLimitPaywallView(profile) {
   }
 
   const textEn =
-    `🔒 You've Reached the Free Plan Limit (3 / 3 assets)\n\n` +
-    `Your active watchlist right now:\n` +
-    `1️⃣ ${escapeHtml(labelOf(0))}\n` +
-    `2️⃣ ${escapeHtml(labelOf(1))}\n` +
-    `3️⃣ ${escapeHtml(labelOf(2))}\n\n` +
-    `Need to track more currencies, Gold, Silver, or Crypto?\n` +
+    `🔒 Free Plan Limit Reached (3 / 3 assets)\n\n` +
+    `Your active watchlist:\n` +
+    `1️⃣ ${labelOf(0)}\n` +
+    `2️⃣ ${labelOf(1)}\n` +
+    `3️⃣ ${labelOf(2)}\n\n` +
+    `Need to track more currencies, gold, or crypto?\n` +
     `Upgrade to Business VIP (+ Personal Bot) and unlock immediately:\n\n` +
     `✅ Track up to 10 custom assets with real-time alerts.\n` +
-    `✅ Instant access to the private RatePath VIP Channel (Quant models + 8h Funding spreads).\n` +
-    `✅ Priority alert delivery speed on breakout levels.\n\n` +
+    `✅ Direct access to the private RatePath VIP Channel (Quant Matrix + 8h Funding Spreads).\n` +
+    `✅ Priority breakout alert delivery.\n\n` +
     `💰 Monthly Plan: Just $10 USDT (instant activation).`;
 
   return {
@@ -1082,7 +1552,7 @@ export function buildFreeLimitPaywallView(profile) {
       inline_keyboard: [
         [{ text: "🚀 Upgrade Now — $10 USDT", callback_data: "cb:upgrade_vip" }],
         [{ text: "🔄 Replace an Existing Asset", callback_data: "cb:replace_menu" }],
-        [{ text: "👑 Compare with Pro Plan (50 Assets — $19)", callback_data: "cb:upgrade_pro" }],
+        [{ text: "👑 Compare with Pro (50 Assets — $19)", callback_data: "cb:upgrade_pro" }],
       ],
     },
   };
@@ -1160,7 +1630,7 @@ export async function buildUpgradeVipView(userId, lang, env, fetchImpl = fetch) 
           [{ text: "💳 ادفع 10$ USDT الآن (تفعيل فوري)", url: checkout.url }],
           [{ text: "👑 أريد باقة Pro — 50 أصل + أسهم وأخبار (19$)", callback_data: "cb:upgrade_pro" }],
           [
-            { text: "💬 تواصل مع الدعم", callback_data: "cb:support" },
+            { text: "💬 الدعم الذكي", callback_data: "cb:support" },
             { text: "🔙 رجوع", callback_data: "cb:home" },
           ],
         ],
@@ -1173,20 +1643,20 @@ export async function buildUpgradeVipView(userId, lang, env, fetchImpl = fetch) 
     `Price: $10 USDT / month — no forced auto-renewal\n\n` +
     `What unlocks immediately after payment?\n` +
     `━━━━━━━━━━━━━━━━━━\n` +
-    `🤖 Personal Bot: Instant tracking & alerts for 10 custom assets (FX, Gold, Crypto).\n` +
-    `📡 Private VIP Channel: Daily market summaries, macro catalysts & 8h Funding spreads.\n` +
-    `⚡ Breakout Alerts: Instant ping the moment your target price is crossed.\n` +
+    `🤖 Personal Bot: Track & set instant alerts for 10 assets (FX, Gold, Crypto).\n` +
+    `📡 Private VIP Channel: Daily market briefs, macro catalysts & 8h Funding Carry spreads.\n` +
+    `⚡ Breakout Alerts: Instant ping when your target price crosses above or drops below.\n` +
     `━━━━━━━━━━━━━━━━━━\n\n` +
     `💳 Supported Direct USDT Networks (NOWPayments):\n` +
     `• USDT (TRC-20 • TRON)\n` +
     `• USDT (BEP-20 • BSC)\n` +
     `• USDT (TON • Telegram)\n` +
     `• USDT (Solana / Arbitrum)\n\n` +
-    `📌 Activation Steps (under 2 minutes):\n` +
+    `📌 Activation in under 2 minutes:\n` +
     `1. Tap "Pay $10 USDT Now".\n` +
-    `2. Choose your preferred network and send USDT.\n` +
-    `3. Your account upgrades and your single-use VIP invite link arrives automatically once confirmed.\n\n` +
-    `⚖️ Transparent Notice: Subscription covers market data tracking & price alert software only — not financial advice or profit guarantees.`;
+    `2. Choose your preferred network and send the exact amount.\n` +
+    `3. Your tier upgrades and your private VIP Channel invite link arrives automatically once confirmed.\n\n` +
+    `⚖️ Transparent Notice: This subscription is a market data-monitoring and alert software service only — not financial advice or a guarantee of profit.`;
 
   return {
     text: textEn,
@@ -1194,10 +1664,10 @@ export async function buildUpgradeVipView(userId, lang, env, fetchImpl = fetch) 
     orderId: checkout.orderId,
     replyMarkup: {
       inline_keyboard: [
-        [{ text: "💳 Pay $10 USDT Now (Instant Activation)", url: checkout.url }],
+        [{ text: "💳 Pay $10 USDT Now (Instant)", url: checkout.url }],
         [{ text: "👑 Upgrade to Pro — 50 Assets + Stocks & News ($19)", callback_data: "cb:upgrade_pro" }],
         [
-          { text: "💬 Contact Support", callback_data: "cb:support" },
+          { text: "💬 AI Support", callback_data: "cb:support" },
           { text: "🔙 Back", callback_data: "cb:home" },
         ],
       ],
@@ -1230,7 +1700,7 @@ export async function buildUpgradeProView(userId, lang, env, fetchImpl = fetch) 
           [{ text: "💳 ادفع 19$ USDT الآن (تفعيل Pro فوري)", url: checkout.url }],
           [{ text: "💎 العودة لباقة Business VIP (10$ USDT)", callback_data: "cb:upgrade_vip" }],
           [
-            { text: "💬 تواصل مع الدعم", callback_data: "cb:support" },
+            { text: "💬 الدعم الذكي", callback_data: "cb:support" },
             { text: "🔙 رجوع", callback_data: "cb:home" },
           ],
         ],
@@ -1258,7 +1728,7 @@ export async function buildUpgradeProView(userId, lang, env, fetchImpl = fetch) 
         [{ text: "💳 Pay $19 USDT Now (Instant Pro)", url: checkout.url }],
         [{ text: "💎 Switch to Business VIP ($10 USDT)", callback_data: "cb:upgrade_vip" }],
         [
-          { text: "💬 Contact Support", callback_data: "cb:support" },
+          { text: "💬 AI Support", callback_data: "cb:support" },
           { text: "🔙 Back", callback_data: "cb:home" },
         ],
       ],
@@ -1489,18 +1959,23 @@ async function answerCallbackQuery(callbackQueryId, env, fetchImpl = fetch, text
   return res.ok;
 }
 
+function hasTelegramHtmlTags(text) {
+  return /<\/?(?:b|strong|i|em|u|ins|s|strike|del|code|pre|a|tg-spoiler)\b/i.test(String(text || ""));
+}
+
 async function sendTelegramReply(chatId, htmlText, env, fetchImpl = fetch, replyMarkup = null) {
   const normalized = normalizePreserveNewlines(htmlText);
+  const useHtml = hasTelegramHtmlTags(normalized);
   const payload = {
     chat_id: chatId,
     text: normalized,
-    parse_mode: "HTML",
     disable_web_page_preview: true,
   };
+  if (useHtml) payload.parse_mode = "HTML";
   if (replyMarkup) payload.reply_markup = replyMarkup;
 
   const res = await tgApiPost("sendMessage", payload, env, fetchImpl);
-  if (res.ok || res.blocked) return res;
+  if (res.ok || res.blocked || !useHtml) return res;
 
   // Plain-text fallback if HTML formatting failed
   const plainPayload = {
@@ -1517,13 +1992,14 @@ async function editOrSendTelegram(chatId, messageId, htmlText, env, fetchImpl = 
     return sendTelegramReply(chatId, htmlText, env, fetchImpl, replyMarkup);
   }
   const normalized = normalizePreserveNewlines(htmlText);
+  const useHtml = hasTelegramHtmlTags(normalized);
   const payload = {
     chat_id: chatId,
     message_id: messageId,
     text: normalized,
-    parse_mode: "HTML",
     disable_web_page_preview: true,
   };
+  if (useHtml) payload.parse_mode = "HTML";
   if (replyMarkup) payload.reply_markup = replyMarkup;
 
   const res = await tgApiPost("editMessageText", payload, env, fetchImpl, 2);
@@ -1619,7 +2095,7 @@ async function handleCallbackQuery(cbq, env, fetchImpl = fetch) {
     return { handled: false, reason: "missing_callback_chat" };
   }
 
-  const defaultLang = String(cbq.from?.language_code || "").toLowerCase().startsWith("en") ? "en" : "ar";
+  const defaultLang = resolveDefaultLangFromTelegram(cbq.from?.language_code);
   let profile = await loadBotUserProfile(userId, env, fetchImpl, defaultLang);
 
   // Sync live tier status if free in cache
@@ -1839,20 +2315,66 @@ async function handleCallbackQuery(cbq, env, fetchImpl = fetch) {
     return { handled: true, mode: "upgrade_pro_shown", orderId: view.orderId };
   }
 
-  // Support screen
+  // Enter AI Support Mode (`cb:support`)
   if (data === "cb:support") {
-    const supportHandle = String(env?.SUPPORT_TELEGRAM_USERNAME || "@RatePath_AR").trim();
-    const isAr = profile.lang !== "en";
-    const txt = isAr
-      ? `💬 <b>الدعم الفني — RatePath Terminal</b>\n\nلأي استفسار حول الدفع بـ USDT أو تفعيل الباقة أو الربط مع الموقع:\n• القناة العربية: @RatePath_AR\n• القناة الإنجليزية: @RatePathLive\n• رقم حسابك (أرسله للدعم عند الحاجة): <code>${escapeHtml(String(userId))}</code>\n• الموقع: https://ratepathlive.com`
-      : `💬 <b>Support — RatePath Terminal</b>\n\nFor USDT payment or activation assistance:\n• English Channel: @RatePathLive\n• Arabic Channel: @RatePath_AR\n• Your Telegram ID: <code>${escapeHtml(String(userId))}</code>\n• Website: https://ratepathlive.com`;
-    await editOrSendTelegram(chatId, messageId, txt, env, fetchImpl, {
-      inline_keyboard: [
-        [{ text: isAr ? "💎 العودة للترقية" : "💎 Back to Upgrade", callback_data: "cb:upgrade_vip" }],
-        [{ text: isAr ? "🔙 الرئيسية" : "🔙 Home", callback_data: "cb:home" }],
-      ],
+    const prevHist = Array.isArray(profile.ui_state?.history) ? profile.ui_state.history : [];
+    profile.ui_state = {
+      mode: "support",
+      escalated: false,
+      history: prevHist.slice(-(SUPPORT_MAX_HISTORY_TURNS * 2)),
+    };
+    await saveBotUserProfile(profile, env, fetchImpl);
+    const view = buildSupportGreetingView(profile.lang);
+    await editOrSendTelegram(chatId, messageId, view.text, env, fetchImpl, view.replyMarkup);
+    return { handled: true, mode: "support_entered", lang: profile.lang };
+  }
+
+  // Exit Support Mode (`cb:support_exit`)
+  if (data === "cb:support_exit") {
+    profile.ui_state = {};
+    await saveBotUserProfile(profile, env, fetchImpl);
+    const view = buildWelcomeView(profile, env?.PUBLIC_SITE_URL);
+    await editOrSendTelegram(chatId, messageId, view.text, env, fetchImpl, view.replyMarkup);
+    return { handled: true, mode: "support_exited", lang: profile.lang };
+  }
+
+  // Talk to Human Admin Escalation (`cb:support_human`)
+  if (data === "cb:support_human") {
+    const prevHist = Array.isArray(profile.ui_state?.history) ? profile.ui_state.history : [];
+    const lastUserTurn = [...prevHist].reverse().find((m) => m.role === "user");
+    const summaryMsg = lastUserTurn?.content
+      ? `[User tapped Talk to Human]\nLast question: ${lastUserTurn.content}`
+      : "[User tapped Talk to Human button]";
+    const ticketRes = await forwardTicketToAdmin({
+      userId,
+      username: cbq.from?.username || "",
+      profile,
+      userMessage: summaryMsg,
+      reason: "talk_to_human_button",
+      env,
+      fetchImpl,
     });
-    return { handled: true, mode: "support_shown", support: supportHandle };
+    profile.ui_state = {
+      mode: "support",
+      escalated: true,
+      history: prevHist.slice(-(SUPPORT_MAX_HISTORY_TURNS * 2)),
+    };
+    await saveBotUserProfile(profile, env, fetchImpl);
+
+    const isAr = profile.lang !== "en";
+    const escText = isAr
+      ? `👤 <b>تم تحويل طلبك إلى فريق الدعم البشري بنجاح!</b>\n\nإذا كانت مشكلتك تتعلق بدفع USDT أو تفعيل باقة، يرجى إرسال <b>رقم الطلب (Order ID)</b> أو <b>معرّف العملية (TXID)</b> هنا مباشرة وسيرد عليك المشرف في نفس هذه المحادثة.`
+      : `👤 <b>Your request has been escalated to our human admin team!</b>\n\nIf this is about a USDT payment or activation, please reply right here with your <b>Order ID</b> or <b>TXID</b> and an admin will reply directly in this chat.`;
+    await editOrSendTelegram(chatId, messageId, escText, env, fetchImpl, {
+      inline_keyboard: [[{ text: isAr ? "❌ إنهاء الدعم" : "❌ Exit Support", callback_data: "cb:support_exit" }]],
+    });
+    return {
+      handled: true,
+      mode: "support_escalated",
+      reason: "talk_to_human_button",
+      forwarded: ticketRes.forwarded,
+      adminMsgId: ticketRes.adminMsgId,
+    };
   }
 
   return { handled: false, reason: "unknown_callback_data" };
@@ -1873,9 +2395,16 @@ export async function processTelegramUpdate(update, env, fetchImpl = fetch) {
     return { handled: false, reason: "ignored_non_private_or_empty" };
   }
 
+  // 0. Admin Reply Bridge: Admin replies directly to a forwarded support ticket in Telegram
+  const adminBridgeRes = await handleAdminTicketReply(msg, env, fetchImpl);
+  if (adminBridgeRes) {
+    return adminBridgeRes;
+  }
+
   const chatId = msg.chat.id;
   const userId = msg.from?.id;
   const userLang = msg.from?.language_code || "";
+  const defaultLang = resolveDefaultLangFromTelegram(userLang);
   const rawText = String(msg.text || "").trim();
   const inferredLang = detectQueryLang(rawText, userLang);
 
@@ -1883,12 +2412,12 @@ export async function processTelegramUpdate(update, env, fetchImpl = fetch) {
   const linkMatch = rawText.match(/^\/start(?:@\w+)?\s+link_([A-Za-z0-9_-]{8,40})$/i);
   if (linkMatch) {
     const pairRes = await linkPersonalTrackerAccount(linkMatch[1], chatId, env, fetchImpl);
-    const prefLang = pairRes.profile?.lang === "en" ? "en" : inferredLang;
+    const prefLang = pairRes.profile?.lang === "en" ? "en" : defaultLang;
     const replyText = pairRes.linked
       ? prefLang === "ar"
         ? `✅ <b>تم ربط حسابك ببوت المتابعة الشخصي بنجاح!</b>\n\n🔔 ستصلك هنا تنبيهات الأسعار وملخصات الأخبار المخصصة للعملات والذهب والأسهم التي تضيفها من حسابك في https://ratepathlive.com.\n\n📋 أرسل <code>/watchlist</code> في أي وقت لعرض قائمتك.\n\nℹ️ <i>خدمة معلوماتية لمتابعة البيانات فقط وليست توصية استثمارية.</i>`
         : `✅ <b>Your RatePath Personal Tracker Bot is Now Linked!</b>\n\n🔔 You will receive private price &amp; company-news alerts here for every currency, metal, crypto, or stock in your https://ratepathlive.com watchlist.\n\n📋 Send <code>/watchlist</code> anytime to inspect your tracked items.\n\nℹ️ <i>Informational market monitoring only — not investment advice.</i>`
-      : inferredLang === "ar"
+      : defaultLang === "ar"
       ? "⚠️ رابط الربط غير صالح أو تم استخدامه مسبقاً. افتح نافذة «البوت الشخصي» في https://ratepathlive.com لإنشاء رابط جديد."
       : "⚠️ This pairing link is invalid or already used. Open the Personal Bot modal on https://ratepathlive.com to generate a fresh link.";
     await sendTelegramReply(chatId, replyText, env, fetchImpl);
@@ -1898,18 +2427,54 @@ export async function processTelegramUpdate(update, env, fetchImpl = fetch) {
   // 2. Deep-link direct upgrade (`/start vip_ar`, `/start vip_en`, `/upgrade`)
   const vipStartMatch = rawText.match(/^\/start(?:@\w+)?\s+vip_(ar|en)$/i);
   if (vipStartMatch || /^\/upgrade(?:@\w+)?\b/i.test(rawText)) {
-    const profile = await loadBotUserProfile(userId, env, fetchImpl, vipStartMatch ? vipStartMatch[1].toLowerCase() : "ar");
+    const profile = await loadBotUserProfile(
+      userId,
+      env,
+      fetchImpl,
+      vipStartMatch ? vipStartMatch[1].toLowerCase() : defaultLang
+    );
     const targetLang = vipStartMatch ? vipStartMatch[1].toLowerCase() : profile.lang;
     profile.lang = targetLang;
+    profile.ui_state = {};
     await saveBotUserProfile(profile, env, fetchImpl);
     const view = await buildUpgradeVipView(userId, targetLang, env, fetchImpl);
     await sendTelegramReply(chatId, view.text, env, fetchImpl, view.replyMarkup);
-    return { handled: true, mode: "upgrade_vip_shown", orderId: view.orderId };
+    return { handled: true, mode: "upgrade_vip_shown", orderId: view.orderId, lang: targetLang };
+  }
+
+  // 2b. `/support` command (enters AI Support Mode, or answers inline question directly)
+  const supportCmdMatch = rawText.match(/^\/support(?:@\w+)?(?:\s+([\s\S]+))?$/i);
+  if (supportCmdMatch) {
+    const profile = await loadBotUserProfile(userId, env, fetchImpl, defaultLang);
+    const prevHist = Array.isArray(profile.ui_state?.history) ? profile.ui_state.history : [];
+    profile.ui_state = {
+      mode: "support",
+      escalated: false,
+      history: prevHist.slice(-(SUPPORT_MAX_HISTORY_TURNS * 2)),
+    };
+    await saveBotUserProfile(profile, env, fetchImpl);
+
+    const inlineQuestion = String(supportCmdMatch[1] || "").trim();
+    if (inlineQuestion) {
+      return handleSupportUserMessage({
+        msg,
+        chatId,
+        userId,
+        rawText: inlineQuestion,
+        profile,
+        env,
+        fetchImpl,
+      });
+    }
+
+    const view = buildSupportGreetingView(profile.lang);
+    await sendTelegramReply(chatId, view.text, env, fetchImpl, view.replyMarkup);
+    return { handled: true, mode: "support_entered", lang: profile.lang };
   }
 
   // 3. `/start`, `/menu`, `/help` -> Exact Bilingual Welcome + Inline Keyboard
   if (/^\/(start|menu|help)\b/i.test(rawText)) {
-    const profile = await loadBotUserProfile(userId, env, fetchImpl, "ar");
+    const profile = await loadBotUserProfile(userId, env, fetchImpl, defaultLang);
     const vipStatus = await checkVipMembership(userId, env, fetchImpl);
     if (vipStatus.isVip && profile.plan_tier === "free") {
       profile.plan_tier = vipStatus.planTier;
@@ -1925,15 +2490,18 @@ export async function processTelegramUpdate(update, env, fetchImpl = fetch) {
 
   // 4. `/watchlist`, `/my`, `قائمتي`
   if (/^(\/(?:watchlist|my)\b|قائمتي\s*$)/i.test(rawText)) {
-    const profile = await loadBotUserProfile(userId, env, fetchImpl, inferredLang);
+    const profile = await loadBotUserProfile(userId, env, fetchImpl, defaultLang);
     const { liveFeed, catalogFeed } = await getBatchMarketFeeds(env, fetchImpl);
     const view = buildWatchlistView(profile, liveFeed, catalogFeed);
     await sendTelegramReply(chatId, view.text, env, fetchImpl, view.replyMarkup);
     return { handled: true, mode: "watchlist_shown", count: profile.watchlist.length };
   }
 
-  // 5. Interactive Wizard State Handling (awaiting custom symbol or target price number)
-  const profile = await loadBotUserProfile(userId, env, fetchImpl, inferredLang);
+  // 5. Session Mode Handling: AI Support Mode OR Interactive Wizard (custom symbol / target price)
+  const profile = await loadBotUserProfile(userId, env, fetchImpl, defaultLang);
+  if (profile.ui_state?.mode === "support" && !rawText.startsWith("/")) {
+    return handleSupportUserMessage({ msg, chatId, userId, rawText, profile, env, fetchImpl });
+  }
   if (profile.ui_state?.awaiting === "target_price" && profile.ui_state?.symbol) {
     const cleanedNum = rawText
       .replace(/,/g, "")

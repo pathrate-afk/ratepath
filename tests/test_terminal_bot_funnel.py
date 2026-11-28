@@ -346,7 +346,7 @@ const env = {{
   PUBLIC_SITE_URL: "https://ratepathlive.com",
 }};
 
-// 1. /start -> Exact Arabic Welcome Message + 3-row Inline Keyboard
+// 1. /start -> Exact Arabic Welcome Message + 4-row Inline Keyboard (including AI Support)
 const rStart = await processTelegramUpdate({{
   message: {{ chat: {{ id: 777001, type: "private" }}, from: {{ id: 777001, language_code: "ar" }}, text: "/start" }},
 }}, env, mockFetch);
@@ -357,7 +357,8 @@ assert.ok(startMsg.body.text.includes("أهلاً بك في RatePath Terminal �
 assert.ok(startMsg.body.text.includes("المجانية (0 / 3 أصول)"));
 assert.equal(startMsg.body.reply_markup.inline_keyboard[0][0].text, "➕ إضافة أول أصل (مجاني)");
 assert.equal(startMsg.body.reply_markup.inline_keyboard[1][1].url, "https://ratepathlive.com");
-assert.equal(startMsg.body.reply_markup.inline_keyboard[2][1].text, "🇬🇧 English");
+assert.equal(startMsg.body.reply_markup.inline_keyboard[2][1].text, "💬 الدعم الذكي");
+assert.equal(startMsg.body.reply_markup.inline_keyboard[3][0].text, "🇬🇧 English");
 
 // 2. Language toggle (`cb:lang:en`) -> answerCallbackQuery + editMessageText in English, then toggle back to AR
 const rEn = await processTelegramUpdate({{
@@ -368,7 +369,8 @@ assert.equal(rEn.lang, "en");
 assert.equal(tgCalls[tgCalls.length - 2].method, "answerCallbackQuery");
 assert.equal(tgCalls[tgCalls.length - 1].method, "editMessageText");
 assert.ok(tgCalls[tgCalls.length - 1].body.text.includes("Welcome to RatePath Terminal ⚡"));
-assert.equal(tgCalls[tgCalls.length - 1].body.reply_markup.inline_keyboard[2][1].text, "🇸🇦 العربية");
+assert.equal(tgCalls[tgCalls.length - 1].body.reply_markup.inline_keyboard[2][1].text, "💬 AI Support");
+assert.equal(tgCalls[tgCalls.length - 1].body.reply_markup.inline_keyboard[3][0].text, "🇸🇦 العربية");
 
 await processTelegramUpdate({{
   callback_query: {{ id: "cb_2", from: {{ id: 777001 }}, message: {{ chat: {{ id: 777001 }}, message_id: 101 }}, data: "cb:lang:ar" }},
@@ -480,3 +482,264 @@ console.log("ALL_TERMINAL_BOT_FUNNEL_TESTS_PASSED");
     )
     assert proc.returncode == 0, f"Node bot funnel tests failed:\nSTDOUT:\n{proc.stdout}\nSTDERR:\n{proc.stderr}"
     assert "ALL_TERMINAL_BOT_FUNNEL_TESTS_PASSED" in proc.stdout
+
+
+def test_bilingual_en_flows_ai_support_and_admin_bridge_nodejs() -> None:
+    """Verify full EN/AR localization, AI Support Mode (AR + EN Q&A), rate limits, escalation & Admin Reply Bridge."""
+    env_example = (WORKSPACE_ROOT / ".env.example").read_text(encoding="utf-8")
+    assert "ADMIN_TELEGRAM_ID=" in env_example
+
+    node_bin = shutil.which("node")
+    assert node_bin is not None
+    tg_uri = (WORKSPACE_ROOT / "functions" / "api" / "telegram-webhook.js").as_uri()
+
+    script = f"""
+import assert from "node:assert/strict";
+import {{ processTelegramUpdate, resolveDefaultLangFromTelegram }} from "{tg_uri}";
+
+// Default language helper: ar* -> ar, everything else -> en
+assert.equal(resolveDefaultLangFromTelegram("ar"), "ar");
+assert.equal(resolveDefaultLangFromTelegram("ar-SA"), "ar");
+assert.equal(resolveDefaultLangFromTelegram("en"), "en");
+assert.equal(resolveDefaultLangFromTelegram("fr"), "en");
+assert.equal(resolveDefaultLangFromTelegram(""), "en");
+
+const redis = new Map();
+const tgCalls = [];
+const groqRequests = [];
+let forceAiFail = false;
+
+const mockFetch = async (url, init = {{}}) => {{
+  const u = String(url);
+  if (u.includes("upstash.io")) {{
+    const cmd = JSON.parse(init.body);
+    if (cmd[0] === "GET") return new Response(JSON.stringify({{ result: redis.get(cmd[1]) ?? null }}), {{ status: 200 }});
+    if (cmd[0] === "SET") {{ redis.set(cmd[1], cmd[2]); return new Response(JSON.stringify({{ result: "OK" }}), {{ status: 200 }}); }}
+    if (cmd[0] === "INCR") {{
+      const next = (Number(redis.get(cmd[1])) || 0) + 1;
+      redis.set(cmd[1], String(next));
+      return new Response(JSON.stringify({{ result: next }}), {{ status: 200 }});
+    }}
+    if (cmd[0] === "EXPIRE" || cmd[0] === "SADD") return new Response(JSON.stringify({{ result: 1 }}), {{ status: 200 }});
+    return new Response(JSON.stringify({{ result: "OK" }}), {{ status: 200 }});
+  }}
+  if (u.includes("live_feed.json")) {{
+    return new Response(JSON.stringify({{
+      gold: {{ prices: {{ XAU_OZ: "3680.00", GRAM_21K: "103.50" }} }},
+      fiat: {{ rates: {{ TRY: {{ units_per_usd: "50.70" }}, SYP: {{ units_per_usd: "152.50" }}, EGP: {{ units_per_usd: "54.80" }} }} }},
+      crypto: {{ assets: {{ BTC: {{ spot_price: "61200.00" }}, ETH: {{ spot_price: "1850.00" }} }} }},
+    }}), {{ status: 200 }});
+  }}
+  if (u.includes("catalog_feed.json")) {{
+    return new Response(JSON.stringify({{
+      metals: {{ XAG_OZ: {{ price_usd: "43.75" }} }},
+      fiat: {{ EUR: {{ units_per_usd: "0.91" }} }},
+      crypto: [{{ symbol: "USDT", price_usd: "1.0000" }}],
+    }}), {{ status: 200 }});
+  }}
+  if (u.includes("api.nowpayments.io/v1/invoice")) {{
+    const body = JSON.parse(init.body);
+    return new Response(JSON.stringify({{ id: "inv_en_1", invoice_url: `https://nowpayments.io/payment/?iid=en_${{body.order_id}}` }}), {{ status: 200 }});
+  }}
+  if (u.includes("api.groq.com/openai/v1/chat/completions")) {{
+    if (forceAiFail) return new Response("Service Unavailable", {{ status: 503 }});
+    const reqBody = JSON.parse(init.body);
+    groqRequests.push(reqBody);
+    const lastMsg = reqBody.messages[reqBody.messages.length - 1].content;
+    const isArQ = /[\\u0600-\\u06FF]/.test(lastMsg);
+    const replyContent = isArQ
+      ? "للترقية إلى باقة Business VIP (10$ شهرياً بـ USDT) اضغط /upgrade واختر شبكتك المفضلة مثل TRC-20 أو TON للتفعيل التلقائي خلال دقائق."
+      : "To set a target price alert, open /start -> My Watchlist -> pick your asset -> tap Set Alert and enter your exact price target.";
+    return new Response(JSON.stringify({{ choices: [{{ message: {{ content: replyContent }} }}] }}), {{ status: 200 }});
+  }}
+  if (u.includes("/getChatMember")) {{
+    return new Response(JSON.stringify({{ ok: true, result: {{ status: "left" }} }}), {{ status: 200 }});
+  }}
+  if (u.includes("api.telegram.org/bot")) {{
+    const method = u.split("/").pop();
+    const body = JSON.parse(init.body);
+    tgCalls.push({{ method, body }});
+    return new Response(JSON.stringify({{ ok: true, result: {{ message_id: 500 + tgCalls.length }} }}), {{ status: 200 }});
+  }}
+  return new Response("Not Found", {{ status: 404 }});
+}};
+
+const env = {{
+  TELEGRAM_BOT_TOKEN: "123:BOT",
+  TELEGRAM_WEBHOOK_SECRET: "wh_sec",
+  VIP_CHANNEL_ID: "-100999888",
+  ADMIN_TELEGRAM_ID: "999111",
+  UPSTASH_REDIS_REST_URL: "https://mock.upstash.io",
+  UPSTASH_REDIS_REST_TOKEN: "tok",
+  NOWPAYMENTS_API_KEY: "np_live_key",
+  GROQ_API_KEY_1: "gsk_mock_key_1",
+  PUBLIC_SITE_URL: "https://ratepathlive.com",
+}};
+
+// 1. New international user (`language_code: "en"`) -> exact English Welcome Message + 4-row keyboard
+const rEnStart = await processTelegramUpdate({{
+  message: {{ chat: {{ id: 888001, type: "private" }}, from: {{ id: 888001, username: "en_trader", language_code: "en" }}, text: "/start" }},
+}}, env, mockFetch);
+assert.equal(rEnStart.mode, "welcome");
+assert.equal(rEnStart.lang, "en");
+const wMsg = tgCalls[tgCalls.length - 1];
+assert.ok(wMsg.body.text.includes("Welcome to RatePath Terminal ⚡"));
+assert.ok(wMsg.body.text.includes("Your real-time hub for FX rates, gold, and crypto with instant Telegram price alerts — zero noise, zero pop-ups."));
+assert.ok(wMsg.body.text.includes("📊 Current Plan: Free (0 / 3 assets)"));
+assert.ok(wMsg.body.text.includes("https://ratepathlive.com"));
+assert.equal(wMsg.body.reply_markup.inline_keyboard[0][0].text, "➕ Add First Asset (Free)");
+assert.equal(wMsg.body.reply_markup.inline_keyboard[1][0].text, "📊 My Watchlist (0/3)");
+assert.equal(wMsg.body.reply_markup.inline_keyboard[1][1].text, "🌐 Open Live Site");
+assert.equal(wMsg.body.reply_markup.inline_keyboard[1][1].url, "https://ratepathlive.com");
+assert.equal(wMsg.body.reply_markup.inline_keyboard[2][0].text, "💎 VIP Plans ($10/mo)");
+assert.equal(wMsg.body.reply_markup.inline_keyboard[2][1].text, "💬 AI Support");
+assert.equal(wMsg.body.reply_markup.inline_keyboard[3][0].text, "🇸🇦 العربية");
+
+// 2. Add 3 assets then try 4th -> exact English 3/3 Free Limit Paywall
+for (const [i, sym] of ["XAU", "BTC", "TRY"].entries()) {{
+  const addRes = await processTelegramUpdate({{
+    callback_query: {{ id: `en_add_${{i}}`, from: {{ id: 888001, language_code: "en" }}, message: {{ chat: {{ id: 888001 }}, message_id: 501 }}, data: `cb:add_pick:${{sym}}` }},
+  }}, env, mockFetch);
+  assert.equal(addRes.mode, "asset_added");
+}}
+const rEn4th = await processTelegramUpdate({{
+  callback_query: {{ id: "en_add_4", from: {{ id: 888001, language_code: "en" }}, message: {{ chat: {{ id: 888001 }}, message_id: 501 }}, data: "cb:add_pick:ETH" }},
+}}, env, mockFetch);
+assert.equal(rEn4th.mode, "free_limit_paywall");
+const enPaywall = tgCalls[tgCalls.length - 1];
+assert.equal(enPaywall.method, "editMessageText");
+assert.ok(enPaywall.body.text.includes("🔒 Free Plan Limit Reached (3 / 3 assets)"));
+assert.ok(enPaywall.body.text.includes("Your active watchlist:"));
+assert.ok(enPaywall.body.text.includes("💰 Monthly Plan: Just $10 USDT (instant activation)."));
+assert.equal(enPaywall.body.reply_markup.inline_keyboard[0][0].text, "🚀 Upgrade Now — $10 USDT");
+assert.equal(enPaywall.body.reply_markup.inline_keyboard[1][0].text, "🔄 Replace an Existing Asset");
+assert.equal(enPaywall.body.reply_markup.inline_keyboard[2][0].text, "👑 Compare with Pro (50 Assets — $19)");
+
+// 3. `/upgrade` -> exact English Business VIP Upgrade Message & buttons
+const rEnUpg = await processTelegramUpdate({{
+  message: {{ chat: {{ id: 888001, type: "private" }}, from: {{ id: 888001, language_code: "en" }}, text: "/upgrade" }},
+}}, env, mockFetch);
+assert.equal(rEnUpg.mode, "upgrade_vip_shown");
+const enUpgMsg = tgCalls[tgCalls.length - 1];
+assert.ok(enUpgMsg.body.text.includes("💎 Business VIP + Personal Bot"));
+assert.ok(enUpgMsg.body.text.includes("Price: $10 USDT / month — no forced auto-renewal"));
+assert.ok(enUpgMsg.body.text.includes("• USDT (TRC-20 • TRON)"));
+assert.ok(enUpgMsg.body.text.includes("Transparent Notice: This subscription is a market data-monitoring and alert software service only"));
+assert.equal(enUpgMsg.body.reply_markup.inline_keyboard[0][0].text, "💳 Pay $10 USDT Now (Instant)");
+assert.equal(enUpgMsg.body.reply_markup.inline_keyboard[1][0].text, "👑 Upgrade to Pro — 50 Assets + Stocks & News ($19)");
+assert.equal(enUpgMsg.body.reply_markup.inline_keyboard[2][0].text, "💬 AI Support");
+assert.equal(enUpgMsg.body.reply_markup.inline_keyboard[2][1].text, "🔙 Back");
+
+// 4. Enter Support Mode via `cb:support` -> Ask 1 EN question + 1 AR question -> verify System Prompt + 4-turn history
+const rEnterSup = await processTelegramUpdate({{
+  callback_query: {{ id: "cb_sup_1", from: {{ id: 888001, username: "en_trader", language_code: "en" }}, message: {{ chat: {{ id: 888001 }}, message_id: 505 }}, data: "cb:support" }},
+}}, env, mockFetch);
+assert.equal(rEnterSup.mode, "support_entered");
+const supGreet = tgCalls[tgCalls.length - 1];
+assert.equal(supGreet.body.reply_markup.inline_keyboard[0][0].text, "👤 Talk to Human");
+assert.equal(supGreet.body.reply_markup.inline_keyboard[0][1].text, "❌ Exit Support");
+
+const rQ1En = await processTelegramUpdate({{
+  message: {{ chat: {{ id: 888001, type: "private" }}, from: {{ id: 888001, username: "en_trader", language_code: "en" }}, text: "How do I set a price alert?" }},
+}}, env, mockFetch);
+assert.equal(rQ1En.mode, "support_ai_reply");
+assert.equal(rQ1En.provider, "groq");
+assert.equal(rQ1En.lang, "en");
+assert.ok(groqRequests[0].messages[0].content.includes("https://ratepathlive.com"));
+assert.ok(groqRequests[0].messages[0].content.includes("NEVER give financial, trading, or investment advice"));
+assert.ok(tgCalls[tgCalls.length - 1].body.text.includes("My Watchlist"));
+
+const rQ2Ar = await processTelegramUpdate({{
+  message: {{ chat: {{ id: 888001, type: "private" }}, from: {{ id: 888001, username: "en_trader", language_code: "en" }}, text: "كيف أرقّي إلى باقة VIP؟" }},
+}}, env, mockFetch);
+assert.equal(rQ2Ar.mode, "support_ai_reply");
+assert.equal(rQ2Ar.lang, "ar");
+assert.equal(rQ2Ar.historyMessages, 4);
+assert.ok(tgCalls[tgCalls.length - 1].body.text.includes("Business VIP"));
+
+// 5. Prompt length guard (>500 chars) rejects cleanly without calling AI
+const groqCountBefore = groqRequests.length;
+const rTooLong = await processTelegramUpdate({{
+  message: {{ chat: {{ id: 888001, type: "private" }}, from: {{ id: 888001, username: "en_trader", language_code: "en" }}, text: "A".repeat(520) }},
+}}, env, mockFetch);
+assert.equal(rTooLong.mode, "support_prompt_too_long");
+assert.equal(groqRequests.length, groqCountBefore);
+
+// 6. History cap (max 4 turns = 8 messages) & Hourly Rate Limit (max 8 AI messages/hour)
+for (let n = 3; n <= 8; n++) {{
+  const rTurn = await processTelegramUpdate({{
+    message: {{ chat: {{ id: 888001, type: "private" }}, from: {{ id: 888001, username: "en_trader", language_code: "en" }}, text: `Quick help question #${{n}} about alerts` }},
+  }}, env, mockFetch);
+  assert.equal(rTurn.mode, "support_ai_reply");
+  assert.ok(rTurn.historyMessages <= 8, `Expected max 8 history msgs (4 turns), got ${{rTurn.historyMessages}}`);
+}}
+const r9thRl = await processTelegramUpdate({{
+  message: {{ chat: {{ id: 888001, type: "private" }}, from: {{ id: 888001, username: "en_trader", language_code: "en" }}, text: "9th question should hit hourly limit" }},
+}}, env, mockFetch);
+assert.equal(r9thRl.mode, "support_rate_limited");
+
+// 7. Exit Support Mode (`cb:support_exit`) -> back to Welcome screen
+const rExitSup = await processTelegramUpdate({{
+  callback_query: {{ id: "cb_sup_exit", from: {{ id: 888001 }}, message: {{ chat: {{ id: 888001 }}, message_id: 510 }}, data: "cb:support_exit" }},
+}}, env, mockFetch);
+assert.equal(rExitSup.mode, "support_exited");
+assert.ok(tgCalls[tgCalls.length - 1].body.text.includes("Welcome to RatePath Terminal ⚡"));
+
+// 8. Auto-Escalation via `/support` + payment keyword & Order ID -> Structured Ticket to ADMIN_TELEGRAM_ID + Admin Reply Bridge!
+await processTelegramUpdate({{
+  message: {{ chat: {{ id: 888001, type: "private" }}, from: {{ id: 888001, username: "en_trader", language_code: "en" }}, text: "/support" }},
+}}, env, mockFetch);
+const rEsc = await processTelegramUpdate({{
+  message: {{ chat: {{ id: 888001, type: "private" }}, from: {{ id: 888001, username: "en_trader", language_code: "en" }}, text: "I paid 10 USDT and it didn't activate, order 888001_vip10_1760000999" }},
+}}, env, mockFetch);
+assert.equal(rEsc.mode, "support_escalated");
+assert.equal(rEsc.forwarded, true);
+assert.ok(rEsc.adminMsgId);
+
+const adminTicketCall = tgCalls.find((c) => c.method === "sendMessage" && String(c.body.chat_id) === "999111" && c.body.text.includes("888001_vip10_1760000999"));
+assert.ok(adminTicketCall, "Expected structured ticket forwarded to ADMIN_TELEGRAM_ID 999111");
+assert.ok(adminTicketCall.body.text.includes("888001"));
+assert.ok(adminTicketCall.body.text.includes("@en_trader"));
+assert.ok(adminTicketCall.body.text.includes("Free"));
+assert.ok(adminTicketCall.body.text.includes("EN"));
+
+// 9. Admin Reply Bridge: Admin 999111 replies to the forwarded ticket -> Bot sends reply cleanly back to user 888001!
+const rBridge = await processTelegramUpdate({{
+  message: {{
+    chat: {{ id: 999111, type: "private" }},
+    from: {{ id: 999111, username: "ratepath_admin" }},
+    text: "Verified your TRC-20 payment! Your Business VIP access is active now.",
+    reply_to_message: {{ message_id: rEsc.adminMsgId, text: adminTicketCall.body.text }},
+  }},
+}}, env, mockFetch);
+assert.equal(rBridge.mode, "admin_reply_bridged");
+assert.equal(rBridge.targetUserId, "888001");
+assert.equal(rBridge.delivered, true);
+const userDeliveredMsg = tgCalls.find((c) => c.method === "sendMessage" && String(c.body.chat_id) === "888001" && c.body.text.includes("Verified your TRC-20 payment!"));
+assert.ok(userDeliveredMsg, "Expected user 888001 to receive bridged admin reply");
+
+// 10. Safe Fallback on AI API outage -> does NOT crash & forwards automatically to ADMIN_TELEGRAM_ID
+forceAiFail = true;
+await processTelegramUpdate({{
+  message: {{ chat: {{ id: 888002, type: "private" }}, from: {{ id: 888002, username: "ar_user", language_code: "ar-SA" }}, text: "/support" }},
+}}, env, mockFetch);
+const rFallback = await processTelegramUpdate({{
+  message: {{ chat: {{ id: 888002, type: "private" }}, from: {{ id: 888002, username: "ar_user", language_code: "ar-SA" }}, text: "كيف أغير العملة في القائمة؟" }},
+}}, env, mockFetch);
+assert.equal(rFallback.mode, "support_ai_fallback_escalated");
+assert.equal(rFallback.forwarded, true);
+const fallbackAdminTicket = tgCalls.find((c) => c.method === "sendMessage" && String(c.body.chat_id) === "999111" && c.body.text.includes("ai_timeout_or_failure"));
+assert.ok(fallbackAdminTicket, "Expected AI outage safe fallback to forward ticket to ADMIN_TELEGRAM_ID");
+
+console.log("ALL_BILINGUAL_AND_AI_SUPPORT_TESTS_PASSED");
+"""
+
+    proc = subprocess.run(
+        [node_bin, "--input-type=module", "-e", script],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        check=False,
+    )
+    assert proc.returncode == 0, f"Node bilingual/AI support tests failed:\nSTDOUT:\n{proc.stdout}\nSTDERR:\n{proc.stderr}"
+    assert "ALL_BILINGUAL_AND_AI_SUPPORT_TESTS_PASSED" in proc.stdout
