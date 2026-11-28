@@ -220,7 +220,14 @@ function showToast(message) {
 // 1. Telegram Mini App & Offline-First PWA Registration
 // ---------------------------------------------------------------------------
 
-function initTelegramMiniApp() {
+function enableAsyncGoogleFonts() {
+  const link = document.getElementById("rp-google-fonts");
+  if (link && link.media !== "all") {
+    link.media = "all";
+  }
+}
+
+function applyTelegramWebAppTheme() {
   const tg = window.Telegram?.WebApp;
   if (!tg) return;
   try {
@@ -232,9 +239,28 @@ function initTelegramMiniApp() {
     if (!localStorage.getItem(STORAGE_KEYS.LANG) && tgLang?.startsWith("ar")) {
       state.lang = "ar";
     }
-  } catch {
-    // Safe fallback outside Telegram container
+  } catch (err) {
+    console.warn("Telegram WebApp initialization warning:", err);
   }
+}
+
+function initTelegramMiniApp() {
+  if (window.Telegram?.WebApp) {
+    applyTelegramWebAppTheme();
+    return;
+  }
+  const inTelegramWebView =
+    window.location.hash.includes("tgWebApp") ||
+    window.location.search.includes("tgWebApp") ||
+    /Telegram/i.test(navigator.userAgent || "") ||
+    Boolean(window.TelegramWebviewProxy);
+  if (!inTelegramWebView) return;
+
+  const script = document.createElement("script");
+  script.src = "https://telegram.org/js/telegram-web-app.js";
+  script.async = true;
+  script.addEventListener("load", applyTelegramWebAppTheme, { once: true });
+  document.head.appendChild(script);
 }
 
 function registerServiceWorker() {
@@ -1059,7 +1085,7 @@ function renderConversionMatrix() {
         : item.id === "SYP" && item.sourceTag === "sp-today"
         ? `<span class="text-[9px] font-mono text-emerald-400/90 whitespace-nowrap">${escapeHtml(t.spTodayBadge)}</span>`
         : item.cmcRank
-        ? `<span class="text-[9px] font-mono text-slate-500">#${Number(item.cmcRank)}</span>`
+        ? `<span class="text-[9px] font-mono text-slate-400">#${Number(item.cmcRank)}</span>`
         : "";
 
       return `
@@ -1222,7 +1248,7 @@ function renderVerifiedNews() {
                 <span>${escapeHtml(item.source_name)}</span>
                 <span aria-hidden="true">↗</span>
               </a>
-              <span class="text-slate-500 font-mono" dir="ltr">${escapeHtml(pubShort)}</span>
+              <span class="text-slate-400 font-mono" dir="ltr">${escapeHtml(pubShort)}</span>
             </div>
             <div class="flex items-center gap-1.5">
               ${
@@ -1729,7 +1755,7 @@ function renderAssetPickerResults() {
           ? `<span class="text-[10px] font-mono ${item.change24hPct.startsWith("-") ? "text-rose-400" : "text-emerald-400"}" dir="ltr">${escapeHtml(item.change24hPct)}%</span>`
           : "";
       const rankTag = item.cmcRank
-        ? `<span class="text-[10px] font-mono text-slate-500" dir="ltr">#${Number(item.cmcRank)}</span>`
+        ? `<span class="text-[10px] font-mono text-slate-400" dir="ltr">#${Number(item.cmcRank)}</span>`
         : "";
       const btnCls = isAdded
         ? "bg-emerald-500/20 text-emerald-300 border-emerald-500/40 hover:bg-rose-500/20 hover:text-rose-300 hover:border-rose-500/40"
@@ -2512,6 +2538,7 @@ function bindEvents() {
 
 // Boot Sequence
 document.addEventListener("DOMContentLoaded", async () => {
+  enableAsyncGoogleFonts();
   detectAndApplyDeviceProfile();
   startLiveUtcClock();
   initTelegramMiniApp();

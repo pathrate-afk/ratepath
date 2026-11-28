@@ -2,6 +2,9 @@
 .venv/
 venv/
 node_modules/
+playwright-report/
+test-results/
+tmp_autopublish/
 
 # Python bytecode & test caches
 __pycache__/

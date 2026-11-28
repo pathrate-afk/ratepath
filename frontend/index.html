@@ -48,17 +48,17 @@
   <meta name="msapplication-TileColor" content="#070B14" />
   <meta name="msapplication-TileImage" content="./icons/icon-192x192.png" />
 
-  <!-- Fonts: Inter, IBM Plex Sans Arabic, JetBrains Mono -->
+  <!-- Fonts: Inter, IBM Plex Sans Arabic, JetBrains Mono (Non-render-blocking, 100% CSP-safe) -->
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&amp;family=Inter:wght@400;500;600;700;800&amp;family=JetBrains+Mono:wght@500;600;700;800&amp;display=swap" rel="stylesheet" />
+  <link id="rp-google-fonts" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&amp;family=Inter:wght@400;500;600;700;800&amp;family=JetBrains+Mono:wght@500;600;700;800&amp;display=swap" rel="stylesheet" media="print" />
+  <noscript><link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&amp;family=Inter:wght@400;500;600;700;800&amp;family=JetBrains+Mono:wght@500;600;700;800&amp;display=swap" rel="stylesheet" /></noscript>
 
   <!-- Production Tailwind CSS (pre-built & minified via `tools/tailwind.config.cjs`, zero runtime JIT) -->
-  <link rel="stylesheet" href="./styles/tailwind.min.css?v=22" />
-  <link rel="stylesheet" href="./styles/terminal.css?v=22" />
+  <link rel="stylesheet" href="./styles/tailwind.min.css?v=23" />
+  <link rel="stylesheet" href="./styles/terminal.css?v=23" />
 
-  <!-- Telegram Mini App SDK (Non-blocking offline-resilient) -->
-  <script src="https://telegram.org/js/telegram-web-app.js" defer></script>
+  <!-- Telegram Mini App SDK is lazy-loaded conditionally by app.js only inside Telegram WebView -->
 
   <!-- Initial Structured JSON-LD Financial & News SEO Schema (Hydrated dynamically from live_feed.json) -->
   <script id="seo-jsonld" type="application/ld+json">
@@ -83,7 +83,7 @@
     <div class="w-full max-w-[1600px] mx-auto px-2.5 sm:px-4 md:px-5 xl:px-6 2xl:px-8 h-14 sm:h-16 flex items-center justify-between gap-1.5 sm:gap-2 md:gap-3">
       <!-- Brand Identity -->
       <div class="flex items-center gap-1.5 sm:gap-2.5 min-w-0">
-        <img src="./icons/logo-mark.png" alt="RatePath | ريت باث" width="40" height="40"
+        <img src="./icons/logo-mark-80.webp" alt="RatePath | ريت باث" width="40" height="40"
           class="w-7 h-7 sm:w-9 sm:h-9 md:w-10 md:h-10 rounded-xl shrink-0 ring-1 ring-amber-400/45 shadow-lg shadow-amber-500/15 object-cover" />
         <div class="min-w-0">
           <div class="flex items-center gap-1.5 sm:gap-2">
@@ -126,7 +126,7 @@
         </button>
 
         <!-- Email Cloud Sync Trigger -->
-        <button id="btn-open-auth-sync" type="button"
+        <button id="btn-open-auth-sync" type="button" aria-label="Sync Workspace"
           class="inline-flex items-center gap-1 sm:gap-1.5 px-2 sm:px-2.5 py-1.5 rounded-lg text-xs font-bold bg-emerald-500/15 hover:bg-emerald-500/20 text-emerald-300 border border-emerald-500/35 transition-colors whitespace-nowrap">
           <span id="auth-sync-dot" class="w-1.5 h-1.5 rounded-full bg-slate-400 shrink-0"></span>
           <span class="sm:hidden" aria-hidden="true">👤</span>
@@ -151,7 +151,7 @@
         </button>
 
         <!-- Refresh Feed -->
-        <button id="btn-refresh-feed" type="button" data-i18n-title="refreshTitle" title="Sync live market feed"
+        <button id="btn-refresh-feed" type="button" aria-label="Sync live market feed" data-i18n-title="refreshTitle" title="Sync live market feed"
           class="hidden lg:inline-flex p-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-slate-300 hover:text-white border border-slate-800 transition-colors">
           <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
             <path stroke-linecap="round" stroke-linejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99" />
@@ -278,8 +278,8 @@
             </div>
           </div>
 
-          <!-- Dynamic Contextual Affiliate CTA (Fiat -> Wise/Remitly | Gold/Crypto -> Bybit/Binance) -->
-          <div id="affiliate-cta-box"></div>
+          <!-- Dynamic Contextual Affiliate CTA (reserved height prevents CLS before JS hydration) -->
+          <div id="affiliate-cta-box" class="min-h-[202px] sm:min-h-[132px]"></div>
         </section>
 
         <!-- Customizable Personal Workspace ("واجهتي الخاصة") -->
@@ -317,7 +317,7 @@
 
             <!-- Category Quick Filter Bar -->
             <div id="workspace-filter-bar" class="flex flex-wrap items-center justify-between gap-2">
-              <div class="inline-flex flex-wrap items-center gap-1.5" role="tablist" aria-label="Workspace filter">
+              <div class="inline-flex flex-wrap items-center gap-1.5" role="group" aria-label="Workspace filter">
                 <button type="button" data-ws-filter="all" class="ws-filter-btn px-2.5 py-1 rounded-lg text-xs font-bold bg-amber-400/20 text-amber-300 border border-amber-400/40 transition-colors" data-i18n="filterAll">All</button>
                 <button type="button" data-ws-filter="fiat" class="ws-filter-btn px-2.5 py-1 rounded-lg text-xs font-semibold bg-slate-900 text-slate-300 hover:text-white border border-slate-800 transition-colors" data-i18n="filterFiat">Currencies</button>
                 <button type="button" data-ws-filter="gold" class="ws-filter-btn px-2.5 py-1 rounded-lg text-xs font-semibold bg-slate-900 text-slate-300 hover:text-white border border-slate-800 transition-colors" data-i18n="filterGold">Gold &amp; Silver</button>
@@ -496,18 +496,18 @@
                 EMA/RSI + Funding + DXY numerical model (selective abstention)
               </p>
             </div>
-            <button id="btn-refresh-quant" type="button"
+            <button id="btn-refresh-quant" type="button" aria-label="Refresh quant signals"
               class="px-2.5 py-1 rounded-lg text-[11px] font-bold bg-slate-800 hover:bg-slate-700 text-emerald-300 border border-slate-700 transition-colors">
               ↻
             </button>
           </div>
 
-          <div class="flex flex-wrap items-center justify-between gap-2">
+          <div class="flex flex-wrap items-center justify-between gap-2 min-h-[24px]">
             <span id="quant-track-record-badge" class="hidden inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold bg-slate-800 text-slate-300 border border-slate-700"></span>
             <div id="quant-macro-bar" class="flex flex-wrap items-center gap-1.5"></div>
           </div>
 
-          <div id="quant-radar-body" class="space-y-2"></div>
+          <div id="quant-radar-body" class="space-y-2 min-h-[444px]"></div>
 
           <p class="text-[10px] text-amber-200/90 bg-amber-500/10 border border-amber-400/25 rounded-xl p-2.5 leading-relaxed" data-i18n="quantLegalNotice">
             ⚖️ Informational data &amp; statistical analytics only — we provide live tools and numbers, NOT investment advice or guaranteed rises/falls. Markets change constantly and no one knows the future.
@@ -555,7 +555,7 @@
                 Live global economy, whales/USDT, crypto &amp; corporate headlines — refreshed hourly
               </p>
             </div>
-            <button id="btn-refresh-live-news" type="button"
+            <button id="btn-refresh-live-news" type="button" aria-label="Refresh live news"
               class="px-2.5 py-1 rounded-lg text-[11px] font-bold bg-slate-800 hover:bg-slate-700 text-amber-300 border border-slate-700 transition-colors">
               ↻
             </button>
@@ -1122,6 +1122,6 @@
   </div>
 
   <!-- Modular Vanilla JS Entry Point -->
-  <script type="module" src="./js/app.js?v=22"></script>
+  <script type="module" src="./js/app.js?v=23"></script>
 </body>
 </html>

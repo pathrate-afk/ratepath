@@ -387,6 +387,10 @@ function initSeoPairPage() {
     });
   }
 
+  // Activate non-render-blocking Google Fonts stylesheet (100% CSP-compliant)
+  const gfLink = document.getElementById("rp-google-fonts");
+  if (gfLink && gfLink.media !== "all") gfLink.media = "all";
+
   // Hydrate immediately from cached/embedded snapshot, then pull live feed
   applyLanguage(initialLang);
   updateUtcClock();

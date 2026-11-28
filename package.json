@@ -1,0 +1,21 @@
+{
+  "name": "ratepath-terminal",
+  "version": "2.0.0",
+  "private": true,
+  "type": "module",
+  "description": "RatePath (ريت باث) — Institutional FX, Gold & Crypto Terminal, Edge Functions, SEO Engine & QA Suite",
+  "scripts": {
+    "build:seo": "python scripts/generate_seo_pages.py",
+    "build:css": "tailwindcss -c tools/tailwind.config.cjs -i tools/tailwind.input.css -o frontend/styles/tailwind.min.css --minify",
+    "lint:js": "node scripts/check_js_syntax.mjs",
+    "build": "npm run build:seo && npm run build:css && npm run lint:js",
+    "serve:prod": "node scripts/local_prod_server.mjs",
+    "test:e2e": "playwright test"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.65.1",
+    "autocannon": "^9.0.0",
+    "lighthouse": "^13.6.0",
+    "tailwindcss": "^3.4.19"
+  }
+}
