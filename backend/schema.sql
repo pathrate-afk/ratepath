@@ -347,6 +347,34 @@ CREATE POLICY "Allow service_role full access to telegram_bot_users"
     USING (true)
     WITH CHECK (true);
 
--- Idempotent columns for existing deployments (403 auto-pause & 2-day expiry reminder tracking)
+-- Idempotent columns for existing deployments (403 auto-pause, 2-day expiry reminder & viral referral loop)
 ALTER TABLE public.user_tracker_profiles ADD COLUMN IF NOT EXISTS alerts_paused BOOLEAN NOT NULL DEFAULT false;
 ALTER TABLE public.vip_subscriptions ADD COLUMN IF NOT EXISTS expiry_reminded_at TIMESTAMPTZ DEFAULT NULL;
+ALTER TABLE public.telegram_bot_users ADD COLUMN IF NOT EXISTS referred_by TEXT DEFAULT NULL;
+ALTER TABLE public.telegram_bot_users ADD COLUMN IF NOT EXISTS referral_tokens INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE public.telegram_bot_users ADD COLUMN IF NOT EXISTS referral_count INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE public.telegram_bot_users ADD COLUMN IF NOT EXISTS paid_referral_count INTEGER NOT NULL DEFAULT 0;
+
+-- 12. Viral Referral Ledger (`public.referral_events`) — Anti-Duplicate Audit Trail
+CREATE TABLE IF NOT EXISTS public.referral_events (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    referrer_user_id TEXT NOT NULL,
+    referred_user_id TEXT NOT NULL,
+    event_type TEXT NOT NULL CHECK (event_type IN ('signup', 'paid_upgrade', 'redeem_vip')),
+    tokens_delta INTEGER NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT uq_referral_event_once UNIQUE (referred_user_id, event_type)
+);
+
+CREATE INDEX IF NOT EXISTS idx_referral_events_referrer
+    ON public.referral_events (referrer_user_id, created_at DESC);
+
+ALTER TABLE public.referral_events ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Allow service_role full access to referral_events" ON public.referral_events;
+CREATE POLICY "Allow service_role full access to referral_events"
+    ON public.referral_events
+    FOR ALL
+    TO service_role
+    USING (true)
+    WITH CHECK (true);

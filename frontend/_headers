@@ -22,6 +22,36 @@
 /en
   Cache-Control: public, max-age=0, must-revalidate
 
+/usd-to-syp
+  Cache-Control: public, max-age=0, must-revalidate
+
+/usd-to-try
+  Cache-Control: public, max-age=0, must-revalidate
+
+/usd-to-egp
+  Cache-Control: public, max-age=0, must-revalidate
+
+/gold-price-today
+  Cache-Control: public, max-age=0, must-revalidate
+
+/btc-to-usdt
+  Cache-Control: public, max-age=0, must-revalidate
+
+/usdt-to-try
+  Cache-Control: public, max-age=0, must-revalidate
+
+/usdt-to-syp
+  Cache-Control: public, max-age=0, must-revalidate
+
+/eth-to-usdt
+  Cache-Control: public, max-age=0, must-revalidate
+
+/eur-to-usd
+  Cache-Control: public, max-age=0, must-revalidate
+
+/silver-price-today
+  Cache-Control: public, max-age=0, must-revalidate
+
 /api/*
   X-Robots-Tag: noindex
   X-Content-Type-Options: nosniff

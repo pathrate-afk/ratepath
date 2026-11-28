@@ -38,10 +38,17 @@ const RAW_SYRIA_FLAG_EMOJI = "\uD83C\uDDF8\uD83C\uDDFE";
 const TG_USER_REDIS_PREFIX = "ratepath:tg_user:";
 const TG_USERS_INDEX_REDIS_KEY = "ratepath:tg_users:index";
 const SUPPORT_TICKET_REDIS_PREFIX = "ratepath:support_ticket:";
+const REF_CLAIMED_REDIS_PREFIX = "ratepath:ref_claimed:";
+const REFERRAL_JOIN_TOKENS = 15;
+const REFERRAL_PAID_UPGRADE_TOKENS = 100;
+const REFERRAL_REDEEM_COST_TOKENS = 100;
+const REFERRAL_REDEEM_VIP_DAYS = 7;
+const FREE_MAX_BONUS_SLOTS = 3; // +1 free slot per 2 invited friends, up to 6 total free slots
 
 // In-memory fallbacks when Upstash Redis is not configured in local dev / tests
 const _localSupportRateLimits = new Map();
 const _localSupportTickets = new Map();
+const _localRefClaims = new Map();
 
 export const TIER_LIMITS = Object.freeze({
   free: { maxAssets: 3, priceUsd: 0, labelAr: "المجانية", labelEn: "Free" },
@@ -334,6 +341,17 @@ export function getTierMeta(planTier) {
   return TIER_LIMITS[normalizePlanTier(planTier)] || TIER_LIMITS.free;
 }
 
+export function getReferralBonusSlots(profile) {
+  const count = Math.max(0, Number(profile?.referral_count || 0));
+  return Math.min(FREE_MAX_BONUS_SLOTS, Math.floor(count / 2));
+}
+
+export function getEffectiveMaxAssets(profile) {
+  const tier = normalizePlanTier(profile?.plan_tier);
+  if (tier !== "free") return getTierMeta(tier).maxAssets;
+  return TIER_LIMITS.free.maxAssets + getReferralBonusSlots(profile);
+}
+
 export async function loadBotUserProfile(userId, env, fetchImpl = fetch, defaultLang = "ar") {
   const uid = String(userId || "").trim();
   const baseProfile = {
@@ -344,6 +362,10 @@ export async function loadBotUserProfile(userId, env, fetchImpl = fetch, default
     alerts_paused: false,
     watchlist: [],
     ui_state: {},
+    referred_by: null,
+    referral_tokens: 0,
+    referral_count: 0,
+    paid_referral_count: 0,
     _isNew: true,
   };
   if (!uid) return baseProfile;
@@ -362,6 +384,10 @@ export async function loadBotUserProfile(userId, env, fetchImpl = fetch, default
           plan_tier: normalizePlanTier(parsed.plan_tier),
           watchlist: Array.isArray(parsed.watchlist) ? parsed.watchlist : [],
           ui_state: parsed.ui_state && typeof parsed.ui_state === "object" ? parsed.ui_state : {},
+          referred_by: parsed.referred_by ? String(parsed.referred_by) : null,
+          referral_tokens: Math.max(0, Number(parsed.referral_tokens || 0)),
+          referral_count: Math.max(0, Number(parsed.referral_count || 0)),
+          paid_referral_count: Math.max(0, Number(parsed.paid_referral_count || 0)),
           _isNew: false,
         };
         // Enforce expiry cleanly if expires_at is in the past
@@ -401,6 +427,10 @@ export async function loadBotUserProfile(userId, env, fetchImpl = fetch, default
             alerts_paused: Boolean(r.alerts_paused),
             watchlist: Array.isArray(r.watchlist) ? r.watchlist : [],
             ui_state: r.ui_state && typeof r.ui_state === "object" ? r.ui_state : {},
+            referred_by: r.referred_by ? String(r.referred_by) : null,
+            referral_tokens: Math.max(0, Number(r.referral_tokens || 0)),
+            referral_count: Math.max(0, Number(r.referral_count || 0)),
+            paid_referral_count: Math.max(0, Number(r.paid_referral_count || 0)),
             _isNew: false,
           };
           if (prof.plan_tier !== "free" && prof.expires_at && Date.parse(prof.expires_at) <= Date.now()) {
@@ -442,6 +472,10 @@ export async function saveBotUserProfile(profile, env, fetchImpl = fetch) {
     alerts_paused: Boolean(profile.alerts_paused),
     watchlist: Array.isArray(profile.watchlist) ? profile.watchlist : [],
     ui_state: profile.ui_state && typeof profile.ui_state === "object" ? profile.ui_state : {},
+    referred_by: profile.referred_by ? String(profile.referred_by) : null,
+    referral_tokens: Math.max(0, Number(profile.referral_tokens || 0)),
+    referral_count: Math.max(0, Number(profile.referral_count || 0)),
+    paid_referral_count: Math.max(0, Number(profile.paid_referral_count || 0)),
     updated_at: new Date().toISOString(),
   };
 
@@ -466,6 +500,10 @@ export async function saveBotUserProfile(profile, env, fetchImpl = fetch) {
             alerts_paused: clean.alerts_paused,
             watchlist: clean.watchlist,
             ui_state: clean.ui_state,
+            referred_by: clean.referred_by,
+            referral_tokens: clean.referral_tokens,
+            referral_count: clean.referral_count,
+            paid_referral_count: clean.paid_referral_count,
           }),
         }, 4000)
       ).catch(() => null)
@@ -1414,7 +1452,7 @@ export function buildWelcomeView(profile, publicSiteUrl = "https://ratepathlive.
   const lang = profile?.lang === "en" ? "en" : "ar";
   const tierMeta = getTierMeta(profile?.plan_tier);
   const currentCount = Array.isArray(profile?.watchlist) ? profile.watchlist.length : 0;
-  const maxLimit = tierMeta.maxAssets;
+  const maxLimit = getEffectiveMaxAssets(profile);
   const isFree = normalizePlanTier(profile?.plan_tier) === "free";
 
   if (lang === "ar") {
@@ -1448,6 +1486,7 @@ export function buildWelcomeView(profile, publicSiteUrl = "https://ratepathlive.
             { text: "💬 الدعم الذكي", callback_data: "cb:support" },
           ],
           [{ text: "🇬🇧 English", callback_data: "cb:lang:en" }],
+          [{ text: "🎁 ادعُ صديقاً واربح", callback_data: "cb:referral" }],
         ],
       },
     };
@@ -1483,8 +1522,166 @@ export function buildWelcomeView(profile, publicSiteUrl = "https://ratepathlive.
           { text: "💬 AI Support", callback_data: "cb:support" },
         ],
         [{ text: "🇸🇦 العربية", callback_data: "cb:lang:ar" }],
+        [{ text: "🎁 Invite & Earn", callback_data: "cb:referral" }],
       ],
     },
+  };
+}
+
+export function buildReferralView(profile, botUsername = "RatePathTerminalBot") {
+  const isAr = profile?.lang !== "en";
+  const uid = String(profile?.telegram_user_id || "").trim();
+  const cleanBot = String(botUsername || "RatePathTerminalBot").replace(/^@/, "");
+  const refLink = `https://t.me/${cleanBot}?start=ref_${uid}`;
+  const tokens = Math.max(0, Number(profile?.referral_tokens || 0));
+  const refCount = Math.max(0, Number(profile?.referral_count || 0));
+  const paidRefs = Math.max(0, Number(profile?.paid_referral_count || 0));
+  const bonusSlots = getReferralBonusSlots(profile);
+  const currentFreeCap = TIER_LIMITS.free.maxAssets + bonusSlots;
+
+  const shareTextAr = encodeURIComponent(
+    "⚡ تابع أسعار الدولار (سوريا/تركيا/مصر) والذهب والبيتكوين مع تنبيهات تيليجرام مجانية عبر RatePath:"
+  );
+  const shareTextEn = encodeURIComponent(
+    "⚡ Track live FX rates, Gold XAU & Crypto with free instant Telegram breakout alerts on RatePath:"
+  );
+  const shareUrl = `https://t.me/share/url?url=${encodeURIComponent(refLink)}&text=${isAr ? shareTextAr : shareTextEn}`;
+
+  const rows = [
+    [{ text: isAr ? "📤 مشاركة رابط الدعوة فوراً" : "📤 Share Invite Link Now", url: shareUrl }],
+  ];
+  if (tokens >= REFERRAL_REDEEM_COST_TOKENS) {
+    rows.push([
+      {
+        text: isAr
+          ? `💎 استبدال ${REFERRAL_REDEEM_COST_TOKENS} نقطة = ${REFERRAL_REDEEM_VIP_DAYS} أيام VIP مجاناً`
+          : `💎 Redeem ${REFERRAL_REDEEM_COST_TOKENS} Tokens → ${REFERRAL_REDEEM_VIP_DAYS} Free VIP Days`,
+        callback_data: "cb:ref_redeem",
+      },
+    ]);
+  }
+  rows.push([{ text: isAr ? "🔙 الرئيسية" : "🔙 Home", callback_data: "cb:home" }]);
+
+  const text = isAr
+    ? `🎁 <b>برنامج الدعوات والمكافآت — RatePath</b>\n\n` +
+      `شارك رابطك الخاص مع أصدقائك واربح مكافآت فورية:\n` +
+      `• <b>+${REFERRAL_JOIN_TOKENS} نقطة</b> لكل صديق جديد ينضم عبر رابطك.\n` +
+      `• <b>+1 خانة مجانية إضافية</b> في قائمة متابعتك لكل صديقين (حتى <b>6 أصول مجانية</b>).\n` +
+      `• <b>+${REFERRAL_PAID_UPGRADE_TOKENS} نقطة</b> فور ترقية صديقك لباقة VIP أو Pro (كل 100 نقطة = <b>${REFERRAL_REDEEM_VIP_DAYS} أيام VIP مجاناً</b>!).\n\n` +
+      `📊 <b>إحصائياتك الحالية:</b>\n` +
+      `• رصيد النقاط: <code>${tokens}</code> نقطة\n` +
+      `• الأصدقاء المدعوون: <code>${refCount}</code> (ترقيات مدفوعة: <code>${paidRefs}</code>)\n` +
+      `• خاناتك المجانية المفتوحة: <code>${currentFreeCap} / 6</code> (+${bonusSlots} إضافية)\n\n` +
+      `🔗 <b>رابط دعوتك الشخصي (اضغط للنسخ):</b>\n<code>${escapeHtml(refLink)}</code>`
+    : `🎁 <b>Invite &amp; Earn — RatePath Referral Program</b>\n\n` +
+      `Share your personal invite link and earn instant rewards:\n` +
+      `• <b>+${REFERRAL_JOIN_TOKENS} Referral Tokens</b> for every new friend who joins via your link.\n` +
+      `• <b>+1 Extra Free Watchlist Slot</b> for every 2 invited friends (up to <b>6 free slots</b>).\n` +
+      `• <b>+${REFERRAL_PAID_UPGRADE_TOKENS} Referral Tokens</b> whenever an invited friend upgrades to VIP or Pro (100 tokens = <b>${REFERRAL_REDEEM_VIP_DAYS} Free VIP Days</b>!).\n\n` +
+      `📊 <b>Your Referral Stats:</b>\n` +
+      `• Token Balance: <code>${tokens}</code> tokens\n` +
+      `• Friends Invited: <code>${refCount}</code> (Paid upgrades: <code>${paidRefs}</code>)\n` +
+      `• Unlocked Free Watchlist Slots: <code>${currentFreeCap} / 6</code> (+${bonusSlots} bonus)\n\n` +
+      `🔗 <b>Your Personal Invite Link (tap to copy):</b>\n<code>${escapeHtml(refLink)}</code>`;
+
+  return { text, refLink, replyMarkup: { inline_keyboard: rows } };
+}
+
+export async function processReferralJoin({
+  newUserId,
+  newUsername,
+  referrerId,
+  profile,
+  env,
+  fetchImpl = fetch,
+}) {
+  const uidStr = String(newUserId || "").trim();
+  const refStr = String(referrerId || "").trim();
+  if (!uidStr || !refStr || !/^\d{5,20}$/.test(refStr)) {
+    return { credited: false, reason: "invalid_referrer_id" };
+  }
+  // Anti-self-referral check
+  if (uidStr === refStr) {
+    return { credited: false, reason: "self_referral_blocked" };
+  }
+  // Anti-duplicate check (already referred, already existing user, or claim key exists)
+  const claimKey = `${REF_CLAIMED_REDIS_PREFIX}${uidStr}`;
+  const existingClaim =
+    (await upstashCmd(env, ["GET", claimKey], fetchImpl)) || _localRefClaims.get(uidStr) || null;
+  if (existingClaim || profile?.referred_by || profile?._isNew === false) {
+    return { credited: false, reason: "duplicate_or_existing_user" };
+  }
+
+  // Record referral claim atomically before awarding points
+  _localRefClaims.set(uidStr, refStr);
+  await upstashCmd(env, ["SET", claimKey, refStr], fetchImpl);
+  profile.referred_by = refStr;
+
+  const referrerProfile = await loadBotUserProfile(refStr, env, fetchImpl, "ar");
+  const prevBonus = getReferralBonusSlots(referrerProfile);
+  referrerProfile.referral_count = Math.max(0, Number(referrerProfile.referral_count || 0)) + 1;
+  referrerProfile.referral_tokens =
+    Math.max(0, Number(referrerProfile.referral_tokens || 0)) + REFERRAL_JOIN_TOKENS;
+  const nextBonus = getReferralBonusSlots(referrerProfile);
+  const slotUnlocked = nextBonus > prevBonus;
+  const newFreeLimit = TIER_LIMITS.free.maxAssets + nextBonus;
+
+  await saveBotUserProfile(referrerProfile, env, fetchImpl);
+
+  // Best-effort Supabase referral_events ledger insert
+  const supa = getSupaConfig(env);
+  if (supa) {
+    await fetchImpl(
+      `${supa.restBase}/referral_events`,
+      withTimeout({
+        method: "POST",
+        headers: { ...supa.headers, Prefer: "return=minimal" },
+        body: JSON.stringify({
+          referrer_user_id: refStr,
+          referred_user_id: uidStr,
+          event_type: "signup",
+          tokens_delta: REFERRAL_JOIN_TOKENS,
+        }),
+      }, 4000)
+    ).catch(() => null);
+  }
+
+  // Instant celebratory notification to referrer
+  const refIsAr = referrerProfile.lang !== "en";
+  const friendLabel = newUsername ? `@${escapeHtml(newUsername)}` : refIsAr ? "صديق جديد" : "a new friend";
+  const slotLineAr = slotUnlocked
+    ? `\n🔓 <b>مكافأة إضافية:</b> فُتحت لك <b>خانة مجانية جديدة</b>! حدّك المجاني الآن <b>${newFreeLimit} أصول</b>.`
+    : "";
+  const slotLineEn = slotUnlocked
+    ? `\n🔓 <b>Bonus Unlocked:</b> You just unlocked <b>+1 extra free watchlist slot</b>! Your free limit is now <b>${newFreeLimit} assets</b>.`
+    : "";
+
+  const notifyHtml = refIsAr
+    ? `🎉 <b>مبروك! انضم ${friendLabel} عبر رابط دعوتك!</b>\n\n` +
+      `🪙 حصلت فوراً على <b>+${REFERRAL_JOIN_TOKENS} نقطة مكافآت</b>.\n` +
+      `📊 رصيدك الآن: <code>${referrerProfile.referral_tokens}</code> نقطة • إجمالي المدعوين: <code>${referrerProfile.referral_count}</code>` +
+      `${slotLineAr}\n\n` +
+      `💡 إذا قام صديقك بالترقية لباقة VIP أو Pro ستحصل تلقائياً على <b>+${REFERRAL_PAID_UPGRADE_TOKENS} نقطة إضافية</b> (= ${REFERRAL_REDEEM_VIP_DAYS} أيام VIP مجاناً)!`
+    : `🎉 <b>Congrats! ${friendLabel} just joined via your invite link!</b>\n\n` +
+      `🪙 You earned <b>+${REFERRAL_JOIN_TOKENS} referral tokens</b> instantly.\n` +
+      `📊 New Balance: <code>${referrerProfile.referral_tokens}</code> tokens • Friends Invited: <code>${referrerProfile.referral_count}</code>` +
+      `${slotLineEn}\n\n` +
+      `💡 If they upgrade to Business VIP or Pro, you'll automatically earn <b>+${REFERRAL_PAID_UPGRADE_TOKENS} bonus tokens</b> (= ${REFERRAL_REDEEM_VIP_DAYS} Free VIP Days)!`;
+
+  await sendTelegramReply(refStr, notifyHtml, env, fetchImpl, {
+    inline_keyboard: [
+      [{ text: refIsAr ? "🎁 لوحة الدعوات ومشاركة الرابط" : "🎁 Open Invite Dashboard", callback_data: "cb:referral" }],
+    ],
+  });
+
+  return {
+    credited: true,
+    referrerId: refStr,
+    tokensAwarded: REFERRAL_JOIN_TOKENS,
+    referrerTokens: referrerProfile.referral_tokens,
+    referrerCount: referrerProfile.referral_count,
+    slotUnlocked,
+    newFreeLimit,
   };
 }
 
@@ -1500,20 +1697,23 @@ export function buildWelcomeMessage(lang, isVip) {
 export function buildFreeLimitPaywallView(profile) {
   const lang = profile?.lang === "en" ? "en" : "ar";
   const wl = Array.isArray(profile?.watchlist) ? profile.watchlist : [];
+  const maxLim = getEffectiveMaxAssets(profile);
   const labelOf = (idx) => {
     const it = wl[idx];
     if (!it) return "—";
     const nm = lang === "ar" ? it.name_ar || it.symbol : it.name_en || it.symbol;
     return nm.includes(it.symbol) ? nm : `${nm} (${it.symbol})`;
   };
+  const activeLines = wl
+    .slice(0, Math.max(3, maxLim))
+    .map((_it, idx) => `${idx === 0 ? "1️⃣" : idx === 1 ? "2️⃣" : idx === 2 ? "3️⃣" : `${idx + 1}.`} ${labelOf(idx)}`)
+    .join("\n");
 
   if (lang === "ar") {
     const text =
-      `🔒 وصلت للحد الأقصى للباقة المجانية (3 / 3 أصول)\n\n` +
+      `🔒 وصلت للحد الأقصى للباقة المجانية (${wl.length} / ${maxLim} أصول)\n\n` +
       `الأصول النشطة في قائمتك حالياً:\n` +
-      `1️⃣ ${labelOf(0)}\n` +
-      `2️⃣ ${labelOf(1)}\n` +
-      `3️⃣ ${labelOf(2)}\n\n` +
+      `${activeLines}\n\n` +
       `تحتاج لمتابعة المزيد من العملات، الذهب، أو الكريبتو؟\n` +
       `بترقية حسابك إلى باقة Business VIP (+ البوت الشخصي) ستحصل فوراً على:\n\n` +
       `✅ متابعة حتى 10 أصول مخصّصة بتنبيهات لحظية.\n` +
@@ -1521,24 +1721,21 @@ export function buildFreeLimitPaywallView(profile) {
       `✅ أولوية سرعة في إرسال تنبيهات كسر الأسعار.\n\n` +
       `💰 الاشتراك الشهري: 10$ فقط بعملة USDT (تفعيل فوري).`;
 
-    return {
-      text,
-      replyMarkup: {
-        inline_keyboard: [
-          [{ text: "🚀 الترقية الآن — 10$ USDT", callback_data: "cb:upgrade_vip" }],
-          [{ text: "🔄 استبدال أصل من قائمتي الحالية", callback_data: "cb:replace_menu" }],
-          [{ text: "👑 مقارنة مع باقة Pro (50 أصل — 19$)", callback_data: "cb:upgrade_pro" }],
-        ],
-      },
-    };
+    const rows = [
+      [{ text: "🚀 الترقية الآن — 10$ USDT", callback_data: "cb:upgrade_vip" }],
+      [{ text: "🔄 استبدال أصل من قائمتي الحالية", callback_data: "cb:replace_menu" }],
+      [{ text: "👑 مقارنة مع باقة Pro (50 أصل — 19$)", callback_data: "cb:upgrade_pro" }],
+    ];
+    if (maxLim < TIER_LIMITS.free.maxAssets + FREE_MAX_BONUS_SLOTS) {
+      rows.push([{ text: "🎁 ادعُ صديقين لفتح خانة مجانية (+1)", callback_data: "cb:referral" }]);
+    }
+    return { text, replyMarkup: { inline_keyboard: rows } };
   }
 
   const textEn =
-    `🔒 Free Plan Limit Reached (3 / 3 assets)\n\n` +
+    `🔒 Free Plan Limit Reached (${wl.length} / ${maxLim} assets)\n\n` +
     `Your active watchlist:\n` +
-    `1️⃣ ${labelOf(0)}\n` +
-    `2️⃣ ${labelOf(1)}\n` +
-    `3️⃣ ${labelOf(2)}\n\n` +
+    `${activeLines}\n\n` +
     `Need to track more currencies, gold, or crypto?\n` +
     `Upgrade to Business VIP (+ Personal Bot) and unlock immediately:\n\n` +
     `✅ Track up to 10 custom assets with real-time alerts.\n` +
@@ -1546,16 +1743,15 @@ export function buildFreeLimitPaywallView(profile) {
     `✅ Priority breakout alert delivery.\n\n` +
     `💰 Monthly Plan: Just $10 USDT (instant activation).`;
 
-  return {
-    text: textEn,
-    replyMarkup: {
-      inline_keyboard: [
-        [{ text: "🚀 Upgrade Now — $10 USDT", callback_data: "cb:upgrade_vip" }],
-        [{ text: "🔄 Replace an Existing Asset", callback_data: "cb:replace_menu" }],
-        [{ text: "👑 Compare with Pro (50 Assets — $19)", callback_data: "cb:upgrade_pro" }],
-      ],
-    },
-  };
+  const rowsEn = [
+    [{ text: "🚀 Upgrade Now — $10 USDT", callback_data: "cb:upgrade_vip" }],
+    [{ text: "🔄 Replace an Existing Asset", callback_data: "cb:replace_menu" }],
+    [{ text: "👑 Compare with Pro (50 Assets — $19)", callback_data: "cb:upgrade_pro" }],
+  ];
+  if (maxLim < TIER_LIMITS.free.maxAssets + FREE_MAX_BONUS_SLOTS) {
+    rowsEn.push([{ text: "🎁 Invite 2 Friends (+1 Free Slot)", callback_data: "cb:referral" }]);
+  }
+  return { text: textEn, replyMarkup: { inline_keyboard: rowsEn } };
 }
 
 async function resolveUsdtCheckoutUrl(userId, planTier, lang, env, fetchImpl = fetch) {
@@ -1738,7 +1934,7 @@ export async function buildUpgradeProView(userId, lang, env, fetchImpl = fetch) 
 
 function buildAddAssetPickerView(profile) {
   const isAr = profile.lang !== "en";
-  const tierMeta = getTierMeta(profile.plan_tier);
+  const maxAssets = getEffectiveMaxAssets(profile);
   const existingSyms = new Set((profile.watchlist || []).map((w) => String(w.symbol).toUpperCase()));
   const count = existingSyms.size;
 
@@ -1757,13 +1953,13 @@ function buildAddAssetPickerView(profile) {
     { text: isAr ? "✏️ إدخال رمز عملة/سهم مخصص" : "✏️ Enter Custom Symbol", callback_data: "cb:add_custom" },
   ]);
   buttons.push([
-    { text: isAr ? `📊 قائمتي (${count}/${tierMeta.maxAssets})` : `📊 My Watchlist (${count}/${tierMeta.maxAssets})`, callback_data: "cb:watchlist" },
+    { text: isAr ? `📊 قائمتي (${count}/${maxAssets})` : `📊 My Watchlist (${count}/${maxAssets})`, callback_data: "cb:watchlist" },
     { text: isAr ? "🔙 الرئيسية" : "🔙 Home", callback_data: "cb:home" },
   ]);
 
   const text = isAr
-    ? `➕ <b>اختر أصلاً لإضافته إلى قائمة المتابعة (${count}/${tierMeta.maxAssets})</b>\n\nاضغط على أي عملة أو معدن أدناه لإضافته فوراً وضبط سعر التنبيه:`
-    : `➕ <b>Pick an Asset to Track (${count}/${tierMeta.maxAssets})</b>\n\nTap any currency, metal, crypto, or stock below to add it and set a price alert:`;
+    ? `➕ <b>اختر أصلاً لإضافته إلى قائمة المتابعة (${count}/${maxAssets})</b>\n\nاضغط على أي عملة أو معدن أدناه لإضافته فوراً وضبط سعر التنبيه:`
+    : `➕ <b>Pick an Asset to Track (${count}/${maxAssets})</b>\n\nTap any currency, metal, crypto, or stock below to add it and set a price alert:`;
 
   return { text, replyMarkup: { inline_keyboard: buttons } };
 }
@@ -1771,6 +1967,7 @@ function buildAddAssetPickerView(profile) {
 function buildWatchlistView(profile, liveFeed, catalogFeed) {
   const isAr = profile.lang !== "en";
   const tierMeta = getTierMeta(profile.plan_tier);
+  const maxAssets = getEffectiveMaxAssets(profile);
   const items = Array.isArray(profile.watchlist) ? profile.watchlist : [];
 
   const lines = items.map((it, idx) => {
@@ -1802,11 +1999,11 @@ function buildWatchlistView(profile, liveFeed, catalogFeed) {
   rows.push([{ text: isAr ? "🔙 الرئيسية" : "🔙 Home", callback_data: "cb:home" }]);
 
   const text = isAr
-    ? `📊 <b>قائمة متابعتك (${items.length} / ${tierMeta.maxAssets} أصول)</b>\n` +
+    ? `📊 <b>قائمة متابعتك (${items.length} / ${maxAssets} أصول)</b>\n` +
       `الباقة: <b>${tierMeta.labelAr}</b>\n\n` +
       `${lines.length ? lines.join("\n") : "قائمتك فارغة حالياً — اضغط «➕ إضافة أصل» للبدء مجاناً."}\n\n` +
       `⚖️ <i>تنبيهات معلوماتية لمتابعة الأرقام فقط وليست نصيحة استثمارية.</i>`
-    : `📊 <b>Your Watchlist (${items.length} / ${tierMeta.maxAssets} assets)</b>\n` +
+    : `📊 <b>Your Watchlist (${items.length} / ${maxAssets} assets)</b>\n` +
       `Plan: <b>${tierMeta.labelEn}</b>\n\n` +
       `${lines.length ? lines.join("\n") : "Your watchlist is empty — tap «➕ Add Asset» to start free."}\n\n` +
       `⚖️ <i>Informational price alerts only — not financial advice.</i>`;
@@ -2045,7 +2242,7 @@ async function linkPersonalTrackerAccount(linkToken, chatId, env, fetchImpl = fe
 }
 
 function tryAddAssetToProfile(profile, assetSpec) {
-  const tierMeta = getTierMeta(profile.plan_tier);
+  const maxAssets = getEffectiveMaxAssets(profile);
   const wl = Array.isArray(profile.watchlist) ? [...profile.watchlist] : [];
   const sym = String(assetSpec.symbol || "").trim().toUpperCase();
   const existsIdx = wl.findIndex((it) => String(it.symbol || "").toUpperCase() === sym);
@@ -2053,7 +2250,7 @@ function tryAddAssetToProfile(profile, assetSpec) {
   if (existsIdx !== -1) {
     return { added: false, alreadyExists: true, limitReached: false, profile };
   }
-  if (wl.length >= tierMeta.maxAssets) {
+  if (wl.length >= maxAssets) {
     return { added: false, alreadyExists: false, limitReached: true, profile };
   }
 
@@ -2125,10 +2322,10 @@ async function handleCallbackQuery(cbq, env, fetchImpl = fetch) {
     return { handled: true, mode: "home" };
   }
 
-  // Add Asset Menu -> Immediately check Free Limit (3/3) Paywall!
+  // Add Asset Menu -> Immediately check Free Limit Paywall (respecting bonus referral slots up to 6)!
   if (data === "cb:add_menu") {
-    const tierMeta = getTierMeta(profile.plan_tier);
-    if (profile.watchlist.length >= tierMeta.maxAssets && profile.plan_tier === "free") {
+    const maxLim = getEffectiveMaxAssets(profile);
+    if (profile.watchlist.length >= maxLim && profile.plan_tier === "free") {
       const paywall = buildFreeLimitPaywallView(profile);
       await editOrSendTelegram(chatId, messageId, paywall.text, env, fetchImpl, paywall.replyMarkup);
       return { handled: true, mode: "free_limit_paywall", count: profile.watchlist.length };
@@ -2184,8 +2381,8 @@ async function handleCallbackQuery(cbq, env, fetchImpl = fetch) {
 
   // Custom asset text prompt
   if (data === "cb:add_custom") {
-    const tierMeta = getTierMeta(profile.plan_tier);
-    if (profile.watchlist.length >= tierMeta.maxAssets && profile.plan_tier === "free") {
+    const maxLim = getEffectiveMaxAssets(profile);
+    if (profile.watchlist.length >= maxLim && profile.plan_tier === "free") {
       const paywall = buildFreeLimitPaywallView(profile);
       await editOrSendTelegram(chatId, messageId, paywall.text, env, fetchImpl, paywall.replyMarkup);
       return { handled: true, mode: "free_limit_paywall" };
@@ -2377,6 +2574,54 @@ async function handleCallbackQuery(cbq, env, fetchImpl = fetch) {
     };
   }
 
+  // Viral Referral Dashboard (`cb:referral`)
+  if (data === "cb:referral") {
+    profile.ui_state = {};
+    const view = buildReferralView(profile, env?.BOT_USERNAME);
+    await editOrSendTelegram(chatId, messageId, view.text, env, fetchImpl, view.replyMarkup);
+    return { handled: true, mode: "referral_shown", refLink: view.refLink, tokens: profile.referral_tokens };
+  }
+
+  // Redeem 100 Referral Tokens -> +7 Free Business VIP Days (`cb:ref_redeem`)
+  if (data === "cb:ref_redeem") {
+    const isAr = profile.lang !== "en";
+    const curTokens = Math.max(0, Number(profile.referral_tokens || 0));
+    if (curTokens < REFERRAL_REDEEM_COST_TOKENS) {
+      const shortMsg = isAr
+        ? `⚠️ رصيدك الحالي <code>${curTokens}</code> نقطة. تحتاج إلى <b>${REFERRAL_REDEEM_COST_TOKENS} نقطة</b> لاستبدالها بـ ${REFERRAL_REDEEM_VIP_DAYS} أيام VIP مجاناً.`
+        : `⚠️ Your balance is <code>${curTokens}</code> tokens. You need <b>${REFERRAL_REDEEM_COST_TOKENS} tokens</b> to redeem ${REFERRAL_REDEEM_VIP_DAYS} free VIP days.`;
+      await editOrSendTelegram(chatId, messageId, shortMsg, env, fetchImpl, {
+        inline_keyboard: [[{ text: isAr ? "🎁 لوحة الدعوات" : "🎁 Invite Dashboard", callback_data: "cb:referral" }]],
+      });
+      return { handled: true, mode: "referral_redeem_insufficient", tokens: curTokens };
+    }
+
+    profile.referral_tokens = curTokens - REFERRAL_REDEEM_COST_TOKENS;
+    if (profile.plan_tier === "free") {
+      profile.plan_tier = "monthly_business_vip";
+    }
+    const baseMs = Math.max(Date.now(), Date.parse(profile.expires_at || "") || 0);
+    profile.expires_at = new Date(baseMs + REFERRAL_REDEEM_VIP_DAYS * 86400 * 1000).toISOString();
+    profile.alerts_paused = false;
+    await saveBotUserProfile(profile, env, fetchImpl);
+
+    const okMsg = isAr
+      ? `🎉 <b>تم استبدال ${REFERRAL_REDEEM_COST_TOKENS} نقطة بنجاح!</b>\n\n💎 تمت إضافة <b>+${REFERRAL_REDEEM_VIP_DAYS} أيام Business VIP</b> إلى حسابك (فعّالة حتى <code>${profile.expires_at.slice(0, 10)}</code>).\n🪙 رصيدك المتبقي: <code>${profile.referral_tokens}</code> نقطة.`
+      : `🎉 <b>Redeemed ${REFERRAL_REDEEM_COST_TOKENS} Tokens Successfully!</b>\n\n💎 Added <b>+${REFERRAL_REDEEM_VIP_DAYS} Free Business VIP Days</b> to your account (active until <code>${profile.expires_at.slice(0, 10)}</code>).\n🪙 Remaining Balance: <code>${profile.referral_tokens}</code> tokens.`;
+    await editOrSendTelegram(chatId, messageId, okMsg, env, fetchImpl, {
+      inline_keyboard: [
+        [{ text: isAr ? "➕ إضافة أصول الآن (حتى 10)" : "➕ Add Assets Now (Up to 10)", callback_data: "cb:add_menu" }],
+        [{ text: isAr ? "🔙 الرئيسية" : "🔙 Home", callback_data: "cb:home" }],
+      ],
+    });
+    return {
+      handled: true,
+      mode: "referral_redeemed_vip",
+      tokensLeft: profile.referral_tokens,
+      expiresAt: profile.expires_at,
+    };
+  }
+
   return { handled: false, reason: "unknown_callback_data" };
 }
 
@@ -2472,9 +2717,31 @@ export async function processTelegramUpdate(update, env, fetchImpl = fetch) {
     return { handled: true, mode: "support_entered", lang: profile.lang };
   }
 
-  // 3. `/start`, `/menu`, `/help` -> Exact Bilingual Welcome + Inline Keyboard
+  // 2c. `/referral` & `/invite` command -> Viral Referral Dashboard
+  if (/^(\/(?:referral|invite)(?:@\w+)?\b|دعوة\s*$)/i.test(rawText)) {
+    const profile = await loadBotUserProfile(userId, env, fetchImpl, defaultLang);
+    profile.ui_state = {};
+    await saveBotUserProfile(profile, env, fetchImpl);
+    const view = buildReferralView(profile, env?.BOT_USERNAME);
+    await sendTelegramReply(chatId, view.text, env, fetchImpl, view.replyMarkup);
+    return { handled: true, mode: "referral_shown", refLink: view.refLink, tokens: profile.referral_tokens };
+  }
+
+  // 3. `/start`, `/start ref_<REFERRER_ID>`, `/menu`, `/help` -> Exact Bilingual Welcome + Viral Referral Tracking
   if (/^\/(start|menu|help)\b/i.test(rawText)) {
     const profile = await loadBotUserProfile(userId, env, fetchImpl, defaultLang);
+    const refStartMatch = rawText.match(/^\/start(?:@\w+)?\s+ref_(\d{5,20})$/i);
+    let referralResult = null;
+    if (refStartMatch) {
+      referralResult = await processReferralJoin({
+        newUserId: userId,
+        newUsername: msg.from?.username || "",
+        referrerId: refStartMatch[1],
+        profile,
+        env,
+        fetchImpl,
+      });
+    }
     const vipStatus = await checkVipMembership(userId, env, fetchImpl);
     if (vipStatus.isVip && profile.plan_tier === "free") {
       profile.plan_tier = vipStatus.planTier;
@@ -2485,7 +2752,13 @@ export async function processTelegramUpdate(update, env, fetchImpl = fetch) {
 
     const view = buildWelcomeView(profile, env?.PUBLIC_SITE_URL);
     await sendTelegramReply(chatId, view.text, env, fetchImpl, view.replyMarkup);
-    return { handled: true, mode: "welcome", isVip: vipStatus.isVip, lang: profile.lang };
+    return {
+      handled: true,
+      mode: "welcome",
+      isVip: vipStatus.isVip,
+      lang: profile.lang,
+      referral: referralResult,
+    };
   }
 
   // 4. `/watchlist`, `/my`, `قائمتي`

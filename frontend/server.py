@@ -57,6 +57,12 @@ class RatePathRequestHandler(SimpleHTTPRequestHandler):
             return str(FRONTEND_DIR / "public" / "catalog_feed.json")
         if clean_path.startswith("/frontend/"):
             clean_path = clean_path[len("/frontend") :]
+        # Serve clean SEO static routes (`/usd-to-syp` -> `frontend/usd-to-syp/index.html`) without 301 redirect
+        stripped = clean_path.strip("/")
+        if stripped and "/" not in stripped and "." not in stripped:
+            seo_index = FRONTEND_DIR / stripped / "index.html"
+            if seo_index.is_file():
+                return str(seo_index)
         return super().translate_path(clean_path)
 
     def end_headers(self) -> None:

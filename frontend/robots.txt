@@ -2,6 +2,16 @@ User-agent: *
 Allow: /
 Allow: /ar
 Allow: /en
+Allow: /usd-to-syp
+Allow: /usd-to-try
+Allow: /usd-to-egp
+Allow: /gold-price-today
+Allow: /btc-to-usdt
+Allow: /usdt-to-try
+Allow: /usdt-to-syp
+Allow: /eth-to-usdt
+Allow: /eur-to-usd
+Allow: /silver-price-today
 Allow: /public/live_feed.json
 Disallow: /api/
 Disallow: /server.py

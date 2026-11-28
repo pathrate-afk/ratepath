@@ -1,0 +1,83 @@
+name: RatePath Hands-Off Auto-Publisher (Telegram + X)
+
+on:
+  schedule:
+    # Runs automatically 3 times daily: 07:00, 14:00, and 20:00 UTC
+    - cron: "0 7,14,20 * * *"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Render 1200x630 Quote Card PNG & captions without posting live"
+        required: false
+        default: "false"
+        type: choice
+        options:
+          - "false"
+          - "true"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ratepath-auto-publish
+  cancel-in-progress: false
+
+jobs:
+  publish-market-pulse:
+    name: Generate 1200x630 Quote Card & Auto-Publish (AR + EN + X)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      PYTHONUTF8: "1"
+      GEMINI_API_KEY_1: ${{ secrets.GEMINI_API_KEY_1 }}
+      GEMINI_API_KEY_2: ${{ secrets.GEMINI_API_KEY_2 }}
+      GEMINI_API_KEY_3: ${{ secrets.GEMINI_API_KEY_3 }}
+      GROQ_API_KEY_1: ${{ secrets.GROQ_API_KEY_1 }}
+      GROQ_API_KEY_2: ${{ secrets.GROQ_API_KEY_2 }}
+      GROQ_API_KEY_3: ${{ secrets.GROQ_API_KEY_3 }}
+      OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+      TELEGRAM_AR_CHANNEL_ID: ${{ secrets.TELEGRAM_AR_CHANNEL_ID }}
+      TELEGRAM_EN_CHANNEL_ID: ${{ secrets.TELEGRAM_EN_CHANNEL_ID }}
+      TELEGRAM_PUBLIC_CHANNEL_AR: ${{ secrets.TELEGRAM_PUBLIC_CHANNEL_AR }}
+      TELEGRAM_PUBLIC_CHANNEL_EN: ${{ secrets.TELEGRAM_PUBLIC_CHANNEL_EN }}
+      X_API_KEY: ${{ secrets.X_API_KEY }}
+      X_API_SECRET: ${{ secrets.X_API_SECRET }}
+      X_ACCESS_TOKEN: ${{ secrets.X_ACCESS_TOKEN }}
+      X_ACCESS_TOKEN_SECRET: ${{ secrets.X_ACCESS_TOKEN_SECRET }}
+      PUBLIC_SITE_URL: ${{ secrets.PUBLIC_SITE_URL }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Setup Python 3.11 with pip cache
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+          cache-dependency-path: "requirements.txt"
+
+      - name: Install dependencies (incl. Pillow for Quote Card PNG)
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run Auto-Publisher
+        run: |
+          if [ "${{ github.event.inputs.dry_run }}" = "true" ]; then
+            python scripts/auto_publish.py --dry-run --output-dir artifacts_autopublish
+          else
+            python scripts/auto_publish.py --output-dir artifacts_autopublish
+          fi
+
+      - name: Upload generated Quote Card PNG artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ratepath-market-pulse-card
+          path: artifacts_autopublish/ratepath_market_pulse.png
+          if-no-files-found: ignore
+          retention-days: 7

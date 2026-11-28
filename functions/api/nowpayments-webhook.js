@@ -26,6 +26,9 @@ const COMPLETED_STATUSES = new Set(["finished", "confirmed"]);
 const SUBSCRIPTION_DAYS = 30;
 const TG_USER_REDIS_PREFIX = "ratepath:tg_user:";
 const TG_USERS_INDEX_REDIS_KEY = "ratepath:tg_users:index";
+const REF_CLAIMED_REDIS_PREFIX = "ratepath:ref_claimed:";
+const REF_PAID_BONUS_REDIS_PREFIX = "ratepath:ref_paid_bonus:";
+const REFERRAL_PAID_UPGRADE_TOKENS = 100;
 
 export function sortObjectKeysDeep(val) {
   if (Array.isArray(val)) return val.map(sortObjectKeysDeep);
@@ -380,7 +383,117 @@ export async function processNowPaymentsIpn(ipnPayload, env, fetchImpl = fetch) 
       await sendTelegramMessage(tgUserId, userMsg, botToken, fetchImpl, markup);
     }
 
-    const adminId = String(env?.ADMIN_CHAT_ID || "").trim();
+    // Viral Referral Paid Upgrade Bonus (+100 referral tokens to referrer, once per referred user)
+    let referralBonusAwarded = false;
+    let rewardedReferrerId = null;
+    if (tgUserId) {
+      let referrerId = cachedRedisProfile?.referred_by ? String(cachedRedisProfile.referred_by).trim() : null;
+      if (!referrerId) {
+        const claimed = await upstashCmd(env, ["GET", `${REF_CLAIMED_REDIS_PREFIX}${tgUserId}`], fetchImpl);
+        if (typeof claimed === "string" && /^\d{5,20}$/.test(claimed.trim())) {
+          referrerId = claimed.trim();
+        }
+      }
+      if (!referrerId && hasSupa) {
+        try {
+          const rRef = await fetchImpl(
+            `${restBase}/telegram_bot_users?telegram_user_id=eq.${encodeURIComponent(tgUserId)}&select=referred_by&limit=1`,
+            { headers: supaHeaders }
+          );
+          if (rRef.ok) {
+            const refRows = await rRef.json();
+            if (Array.isArray(refRows) && refRows[0]?.referred_by) {
+              referrerId = String(refRows[0].referred_by).trim();
+            }
+          }
+        } catch {
+          // Best-effort
+        }
+      }
+
+      if (referrerId && referrerId !== tgUserId) {
+        const paidKey = `${REF_PAID_BONUS_REDIS_PREFIX}${tgUserId}`;
+        const alreadyRewarded = await upstashCmd(env, ["GET", paidKey], fetchImpl);
+        if (!alreadyRewarded) {
+          await upstashCmd(env, ["SET", paidKey, referrerId], fetchImpl);
+          let refProfile = {
+            telegram_user_id: referrerId,
+            lang: "ar",
+            plan_tier: "free",
+            watchlist: [],
+            referral_tokens: 0,
+            referral_count: 0,
+            paid_referral_count: 0,
+          };
+          const rawRef = await upstashCmd(env, ["GET", `${TG_USER_REDIS_PREFIX}${referrerId}`], fetchImpl);
+          if (typeof rawRef === "string" && rawRef.trim()) {
+            try {
+              refProfile = { ...refProfile, ...JSON.parse(rawRef) };
+            } catch {
+              // Keep defaults
+            }
+          }
+          refProfile.referral_tokens =
+            Math.max(0, Number(refProfile.referral_tokens || 0)) + REFERRAL_PAID_UPGRADE_TOKENS;
+          refProfile.paid_referral_count = Math.max(0, Number(refProfile.paid_referral_count || 0)) + 1;
+          refProfile.updated_at = new Date().toISOString();
+
+          await upstashCmd(
+            env,
+            ["SET", `${TG_USER_REDIS_PREFIX}${referrerId}`, JSON.stringify(refProfile)],
+            fetchImpl
+          );
+          if (hasSupa) {
+            await Promise.allSettled([
+              fetchImpl(`${restBase}/telegram_bot_users?on_conflict=telegram_user_id`, {
+                method: "POST",
+                headers: { ...supaHeaders, Prefer: "resolution=merge-duplicates,return=minimal" },
+                body: JSON.stringify({
+                  telegram_user_id: referrerId,
+                  referral_tokens: refProfile.referral_tokens,
+                  paid_referral_count: refProfile.paid_referral_count,
+                }),
+              }),
+              fetchImpl(`${restBase}/referral_events`, {
+                method: "POST",
+                headers: { ...supaHeaders, Prefer: "return=minimal" },
+                body: JSON.stringify({
+                  referrer_user_id: referrerId,
+                  referred_user_id: tgUserId,
+                  event_type: "paid_upgrade",
+                  tokens_delta: REFERRAL_PAID_UPGRADE_TOKENS,
+                }),
+              }),
+            ]);
+          }
+
+          const refIsAr = refProfile.lang !== "en";
+          const bonusMsg = refIsAr
+            ? `🏆 <b>مكافأة ترقية صديق! +${REFERRAL_PAID_UPGRADE_TOKENS} نقطة!</b>\n\n` +
+              `قام أحد الأصدقاء الذين دعوتهم بالترقية إلى باقة RatePath المدفوعة.\n` +
+              `🪙 رصيدك الآن: <b>${refProfile.referral_tokens} نقطة</b> — يمكنك استبدال كل 100 نقطة بـ <b>7 أيام Business VIP مجاناً</b> بضغطة واحدة!`
+            : `🏆 <b>Referral VIP Upgrade Bonus! +${REFERRAL_PAID_UPGRADE_TOKENS} Tokens!</b>\n\n` +
+              `A friend you invited just upgraded to a paid RatePath plan.\n` +
+              `🪙 Your Balance: <b>${refProfile.referral_tokens} tokens</b> — redeem every 100 tokens for <b>7 Free Business VIP Days</b> in one tap!`;
+          await sendTelegramMessage(referrerId, bonusMsg, botToken, fetchImpl, {
+            inline_keyboard: [
+              [
+                {
+                  text: refIsAr
+                    ? "💎 استبدال 100 نقطة = 7 أيام VIP مجاناً"
+                    : "💎 Redeem 100 Tokens → 7 Free VIP Days",
+                  callback_data: "cb:ref_redeem",
+                },
+              ],
+            ],
+          });
+          referralBonusAwarded = true;
+          rewardedReferrerId = referrerId;
+        }
+      }
+    }
+
+    const adminId = String(env?.ADMIN_TELEGRAM_ID || env?.ADMIN_CHAT_ID || "").trim();
     if (adminId && adminId.toLowerCase() !== "placeholder") {
       const adminMsg =
         `💰 <b>New RatePath USDT Payment Confirmed!</b>\n` +
@@ -389,7 +502,8 @@ export async function processNowPaymentsIpn(ipnPayload, env, fetchImpl = fetch) 
         `• Order: <code>${orderId}</code>\n` +
         `• Amount: <code>$${priceAmount} USD</code> (${String(ipnPayload?.pay_currency || "USDT").toUpperCase()})\n` +
         `• Expires: <code>${String(expiresAt || "").slice(0, 10)}</code>\n` +
-        `• Invite Issued: ${inviteLink ? "✅ Yes" : "⚠️ Manual follow-up"}`;
+        `• Invite Issued: ${inviteLink ? "✅ Yes" : "⚠️ Manual follow-up"}` +
+        (referralBonusAwarded ? `\n• Referral Bonus: +100 tokens -> <code>${rewardedReferrerId}</code>` : "");
       await sendTelegramMessage(adminId, adminMsg, botToken, fetchImpl);
     }
   }
