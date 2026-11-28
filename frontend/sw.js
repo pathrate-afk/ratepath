@@ -1,5 +1,5 @@
 /* RatePath (ريت باث) Offline-First Service Worker (Bypassed on localhost & /api/) */
-const CACHE_VERSION = "ratepath-pwa-v20";
+const CACHE_VERSION = "ratepath-pwa-v21";
 const FEED_CACHE_NAME = "ratepath-live-feed-v3";
 
 const IS_LOCALHOST =

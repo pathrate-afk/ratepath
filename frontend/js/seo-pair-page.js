@@ -221,12 +221,20 @@ function renderLivePair() {
     unitHint.textContent = `1 ${fromCode} = ${formatSmartNumber(convRate)} ${toCode}`;
   }
 
-  // Quick conversion table rows (`data-quick-qty`)
+  // Quick conversion table headers & rows (`data-quick-qty`)
+  const thFrom = document.getElementById("quick-th-from");
+  const thTo = document.getElementById("quick-th-to");
+  if (thFrom) thFrom.textContent = fromCode;
+  if (thTo) thTo.textContent = toCode;
   document.querySelectorAll("[data-quick-qty]").forEach((row) => {
     const qty = Number(row.getAttribute("data-quick-qty"));
-    const cell = row.querySelector("[data-quick-out]");
-    if (cell && convRate && Number.isFinite(qty)) {
-      cell.textContent = `${formatSmartNumber(qty * convRate)} ${toCode}`;
+    const inCell = row.querySelector("[data-quick-in]");
+    const outCell = row.querySelector("[data-quick-out]");
+    if (inCell && Number.isFinite(qty)) {
+      inCell.textContent = `${new Intl.NumberFormat("en-US").format(qty)} ${fromCode}`;
+    }
+    if (outCell && convRate && Number.isFinite(qty)) {
+      outCell.textContent = `${formatSmartNumber(qty * convRate)} ${toCode}`;
     }
   });
 

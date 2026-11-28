@@ -571,7 +571,7 @@ def _render_seo_page_html(
         q_val = (Decimal(qty) * rate) if rate else None
         quick_rows.append(
             f'<tr class="border-t border-slate-800/70" data-quick-qty="{qty}">'
-            f'<td class="px-3 py-2 font-mono text-sm text-slate-300">{qty:,} {spec.base}</td>'
+            f'<td class="px-3 py-2 font-mono text-sm text-slate-300" data-quick-in>{qty:,} {spec.base}</td>'
             f'<td class="px-3 py-2 font-mono text-sm font-bold text-amber-300" data-quick-out>{_fmt_dec(q_val)} {spec.quote}</td>'
             f"</tr>"
         )
@@ -641,8 +641,8 @@ def _render_seo_page_html(
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&amp;family=Inter:wght@400;500;600;700;800&amp;family=JetBrains+Mono:wght@500;600;700;800&amp;display=swap" rel="stylesheet" />
 
-  <link rel="stylesheet" href="/styles/tailwind.min.css?v=20" />
-  <link rel="stylesheet" href="/styles/terminal.css?v=20" />
+  <link rel="stylesheet" href="/styles/tailwind.min.css?v=21" />
+  <link rel="stylesheet" href="/styles/terminal.css?v=21" />
 
   <script type="application/ld+json">
 {json_ld_str}
@@ -650,9 +650,9 @@ def _render_seo_page_html(
 </head>
 <body class="bg-[#070B14] text-slate-100 min-h-screen antialiased" data-seo-slug="{spec.slug}" data-base="{spec.base}" data-quote="{spec.quote}" data-mode="{spec.mode}">
   <header class="sticky top-0 z-40 bg-[#070B14]/95 backdrop-blur-md border-b border-slate-800/90">
-    <div class="max-w-5xl mx-auto px-4 h-16 flex items-center justify-between gap-3">
+    <div class="rp-seo-wrap px-4 h-16 flex items-center justify-between gap-2 sm:gap-3">
       <a href="/" class="flex items-center gap-2.5 min-w-0">
-        <img src="/icons/logo-mark.png" alt="RatePath | ريت باث" width="36" height="36" class="w-9 h-9 rounded-xl ring-1 ring-amber-400/45 object-cover" />
+        <img src="/icons/logo-mark.png" alt="RatePath | ريت باث" width="36" height="36" class="w-9 h-9 rounded-xl ring-1 ring-amber-400/45 object-cover shrink-0" />
         <div class="min-w-0">
           <div class="flex items-center gap-2">
             <span class="text-base font-extrabold text-white">RatePath</span>
@@ -661,14 +661,14 @@ def _render_seo_page_html(
           <p class="text-[11px] text-slate-400 truncate" data-ar="تيرمينال أسعار الصرف والذهب والكريبتو" data-en="Live FX, Gold &amp; Crypto Terminal">تيرمينال أسعار الصرف والذهب والكريبتو</p>
         </div>
       </a>
-      <div class="flex items-center gap-2">
-        <span id="seo-utc-clock" class="hidden sm:inline-block font-mono text-xs text-slate-300 bg-slate-900 border border-slate-800 px-2.5 py-1 rounded-lg">--:--:-- UTC</span>
-        <button id="seo-lang-toggle" type="button" class="px-3 py-1.5 rounded-lg text-xs font-bold bg-slate-900 border border-slate-700 hover:border-amber-400/60 text-slate-100">🇬🇧 English</button>
+      <div class="flex items-center gap-2 shrink-0">
+        <span id="seo-utc-clock" dir="ltr" class="inline-flex items-center font-mono text-[11px] sm:text-xs text-emerald-300 bg-slate-900 border border-slate-800 px-2.5 py-1 rounded-lg whitespace-nowrap">--:--:-- UTC</span>
+        <button id="seo-lang-toggle" type="button" class="px-3 py-1.5 rounded-lg text-xs font-bold bg-slate-900 border border-slate-700 hover:border-amber-400/60 text-slate-100 whitespace-nowrap">🇬🇧 English</button>
       </div>
     </div>
   </header>
 
-  <main class="max-w-5xl mx-auto px-4 py-6 sm:py-8">
+  <main class="rp-seo-wrap px-4 py-6 sm:py-8">
     <!-- Hero Live Rate Card -->
     <section class="rounded-2xl bg-gradient-to-br from-slate-900 via-[#0C1426] to-slate-950 border border-amber-400/35 p-5 sm:p-7 shadow-xl shadow-black/40">
       <div class="flex flex-wrap items-center justify-between gap-2 mb-3">
@@ -709,8 +709,8 @@ def _render_seo_page_html(
     </section>
 
     <!-- Instant Pre-Selected Converter -->
-    <section class="mt-6 grid grid-cols-1 lg:grid-cols-5 gap-6">
-      <div class="lg:col-span-3 rounded-2xl bg-slate-900/85 border border-slate-800 p-5">
+    <section class="mt-6 rp-seo-grid gap-6">
+      <div class="rp-seo-main rounded-2xl bg-slate-900/85 border border-slate-800 p-5">
         <div class="flex items-center justify-between gap-2 mb-4">
           <h2 class="text-base sm:text-lg font-bold text-white" data-ar="المحوّل الفوري ({spec.base} ↔ {spec.quote})" data-en="Instant Converter ({spec.base} ↔ {spec.quote})">المحوّل الفوري ({spec.base} ↔ {spec.quote})</h2>
           <button id="conv-swap" type="button" class="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs font-bold text-amber-300">⇄ <span data-ar="عكس" data-en="Swap">عكس</span></button>
@@ -742,13 +742,13 @@ def _render_seo_page_html(
       </div>
 
       <!-- Quick Reference Conversion Table -->
-      <div class="lg:col-span-2 rounded-2xl bg-slate-900/85 border border-slate-800 p-5">
+      <div class="rp-seo-side rounded-2xl bg-slate-900/85 border border-slate-800 p-5">
         <h2 class="text-base font-bold text-white mb-3" data-ar="جدول التحويل السريع" data-en="Quick Conversion Table">جدول التحويل السريع</h2>
         <table class="w-full text-start border-collapse">
           <thead>
             <tr class="text-xs text-slate-400 border-b border-slate-800">
-              <th class="px-3 py-2 text-start">{spec.base}</th>
-              <th class="px-3 py-2 text-start">{spec.quote}</th>
+              <th id="quick-th-from" class="px-3 py-2 text-start">{spec.base}</th>
+              <th id="quick-th-to" class="px-3 py-2 text-start">{spec.quote}</th>
             </tr>
           </thead>
           <tbody>
@@ -777,12 +777,12 @@ def _render_seo_page_html(
     </section>
   </main>
 
-  <footer class="max-w-5xl mx-auto px-4 py-8 mt-6 border-t border-slate-800/80 text-xs text-slate-400 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+  <footer class="rp-seo-wrap px-4 py-8 mt-6 border-t border-slate-800/80 text-xs text-slate-400 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
     <p data-ar="⚖️ ريت باث (RatePath) يقدم بيانات سوقية وأدوات تحويل وتنبيهات معلوماتية فقط — ليست نصيحة استثمارية أو مالية." data-en="⚖️ RatePath provides live market data, conversion tools &amp; informational price alerts only — not financial advice.">⚖️ ريت باث (RatePath) يقدم بيانات سوقية وأدوات تحويل وتنبيهات معلوماتية فقط — ليست نصيحة استثمارية أو مالية.</p>
     <p class="font-mono shrink-0">ratepathlive.com • {generated_date}</p>
   </footer>
 
-  <script type="module" src="/js/seo-pair-page.js?v=20"></script>
+  <script type="module" src="/js/seo-pair-page.js?v=21"></script>
 </body>
 </html>
 """
